@@ -249,6 +249,56 @@ MAX_UPLOAD_MB=200
 5. **Deploy** dabayen. 1–2 minute mein ban jayega.
 6. Deploy hone ke baad upar aap ka URL dikhega, jaise `https://pdf-link-manager-abc123.vercel.app`. **Isay copy kar lein** — agla step isi ka hai.
 
+## 4.4 Deploy fail ho jaye to
+
+Sab se pehle **asli error parhein**: Vercel → apna project → **Deployments** → jo fail hua us par click → **Build Logs**.
+Sab se pehli **laal (red)** line hi asal wajah hoti hai, baqi sab us ka nateeja hota hai.
+
+### Agar aap **purana Vercel project** dobara use kar rahe hain
+
+Ye sab se aam wajah hai. Jab aap ne pehle isi project mein koi **doosri qism ka code** (jaise sirf HTML/PDF wala test) deploy kiya tha,
+to Vercel ne us waqt ki **build settings save kar li thin**, aur wo ab bhi lagi hui hain. Naya code Next.js ka hai, is liye build toot jati hai.
+
+**Sab se aasan hal — naya project bana lein:**
+
+1. Vercel → purana project → **Settings** → sab se neeche **Delete Project**.
+2. <https://vercel.com/new> se `cons1` repo dobara **Import** karein.
+3. Environment Variables (4.3 wali) dobara daal kar **Deploy** dabayen.
+
+Ye is liye mehfooz hai ke abhi is project par na koi domain laga hai na koi data — sab kuch Supabase aur R2 mein hai, Vercel mein nahi.
+
+**Ya purane project ko theek karein:** Settings → **Build and Deployment** kholen aur ye check karein:
+
+| Setting | Kya hona chahiye |
+| --- | --- |
+| Framework Preset | **Next.js** (agar `Other` likha hai to yehi masla hai) |
+| Build Command | Override **band** (ya `next build`) |
+| Output Directory | Override **band**. Agar `public` likha hai to hata dein |
+| Install Command | Override **band** (ya `npm ci`) |
+| Root Directory | **khali** |
+| Node.js Version | **22.x** |
+
+> Is repo mein ab `vercel.json` mojood hai jo framework aur build command khud set kar deti hai, is liye zyada tar surat mein sirf
+> **Output Directory** aur **Root Directory** ka override hatana kaafi rehta hai.
+
+### Error ke hisab se hal
+
+| Build log mein ye likha ho | Wajah aur hal |
+| --- | --- |
+| `No Output Directory named "public" found` | Framework Preset `Other` par atka hua hai. Usay **Next.js** karein aur Output Directory ka override band karein |
+| `No Next.js version detected` | Root Directory ghalat hai, ya Vercel purana commit build kar raha hai |
+| `Couldn't find any "pages" or "app" directory` | Root Directory khali honi chahiye |
+| `ENOENT: no such file or directory ... package.json` | Vercel purana khali commit build kar raha hai. Deployments mein **Redeploy** dabayen aur latest commit chunein |
+| `Error: Node.js version 18.x is no longer supported` | Settings → Build and Deployment → **Node.js Version** ko 22.x karein |
+| `Module not found: Can't resolve ...` | Ye code ka masla hota, lekin is repo ki build test ho chuki hai. Ho sakta hai adhoora commit push hua ho — `git status` khali hona chahiye |
+
+### Ye check karein ke Vercel **sahi commit** build kar raha hai
+
+Deployment page par upar commit ka message likha hota hai. Wahan
+**"Pin Vercel build config…"** ya **"PDF Link Manager"** likha hona chahiye.
+Agar `Delete old …` jaisa purana message likha hai, to Vercel purana khali commit build kar raha hai —
+**Deployments → … → Redeploy** karein.
+
 ---
 
 # Hissa 5 — R2 par CORS lagayen (uploads chalane ke liye)
