@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Repeat,
+  ShieldCheck,
   Trash2,
   Upload,
   X,
@@ -21,6 +22,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilePreview } from "@/components/admin/FilePreview";
+import { LinkCheck } from "@/components/admin/LinkCheck";
 import { useSession } from "@/components/SessionProvider";
 import {
   Alert,
@@ -70,6 +72,7 @@ export function FileManager() {
   const [renameTarget, setRenameTarget] = useState<FileRow | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<FileRow[] | null>(null);
   const [preview, setPreview] = useState<FileRow | null>(null);
+  const [checkTarget, setCheckTarget] = useState<FileRow | null>(null);
   const [newLinkDomain, setNewLinkDomain] = useState<Domain | null>(null);
   const [editLink, setEditLink] = useState<LinkRow | null>(null);
   const [deleteLink, setDeleteLink] = useState<LinkRow | null>(null);
@@ -503,6 +506,9 @@ export function FileManager() {
                               >
                                 <Copy className="size-3.5" />
                               </IconButton>
+                              <IconButton label="Check public link" onClick={() => setCheckTarget(f)}>
+                                <ShieldCheck className="size-3.5" />
+                              </IconButton>
                               {can("preview") ? (
                                 <IconButton label="Preview" onClick={() => setPreview(f)}>
                                   <Eye className="size-3.5" />
@@ -607,6 +613,7 @@ export function FileManager() {
       />
 
       <FilePreview file={preview} onClose={() => setPreview(null)} />
+      <LinkCheck file={checkTarget} onClose={() => setCheckTarget(null)} />
     </div>
   );
 }

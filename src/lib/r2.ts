@@ -68,10 +68,60 @@ export async function presignDownload(
       Key: key,
       ResponseContentDisposition: contentDisposition(disposition, filename),
       ResponseContentType: contentType,
-      ResponseCacheControl: "private, no-store",
     }),
     { expiresIn },
   );
+}
+
+export interface ProbeResult {
+  ok: boolean;
+  status: number;
+  contentType?: string;
+  contentDisposition?: string;
+  location?: string;
+  reason?: string;
+  bodySnippet?: string;
+  error?: string;
+}
+
+/**
+ * Server-side fetch of a URL without following redirects. Uses a 1-byte range so a good
+ * signed storage link answers 206 without transferring the file.
+ */
+export async function probeUrl(url: string, timeoutMs = 10_000): Promise<ProbeResult> {
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Range: "bytes=0-0", "User-Agent": "pdf-link-manager-check/1.0" },
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const out: ProbeResult = {
+      ok: res.ok,
+      status: res.status,
+      contentType: res.headers.get("content-type") ?? undefined,
+      contentDisposition: res.headers.get("content-disposition") ?? undefined,
+      location: res.headers.get("location") ?? undefined,
+      reason: res.headers.get("x-reason") ?? undefined,
+    };
+    if (!res.ok) {
+      try {
+        out.bodySnippet = (await res.text()).replace(/\s+/g, " ").slice(0, 400);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        await res.body?.cancel();
+      } catch {
+        /* ignore */
+      }
+    }
+    return out;
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function headObject(key: string): Promise<{ size: number; contentType: string | undefined } | null> {

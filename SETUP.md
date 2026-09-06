@@ -449,6 +449,26 @@ Har naye domain ke liye 7.1 aur 7.2 dobara karein. Jitne chahen domain add kar s
 
 ✅ **File khud ba khud download honi chahiye.** Ye poore system ka asal test hai.
 
+### Download na ho to: "Check public link" button
+
+File ke saamne **shield (🛡) wala icon** dabayen. Ye server se poori chain test karta hai aur batata hai ke kahan tootti hai:
+
+1. File R2 mein mojood hai ya nahi
+2. R2 ka signed link chal raha hai ya nahi (keys/bucket sahi hain?)
+3. Public address is app tak pohanch raha hai ya nahi (DNS / Vercel domain)
+4. Redirect ke baad file mil rahi hai ya nahi
+
+Pehla **laal** item hi asal wajah hai, aur us ke neeche hal likha hota hai.
+
+### Sab se aam wajah: Cloudflare ka orange cloud
+
+Agar aap ke domain ka DNS **Cloudflare** par hai, to CNAME record ke saamne **badal (cloud) ka icon grey** hona chahiye
+("DNS only"). **Orange** (Proxied) hone se Vercel ko request theek nahi milti — redirect loop ya ghalat page aata hai.
+Cloudflare → apna domain → **DNS** → record ke saamne orange cloud par click kar ke grey karein.
+
+Public link par 404 aaye to us page ke neeche chhota sa code likha hota hai (`domain_not_found`, `link_not_found`, `file_not_found`),
+jo seedha batata hai ke database mein kya nahi mila.
+
 Naya link (folder) banane ke liye: baen taraf domain ke naam par hover karein aur **+** dabayen, phir path likhen jaise `brochures` ya `reports/2025`.
 
 ---

@@ -95,8 +95,13 @@ export function buildLinkUrl(hostname: string, path: string): string {
   return `https://${hostname}/${segments.join("/")}${segments.length ? "/" : ""}`;
 }
 
-/** RFC 6266 Content-Disposition with ASCII fallback + UTF-8 name. */
+/**
+ * RFC 6266 Content-Disposition. Plain ASCII names use the simple form only, which keeps the
+ * signed query string free of characters (* ' ;) that some S3-compatible stores canonicalise differently.
+ */
 export function contentDisposition(type: "attachment" | "inline", filename: string): string {
+  const simple = /^[\u0020-\u007e]+$/.test(filename) && !/["\\]/.test(filename);
+  if (simple) return `${type}; filename="${filename}"`;
   const ascii = filename.replace(/[^\u0020-\u007e]/g, "_").replace(/["\\]/g, "_");
   return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }

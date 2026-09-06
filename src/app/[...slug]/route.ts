@@ -5,13 +5,24 @@ import { contentDisposition } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-function notFound(): NextResponse {
+type NotFoundReason = "bad_request" | "domain_not_found" | "domain_disabled" | "link_not_found" | "file_not_found";
+
+const REASON_TEXT: Record<NotFoundReason, string> = {
+  bad_request: "The address is incomplete.",
+  domain_not_found: "This domain is not set up to serve files.",
+  domain_disabled: "This domain is currently disabled.",
+  link_not_found: "There is no link at this path.",
+  file_not_found: "There is no file with this name in that link.",
+};
+
+function notFound(reason: NotFoundReason, host: string): NextResponse {
+  const detail = REASON_TEXT[reason];
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>File not found</title>
-<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f5f8;color:#1b2333}main{max-width:26rem;padding:2rem}p.code{font-family:ui-monospace,Menlo,Consolas,monospace;color:#5e6b7e;margin:0 0 .25rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#5e6b7e;margin:0}</style></head>
-<body><main><p class="code">404</p><h1>File not found</h1><p>There is no file at this address. Check the link and try again.</p></main></body></html>`;
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f5f8;color:#1b2333}main{max-width:26rem;padding:2rem}p.code{font-family:ui-monospace,Menlo,Consolas,monospace;color:#5e6b7e;margin:0 0 .25rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#5e6b7e;margin:0 0 .5rem}small{font-family:ui-monospace,Menlo,Consolas,monospace;color:#8a96a8;font-size:12px}</style></head>
+<body><main><p class="code">404</p><h1>File not found</h1><p>${detail} Check the link and try again.</p><small>${reason} · ${host || "no host"}</small></main></body></html>`;
   return new NextResponse(html, {
     status: 404,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-reason": reason },
   });
 }
 
@@ -36,7 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   const { slug } = await params;
   const host = requestHost(req);
   const segments = (slug ?? []).map(decode).filter(Boolean);
-  if (!host || segments.length === 0) return notFound();
+  if (!host || segments.length === 0) return notFound("bad_request", host);
 
   const filename = segments[segments.length - 1];
   const path = segments.slice(0, -1).join("/");
@@ -49,7 +60,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       .in("hostname", hostCandidates);
     const domain =
       domains?.find((d) => d.hostname === host) ?? domains?.find((d) => hostCandidates.includes(d.hostname));
-    if (!domain || !domain.is_active) return notFound();
+    if (!domain) return notFound("domain_not_found", host);
+    if (!domain.is_active) return notFound("domain_disabled", host);
 
     const { data: link } = await db()
       .from("links")
@@ -57,7 +69,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       .eq("domain_id", domain.id)
       .eq("path", path)
       .maybeSingle();
-    if (!link) return notFound();
+    if (!link) return notFound("link_not_found", host);
 
     let { data: file } = await db()
       .from("files")
@@ -76,7 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
         .maybeSingle();
       file = res.data;
     }
-    if (!file) return notFound();
+    if (!file) return notFound("file_not_found", host);
 
     await db().rpc("increment_download", { file_uuid: file.id });
 
@@ -84,7 +96,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     if (mode === "proxy") {
       const obj = await getObjectStream(file.r2_key);
       const body = obj.Body ? (obj.Body as { transformToWebStream: () => ReadableStream }).transformToWebStream() : null;
-      if (!body) return notFound();
+      if (!body) return notFound("file_not_found", host);
       const headers = new Headers({
         "content-type": file.content_type || "application/octet-stream",
         "content-disposition": contentDisposition("attachment", file.filename),
