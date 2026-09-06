@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Chrome */
+  --color-ink-950: #0f1a2c;
+  --color-ink-900: #14213a;
+  --color-ink-800: #1b2a41;
+  --color-ink-700: #263852;
+  --color-ink-600: #3b4e6b;
+  --color-ink-300: #a9b6c9;
+  --color-ink-200: #cbd4e1;
+
+  /* Workspace */
+  --color-paper: #f3f5f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8fafc;
+  --color-line: #dbe1e9;
+  --color-line-strong: #b9c3d0;
+  --color-text: #1b2333;
+  --color-text-muted: #5e6b7e;
+  --color-text-faint: #8a96a8;
+
+  /* Accent (primary actions) */
+  --color-teal-50: #e6f4f3;
+  --color-teal-100: #cbe8e6;
+  --color-teal-600: #0e7c7b;
+  --color-teal-700: #0b6463;
+  --color-teal-800: #084d4c;
+
+  /* Status */
+  --color-danger-50: #fef3f2;
+  --color-danger-600: #b42318;
+  --color-danger-700: #912018;
+  --color-warn-50: #fffaeb;
+  --color-warn-600: #b54708;
+  --color-ok-50: #ecfdf3;
+  --color-ok-600: #067647;
+  --color-info-50: #eff6ff;
+  --color-info-600: #1d4ed8;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+::selection {
+  background: var(--color-teal-100);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-teal-600);
+  outline-offset: 2px;
+}
+
+/* Dense data tables */
+.tbl {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.tbl th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface-2);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.tbl td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--color-line);
+  vertical-align: middle;
+}
+.tbl tbody tr:hover td {
+  background: var(--color-surface-2);
+}
+.tbl tbody tr.is-selected td {
+  background: var(--color-teal-50);
+}
+
+/* Form controls */
+.ctl {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  padding: 7px 10px;
+  font-size: 14px;
+  color: var(--color-text);
+  transition: border-color 120ms;
+}
+.ctl:hover {
+  border-color: var(--color-ink-600);
+}
+.ctl:focus {
+  outline: none;
+  border-color: var(--color-teal-600);
+  box-shadow: 0 0 0 3px var(--color-teal-100);
+}
+.ctl:disabled {
+  background: var(--color-surface-2);
+  color: var(--color-text-faint);
+}
+.ctl.is-invalid {
+  border-color: var(--color-danger-600);
+}
+
+/* Tree rows in file manager */
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 13px;
+}
+.tree-row:hover {
+  background: var(--color-surface-2);
+}
+.tree-row.is-active {
+  background: var(--color-teal-50);
+  color: var(--color-teal-800);
+  font-weight: 500;
+}
+
+/* Address strip: the public URL is the product, give it presence */
+.address {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-ink-900);
+  color: #e7edf6;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.address .host {
+  color: #9fd8d6;
+}
+.address .dim {
+  color: var(--color-ink-300);
+}
+
+/* Progress bar */
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-line);
+  overflow: hidden;
+}
+.bar > div {
+  height: 100%;
+  background: var(--color-teal-600);
+  transition: width 160ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
