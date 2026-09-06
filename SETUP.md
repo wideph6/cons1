@@ -292,12 +292,70 @@ Ye is liye mehfooz hai ke abhi is project par na koi domain laga hai na koi data
 | `Error: Node.js version 18.x is no longer supported` | Settings → Build and Deployment → **Node.js Version** ko 22.x karein |
 | `Module not found: Can't resolve ...` | Ye code ka masla hota, lekin is repo ki build test ho chuki hai. Ho sakta hai adhoora commit push hua ho — `git status` khali hona chahiye |
 
+### Build "Collecting build traces" par ruk jati hai
+
+Ye asal mein build ka **aakhri** marhala hai — yaani `next build` mukammal ho chuki hoti hai.
+Us ke foran baad Vercel apni output directory dhoondta hai, aur wahin ye error deta hai:
+
+```
+Error: No Output Directory named "public" found after the Build completed.
+```
+
+**Matlab:** aap ke project ki settings mein Framework Preset abhi bhi `Other` hai (purane static test ki wajah se),
+is liye Vercel `public` folder dhoond raha hai, jo Next.js banati hi nahi.
+
+**Hal:** repo mein mojood [`vercel.json`](vercel.json) ye dono cheezen khud theek kar deti hai —
+`framework` ko `nextjs` par set karti hai aur Output Directory ka override saaf kar deti hai.
+Bas **Redeploy** dabayen. Agar phir bhi na chale, to Settings → Build and Deployment mein
+**Output Directory** ka override apne haath se band kar dein.
+
+> Log ka aakhri hissa ghor se dekhen. Agar `Route (app)` wali table nazar aa rahi hai,
+> to build poori ho chuki hai aur masla sirf output directory ka hai.
+
 ### Ye check karein ke Vercel **sahi commit** build kar raha hai
 
 Deployment page par upar commit ka message likha hota hai. Wahan
 **"Pin Vercel build config…"** ya **"PDF Link Manager"** likha hona chahiye.
 Agar `Delete old …` jaisa purana message likha hai, to Vercel purana khali commit build kar raha hai —
 **Deployments → … → Redeploy** karein.
+
+---
+
+## 4.5 Auto redeploy — har push par khud deploy
+
+Jab aap GitHub se project import karte hain, Vercel **pehle se** har push par naya deployment banata hai.
+Aap ko kuch chalu karne ki zaroorat nahi. Aap bas ye karein:
+
+```bash
+git add -A
+git commit -m "kya badla"
+git push
+```
+
+Push hote hi Vercel build shuru kar deta hai, aur kamyab hone par live site khud update ho jati hai.
+Repo mein mojood [`vercel.json`](vercel.json) mein ye baat likhi bhi hui hai:
+
+```json
+"git": { "deploymentEnabled": { "main": true } }
+```
+
+### Agar push par deploy na ho to
+
+| Check | Kahan | Kya hona chahiye |
+| --- | --- | --- |
+| Git connection | Settings → **Git** → Connected Git Repository | `wideph6/cons1` juda hua ho. Na ho to **Connect** dabayen |
+| Production Branch | Settings → **Git** | `main` |
+| GitHub App ki ijazat | <https://github.com/settings/installations> → Vercel → Configure | Repository access mein `cons1` shamil ho |
+
+> Agar aap ne project **Vercel CLI** se deploy kiya tha (import ki bajaye), to Git connection banta hi nahi
+> aur auto deploy kabhi nahi hoga. Aise mein project delete kar ke <https://vercel.com/new> se dobara **Import** karein.
+
+### Kaunsa deployment live hai
+
+- **Production** — `main` branch par push. Yehi aap ka asli domain chalata hai.
+- **Preview** — kisi doosri branch par push. Alag temporary URL milta hai, asli site par asar nahi parta.
+
+Is liye seedha `main` par push karte rahen, live site update hoti rahegi.
 
 ---
 

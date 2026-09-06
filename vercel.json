@@ -1,6 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "next build",
-  "installCommand": "npm ci"
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 next build",
+  "installCommand": "npm ci",
+  "outputDirectory": null,
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  }
 }
