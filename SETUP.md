@@ -486,6 +486,7 @@ hai, us domain se nahi) lekin public link 404 dega.
 1. Admin panel → **File manager**.
 2. Baen taraf apna domain aur us ke neeche `/` (root link) dikhega. Us par click karein.
 3. **Upload files** dabayen → koi PDF drag karein ya browse kar ke chunein → **Upload**.
+   Agar isi naam ki file link mein pehle se hai, to file chunte hi popup poochta hai: **Yes — replace** (purani file ki jagah nayi, link wahi rehta hai) ya **No — keep the existing** (nayi file skip). Replace ke liye user ke paas *Replace files* ki permission honi chahiye.
 4. Upload hone ke baad file ke saamne **copy** wala icon dabayen — public link copy ho jayega.
 5. Wo link naye tab mein kholen (ya kisi aur ko bhejen).
 

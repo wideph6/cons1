@@ -43,7 +43,7 @@ import {
 } from "@/components/ui";
 import { api, copyText, postFormWithProgress, putWithProgress, ClientError } from "@/lib/client";
 import type { Domain, FileRow, LinkRow } from "@/lib/types";
-import { buildLinkUrl, buildPublicUrl, displayPath, formatBytes, formatDateTime, timeAgo } from "@/lib/utils";
+import { buildLinkUrl, buildPublicUrl, cleanFilename, displayPath, formatBytes, formatDateTime, timeAgo } from "@/lib/utils";
 
 const SERVER_FALLBACK_LIMIT = 4 * 1024 * 1024;
 
@@ -560,6 +560,8 @@ export function FileManager() {
           linkId={current.link.id}
           baseUrl={baseUrl}
           replaceTarget={replaceTarget}
+          existing={files ?? []}
+          canReplace={can("replace")}
           onChanged={refreshAll}
         />
       ) : null}
@@ -766,10 +768,14 @@ function LinkDialog({
 interface UploadItem {
   id: string;
   file: File;
-  status: "queued" | "uploading" | "saving" | "done" | "error";
+  status: "queued" | "uploading" | "saving" | "done" | "error" | "skipped";
   progress: number;
   error?: string;
   via?: "direct" | "server";
+  /** An existing file in this link with the same name; the user decides whether to replace it. */
+  conflict?: FileRow;
+  /** Set once the user chose to replace: the existing file's id, sent as file_id. */
+  replaceId?: string;
 }
 
 function UploadDialog({
@@ -778,6 +784,8 @@ function UploadDialog({
   linkId,
   baseUrl,
   replaceTarget,
+  existing,
+  canReplace,
   onChanged,
 }: {
   open: boolean;
@@ -785,11 +793,15 @@ function UploadDialog({
   linkId: string;
   baseUrl: string;
   replaceTarget: FileRow | null;
+  /** Files already in this link, used to ask about same-name uploads before anything is sent. */
+  existing: FileRow[];
+  canReplace: boolean;
   onChanged: () => Promise<void> | void;
 }) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [running, setRunning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [askConflicts, setAskConflicts] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const changedRef = useRef(false);
   const { toast } = useToast();
@@ -797,15 +809,34 @@ function UploadDialog({
   useEffect(() => {
     if (open) {
       setItems([]);
+      setAskConflicts(false);
       changedRef.current = false;
     }
   }, [open, replaceTarget]);
 
+  /** Same comparison the server makes (cleaned name, case-insensitive), so the question is asked up front instead of failing later. */
+  function findExisting(name: string): FileRow | undefined {
+    let cleaned: string;
+    try {
+      cleaned = cleanFilename(name).toLowerCase();
+    } catch {
+      return undefined;
+    }
+    return existing.find((f) => f.filename.toLowerCase() === cleaned);
+  }
+
   function addFiles(list: FileList | File[]) {
     const arr = Array.from(list);
     if (!arr.length) return;
-    const next = arr.map((file) => ({ id: `${file.name}-${file.size}-${Math.random()}`, file, status: "queued" as const, progress: 0 }));
+    const next: UploadItem[] = arr.map((file) => ({
+      id: `${file.name}-${file.size}-${Math.random()}`,
+      file,
+      status: "queued",
+      progress: 0,
+      conflict: replaceTarget ? undefined : findExisting(file.name),
+    }));
     setItems((prev) => (replaceTarget ? next.slice(0, 1) : [...prev, ...next]));
+    if (next.some((n) => n.conflict)) setAskConflicts(true);
   }
 
   function update(id: string, patch: Partial<UploadItem>) {
@@ -814,13 +845,14 @@ function UploadDialog({
 
   async function uploadOne(item: UploadItem) {
     update(item.id, { status: "uploading", progress: 0, error: undefined });
+    const replaceId = item.replaceId ?? replaceTarget?.id;
     const presign = await api<{ url: string; key: string; content_type: string; filename: string }>("/api/admin/files/presign", {
       json: {
         link_id: linkId,
         filename: item.file.name,
         size: item.file.size,
         content_type: item.file.type,
-        file_id: replaceTarget?.id,
+        file_id: replaceId,
       },
     });
     try {
@@ -833,7 +865,7 @@ function UploadDialog({
         const form = new FormData();
         form.append("file", item.file);
         form.append("link_id", linkId);
-        if (replaceTarget) form.append("file_id", replaceTarget.id);
+        if (replaceId) form.append("file_id", replaceId);
         update(item.id, { status: "uploading", progress: 0, via: "server" });
         await postFormWithProgress("/api/admin/files/upload", form, (p) => update(item.id, { progress: p }));
         update(item.id, { status: "done", progress: 1 });
@@ -847,13 +879,17 @@ function UploadDialog({
     }
     update(item.id, { status: "saving" });
     await api("/api/admin/files/complete", {
-      json: { link_id: linkId, filename: presign.filename, key: presign.key, content_type: presign.content_type, file_id: replaceTarget?.id },
+      json: { link_id: linkId, filename: presign.filename, key: presign.key, content_type: presign.content_type, file_id: replaceId },
     });
     update(item.id, { status: "done", progress: 1 });
     changedRef.current = true;
   }
 
   async function start() {
+    if (conflicts.length) {
+      setAskConflicts(true);
+      return;
+    }
     setRunning(true);
     const queue = items.filter((i) => i.status === "queued" || i.status === "error");
     const workers = Math.min(3, queue.length);
@@ -876,11 +912,31 @@ function UploadDialog({
 
   function close() {
     if (running) return;
+    // Escape and backdrop clicks reach both dialogs; the question closes first, the upload dialog stays.
+    if (askConflicts) {
+      setAskConflicts(false);
+      return;
+    }
     onClose();
   }
 
   const doneCount = items.filter((i) => i.status === "done").length;
   const pending = items.filter((i) => i.status === "queued" || i.status === "error").length;
+  // Queued files whose name is already taken and that have no decision yet.
+  const conflicts = items.filter((i) => i.status === "queued" && i.conflict && !i.replaceId);
+
+  function decide(choice: "replace" | "keep") {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.status === "queued" && it.conflict && !it.replaceId
+          ? choice === "replace" && canReplace
+            ? { ...it, replaceId: it.conflict.id }
+            : { ...it, status: "skipped" as const }
+          : it,
+      ),
+    );
+    setAskConflicts(false);
+  }
 
   return (
     <Modal
@@ -960,7 +1016,14 @@ function UploadDialog({
                 {it.status === "done" ? <Badge tone="ok">done{it.via === "server" ? " (via server)" : ""}</Badge> : null}
                 {it.status === "error" ? <Badge tone="danger">failed</Badge> : null}
                 {it.status === "saving" ? <Badge tone="info">saving…</Badge> : null}
-                {it.status === "queued" && !running ? (
+                {it.status === "skipped" ? <Badge>skipped — existing kept</Badge> : null}
+                {it.status === "queued" && it.replaceId ? <Badge tone="warn">will replace</Badge> : null}
+                {it.status === "queued" && it.conflict && !it.replaceId ? (
+                  <button type="button" onClick={() => setAskConflicts(true)} title="Decide whether to replace it">
+                    <Badge tone="warn">already exists</Badge>
+                  </button>
+                ) : null}
+                {(it.status === "queued" || it.status === "skipped") && !running ? (
                   <IconButton label="Remove" onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))}>
                     <X className="size-3.5" />
                   </IconButton>
@@ -979,7 +1042,7 @@ function UploadDialog({
 
       {!replaceTarget && items.length === 0 ? (
         <p className="mt-3 text-[12px] text-text-faint flex items-center gap-1.5">
-          <FolderPlus className="size-3.5" /> Files with a name that already exists in this link are rejected — use Replace on that file instead.
+          <FolderPlus className="size-3.5" /> If a file with the same name already exists in this link, you will be asked whether to replace it or keep the existing one.
         </p>
       ) : null}
       {doneCount > 0 && pending === 0 && !running ? (
@@ -995,6 +1058,45 @@ function UploadDialog({
           </button>
         </p>
       ) : null}
+
+      <Modal
+        open={askConflicts && conflicts.length > 0}
+        onClose={() => setAskConflicts(false)}
+        title={conflicts.length === 1 ? "This file already exists" : `${conflicts.length} files already exist`}
+        width="max-w-md"
+        footer={
+          <>
+            <Button onClick={() => decide("keep")}>No — keep the existing {conflicts.length === 1 ? "file" : "files"}</Button>
+            {canReplace ? (
+              <Button variant="primary" onClick={() => decide("replace")}>
+                Yes — replace {conflicts.length === 1 ? "it" : "them"}
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        <p className="text-sm">
+          {conflicts.length === 1 ? "A file with this name is" : "Files with these names are"} already in this link. Replace{" "}
+          {conflicts.length === 1 ? "it" : "them"} with the new {conflicts.length === 1 ? "file" : "files"}? The public address stays the same — only the
+          content changes.
+        </p>
+        <ul className="mt-3 divide-y border rounded-md max-h-48 overflow-auto text-[13px]">
+          {conflicts.map((it) => (
+            <li key={it.id} className="px-3 py-1.5 flex items-center gap-2">
+              <FileText className="size-4 text-text-faint shrink-0" />
+              <span className="truncate flex-1 font-mono">{it.conflict?.filename}</span>
+              <span className="text-text-faint whitespace-nowrap tabular-nums">
+                {formatBytes(it.conflict?.size)} → {formatBytes(it.file.size)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {canReplace ? null : (
+          <Alert tone="info" className="mt-3">
+            You do not have permission to replace files, so the existing {conflicts.length === 1 ? "file stays" : "files stay"} as {conflicts.length === 1 ? "it is" : "they are"}.
+          </Alert>
+        )}
+      </Modal>
     </Modal>
   );
 }
