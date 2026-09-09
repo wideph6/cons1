@@ -437,6 +437,29 @@ Bas. Ab is domain par files serve ho sakti hain.
 
 Har naye domain ke liye 7.1 aur 7.2 dobara karein. Jitne chahen domain add kar sakte hain.
 
+> **Zaroori:** har naye domain ke liye 7.1 (DNS) alag se karna parta hai. Panel mein domain add kar dena kaafi **nahi** hai —
+> panel sirf database mein likhta hai ke "is hostname par ye links serve karo". Agar us domain ka DNS abhi bhi purani hosting
+> par point kar raha hai, to visitor ki request kabhi is app tak pohanchti hi nahi.
+
+## 7.4 "Live check" — sab se ahem test
+
+Admin panel → **Domains** mein har domain ke saamne **Live check** ka column hai. Panel khudi us domain ko internet par se
+test karta hai aur batata hai ke us address par **kaun** jawab de raha hai:
+
+| Badge | Matlab | Kya karna hai |
+| --- | --- | --- |
+| `Reaches this app` (hara) | Sab theek — is domain ke links chalenge | Kuch nahi |
+| `Apache / cPanel hosting answers` | DNS abhi bhi purani hosting par hai | 7.1 wala DNS record theek karein |
+| `Vercel, but not this project answers` | DNS Vercel tak pohanchta hai lekin domain is project se juri nahi | Vercel → Settings → Domains → Add |
+| `Cloudflare answers` | Cloudflare ka orange cloud on hai | Record ko **DNS only** (grey) karein |
+| `a redirect answers` | Domain kisi aur domain par redirect ho raha hai | Vercel mein "No Redirect" set karein |
+| `No answer` | Domain resolve hi nahi ho raha / HTTPS nahi | DNS record daal kar propagate hone dein |
+
+Badge par click karne se poori tafseel khulti hai — tested address, HTTP status, `Server` header aur hal.
+
+**Ye check files upload karne se pehle chala lein.** Warna files R2 mein upload to ho jayengi (kyunki upload admin panel se hota
+hai, us domain se nahi) lekin public link 404 dega.
+
 ---
 
 # Hissa 8 — Pehli file upload aur test
@@ -466,8 +489,16 @@ Agar aap ke domain ka DNS **Cloudflare** par hai, to CNAME record ke saamne **ba
 ("DNS only"). **Orange** (Proxied) hone se Vercel ko request theek nahi milti — redirect loop ya ghalat page aata hai.
 Cloudflare → apna domain → **DNS** → record ke saamne orange cloud par click kar ke grey karein.
 
-Public link par 404 aaye to us page ke neeche chhota sa code likha hota hai (`domain_not_found`, `link_not_found`, `file_not_found`),
-jo seedha batata hai ke database mein kya nahi mila.
+Public link par 404 aaye to sab se pehle dekhein ke **404 page kis ka hai**:
+
+| 404 page par ye likha hai | Kis ka page hai | Wajah |
+| --- | --- | --- |
+| **File not found** + neeche chhota code (`domain_not_found`, `link_not_found`, `file_not_found`) | Is app ka | Request app tak pohanch gayi; code batata hai database mein kya nahi mila |
+| **Not Found — The resource requested could not be found on this server!** | Apache / cPanel shared hosting ka | DNS abhi bhi **purani hosting** par point kar raha hai — request Vercel tak pohanchti hi nahi |
+| **404: NOT_FOUND** + `Code: DEPLOYMENT_NOT_FOUND` | Vercel ka | Domain is Vercel project se juri nahi |
+
+Doosri aur teesri surat mein masla database ya code ka **nahi** hai — sirf DNS ka hai. Admin panel → **Domains** →
+**Live check** column dekh lein, wahan poora hal likha hota hai (7.4).
 
 Naya link (folder) banane ke liye: baen taraf domain ke naam par hover karein aur **+** dabayen, phir path likhen jaise `brochures` ya `reports/2025`.
 

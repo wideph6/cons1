@@ -36,6 +36,23 @@ export interface VercelStatus {
   checked_at: string;
 }
 
+/** Result of asking a hostname, over the public internet, whether this deployment is what answers it. */
+export interface ReachResult {
+  hostname: string;
+  probe_url: string;
+  /** true = this deployment answered; false = something else did; null = nothing answered. */
+  serves: boolean | null;
+  status: number;
+  answered_by: string;
+  level: "ok" | "warn" | "fail";
+  message: string;
+  hint?: string;
+  reason?: string;
+  server?: string;
+  location?: string;
+  checked_at: string;
+}
+
 export interface LinkRow {
   id: string;
   domain_id: string;

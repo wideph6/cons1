@@ -80,9 +80,16 @@ export interface ProbeResult {
   contentDisposition?: string;
   location?: string;
   reason?: string;
+  /** True when the reply carried this app's marker header, i.e. our own deployment answered. */
+  app?: boolean;
+  /** Whatever the responding server called itself (Server / X-Powered-By header). */
+  server?: string;
   bodySnippet?: string;
   error?: string;
 }
+
+/** Header this app stamps on every public reply, so a probe can tell our own deployment apart. */
+export const APP_MARKER = "x-link-manager";
 
 /**
  * Server-side fetch of a URL without following redirects. Uses a 1-byte range so a good
@@ -104,6 +111,8 @@ export async function probeUrl(url: string, timeoutMs = 10_000): Promise<ProbeRe
       contentDisposition: res.headers.get("content-disposition") ?? undefined,
       location: res.headers.get("location") ?? undefined,
       reason: res.headers.get("x-reason") ?? undefined,
+      app: res.headers.get(APP_MARKER) === "1",
+      server: res.headers.get("server") ?? res.headers.get("x-powered-by") ?? undefined,
     };
     if (!res.ok) {
       try {

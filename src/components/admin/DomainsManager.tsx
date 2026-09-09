@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ExternalLink, FolderTree, Globe, Pencil, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, FolderTree, Globe, Pencil, RefreshCw, ShieldAlert, Stethoscope, Trash2, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/SessionProvider";
@@ -23,7 +23,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { api } from "@/lib/client";
-import type { Domain, VercelStatus } from "@/lib/types";
+import type { Domain, ReachResult, VercelStatus } from "@/lib/types";
 import { formatBytes, formatDateTime } from "@/lib/utils";
 
 interface ListResponse {
@@ -43,6 +43,8 @@ export function DomainsManager() {
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState<string | null>(null);
   const [dnsFor, setDnsFor] = useState<Domain | null>(null);
+  const [reach, setReach] = useState<Record<string, ReachResult | "loading">>({});
+  const [reachFor, setReachFor] = useState<Domain | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +58,35 @@ export function DomainsManager() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /** Asks the domain itself who answers it. This is the only check that catches DNS still pointing elsewhere. */
+  const probe = useCallback(async (d: Domain) => {
+    setReach((prev) => ({ ...prev, [d.id]: "loading" }));
+    try {
+      const r = await api<{ result: ReachResult }>(`/api/admin/domains/${d.id}/probe`);
+      setReach((prev) => ({ ...prev, [d.id]: r.result }));
+    } catch (e) {
+      setReach((prev) => {
+        const next = { ...prev };
+        delete next[d.id];
+        return next;
+      });
+      toast(errorMessage(e), "danger");
+    }
+  }, [toast]);
+
+  // Probe every domain once the list arrives, so a domain that never reaches this app is obvious
+  // before anyone uploads files to it.
+  useEffect(() => {
+    if (!data) return;
+    for (const d of data.items) probe(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.items.map((d) => d.id).join(",")]);
+
+  const unreachable = data ? data.items.filter((d) => {
+    const r = reach[d.id];
+    return r && r !== "loading" && !r.serves;
+  }) : [];
 
   async function checkVercel(d: Domain) {
     setChecking(d.id);
@@ -140,6 +171,28 @@ export function DomainsManager() {
         </Alert>
       ) : null}
 
+      {unreachable.length > 0 ? (
+        <Alert tone="danger" className="mb-4">
+          <p className="font-medium">
+            {unreachable.length === 1 ? "1 domain does not reach this app" : `${unreachable.length} domains do not reach this app`} — their links will
+            return 404 no matter how many files are uploaded.
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {unreachable.map((d) => {
+              const r = reach[d.id] as ReachResult;
+              return (
+                <li key={d.id} className="text-[13px]">
+                  <span className="font-mono">{d.hostname}</span> — {r.message}.{" "}
+                  <button type="button" className="underline hover:no-underline" onClick={() => setReachFor(d)}>
+                    How to fix
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </Alert>
+      ) : null}
+
       {data && data.items.length === 0 ? (
         <EmptyState
           title="No domains yet"
@@ -156,6 +209,7 @@ export function DomainsManager() {
                 <tr>
                   <th>Domain</th>
                   <th>Status</th>
+                  <th>Live check</th>
                   <th>Vercel</th>
                   <th>Links</th>
                   <th>Files</th>
@@ -177,6 +231,9 @@ export function DomainsManager() {
                     </td>
                     <td>
                       {d.is_active ? <Badge tone="ok">Serving</Badge> : <Badge tone="warn">Disabled</Badge>}
+                    </td>
+                    <td>
+                      <ReachCell result={reach[d.id]} onOpen={() => setReachFor(d)} onRun={() => probe(d)} />
                     </td>
                     <td>
                       <VercelCell d={d} configured={data.vercel_configured} checking={checking === d.id} onCheck={() => checkVercel(d)} onDns={() => setDnsFor(d)} />
@@ -264,7 +321,113 @@ export function DomainsManager() {
       <Modal open={Boolean(dnsFor)} onClose={() => setDnsFor(null)} title={`Connect ${dnsFor?.hostname ?? ""} to Vercel`} width="max-w-xl">
         {dnsFor ? <DnsHelp d={dnsFor} configured={Boolean(data?.vercel_configured)} onAction={(a) => vercelAction(dnsFor, a)} busy={checking === dnsFor.id} /> : null}
       </Modal>
+
+      <Modal open={Boolean(reachFor)} onClose={() => setReachFor(null)} title={`Live check — ${reachFor?.hostname ?? ""}`} width="max-w-xl">
+        {reachFor ? (
+          <ReachDetail
+            result={reach[reachFor.id]}
+            onRun={() => probe(reachFor)}
+            onDns={() => {
+              setDnsFor(reachFor);
+              setReachFor(null);
+            }}
+          />
+        ) : null}
+      </Modal>
     </>
+  );
+}
+
+function ReachCell({ result, onOpen, onRun }: { result: ReachResult | "loading" | undefined; onOpen: () => void; onRun: () => void }) {
+  if (result === "loading") return <Badge>Testing…</Badge>;
+  if (!result) {
+    return (
+      <Button size="sm" variant="ghost" icon={<Stethoscope className="size-3.5" />} onClick={onRun}>
+        Test
+      </Button>
+    );
+  }
+  return (
+    <button type="button" onClick={onOpen} className="text-left" title={result.message}>
+      {result.serves && result.level === "ok" ? (
+        <Badge tone="ok">Reaches this app</Badge>
+      ) : result.serves === null ? (
+        <Badge tone="danger">No answer</Badge>
+      ) : result.serves ? (
+        <Badge tone="danger">App answers, blocked</Badge>
+      ) : (
+        <Badge tone="danger">{result.answered_by} answers</Badge>
+      )}
+    </button>
+  );
+}
+
+function ReachDetail({ result, onRun, onDns }: { result: ReachResult | "loading" | undefined; onRun: () => void; onDns: () => void }) {
+  if (!result || result === "loading") return <Loading />;
+  const Icon = result.level === "ok" ? CheckCircle2 : result.level === "warn" ? AlertTriangle : XCircle;
+  const tone = result.level === "ok" ? "text-ok-600" : result.level === "warn" ? "text-warn-600" : "text-danger-600";
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="flex items-start gap-2">
+        <Icon className={`size-5 shrink-0 mt-0.5 ${tone}`} />
+        <div>
+          <p className="font-medium">{result.message}</p>
+          {result.hint ? <p className="text-text-muted mt-1">{result.hint}</p> : null}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto border rounded-md">
+        <table className="tbl">
+          <tbody>
+            <tr>
+              <td className="text-text-muted">Tested address</td>
+              <td className="font-mono break-all">{result.probe_url}</td>
+            </tr>
+            <tr>
+              <td className="text-text-muted">Answered by</td>
+              <td>{result.answered_by}</td>
+            </tr>
+            <tr>
+              <td className="text-text-muted">HTTP status</td>
+              <td className="font-mono">{result.status || "no response"}</td>
+            </tr>
+            {result.server ? (
+              <tr>
+                <td className="text-text-muted">Server header</td>
+                <td className="font-mono break-all">{result.server}</td>
+              </tr>
+            ) : null}
+            {result.location ? (
+              <tr>
+                <td className="text-text-muted">Redirects to</td>
+                <td className="font-mono break-all">{result.location}</td>
+              </tr>
+            ) : null}
+            {result.reason ? (
+              <tr>
+                <td className="text-text-muted">App reason</td>
+                <td className="font-mono">{result.reason}</td>
+              </tr>
+            ) : null}
+            <tr>
+              <td className="text-text-muted">Checked</td>
+              <td>{formatDateTime(result.checked_at)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button icon={<RefreshCw className="size-4" />} onClick={onRun}>
+          Run again
+        </Button>
+        {result.serves ? null : (
+          <Button variant="primary" onClick={onDns}>
+            Show DNS records
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 

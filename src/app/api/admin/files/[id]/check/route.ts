@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { ok, requireUser, run } from "@/lib/api";
 import { getFileWithContext } from "@/lib/files";
 import { headObject, presignDownload, probeUrl, type ProbeResult } from "@/lib/r2";
+import { probeHostname } from "@/lib/reach";
 import { db } from "@/lib/supabase";
 import { buildPublicUrl } from "@/lib/utils";
 
@@ -87,7 +88,16 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     let redirectTarget: ProbeResult | null = null;
     const downloadMode = (process.env.DOWNLOAD_MODE ?? "redirect").toLowerCase();
 
-    if (pub.status === 0) {
+    // Anything that answers without the app's marker header is not this deployment. Name it explicitly,
+    // because "the domain still points at the old host" looks identical to a broken link from the outside.
+    if (pub.status !== 0 && !pub.app) {
+      const reach = await probeHostname(hostname);
+      findings.push({
+        level: "fail",
+        text: reach.message,
+        hint: reach.hint,
+      });
+    } else if (pub.status === 0) {
       findings.push({
         level: "fail",
         text: `Public address is unreachable: ${pub.error ?? "no response"}`,
