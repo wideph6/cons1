@@ -455,7 +455,26 @@ test karta hai aur batata hai ke us address par **kaun** jawab de raha hai:
 | `a redirect answers` | Domain kisi aur domain par redirect ho raha hai | Vercel mein "No Redirect" set karein |
 | `No answer` | Domain resolve hi nahi ho raha / HTTPS nahi | DNS record daal kar propagate hone dein |
 
-Badge par click karne se poori tafseel khulti hai — tested address, HTTP status, `Server` header aur hal.
+Badge par click karne se poori tafseel khulti hai — tested address, HTTP status, `Server` header, **Public DNS** (Cloudflare 1.1.1.1 aur
+Google 8.8.8.8 dono se domain kis IP par ja raha hai, aur us IP ka maalik server) aur hal.
+
+### DNS khud check karna (Windows)
+
+Command Prompt kholen aur likhen (apna domain daalein):
+
+```
+nslookup files.example.com 1.1.1.1
+```
+
+| Jawab mein ye aaye | Matlab |
+| --- | --- |
+| `76.76.21.21`, `216.198.79.x`, `64.29.17.x`, `66.33.60.x`, ya `cname.vercel-dns.com` | Vercel — theek hai |
+| Koi aur IP (jaise `185.x.x.x`, `162.x.x.x`) | Purani hosting — record badalna hai |
+| Do IP: aik Vercel ka, aik koi aur | Do record aik saath hain — purana delete karein |
+| `can't find` / `Non-existent domain` | Record abhi hai hi nahi |
+
+Agar `nslookup` Vercel dikhaye lekin browser phir bhi purani site dikhaye, to aap ke computer ka DNS cache purana hai:
+`ipconfig /flushdns` chalayen, ya mobile data se kholen.
 
 **Ye check files upload karne se pehle chala lein.** Warna files R2 mein upload to ho jayengi (kyunki upload admin panel se hota
 hai, us domain se nahi) lekin public link 404 dega.
