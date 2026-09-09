@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getObjectStream, presignDownload } from "@/lib/r2";
+import { APP_MARKER, getObjectStream, presignDownload } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import { contentDisposition } from "@/lib/utils";
 
@@ -22,7 +22,12 @@ function notFound(reason: NotFoundReason, host: string): NextResponse {
 <body><main><p class="code">404</p><h1>File not found</h1><p>${detail} Check the link and try again.</p><small>${reason} · ${host || "no host"}</small></main></body></html>`;
   return new NextResponse(html, {
     status: 404,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-reason": reason },
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-reason": reason,
+      [APP_MARKER]: "1",
+    },
   });
 }
 
@@ -98,6 +103,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       const body = obj.Body ? (obj.Body as { transformToWebStream: () => ReadableStream }).transformToWebStream() : null;
       if (!body) return notFound("file_not_found", host);
       const headers = new Headers({
+        [APP_MARKER]: "1",
         "content-type": file.content_type || "application/octet-stream",
         "content-disposition": contentDisposition("attachment", file.filename),
         "cache-control": "private, no-store",
@@ -110,13 +116,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     const url = await presignDownload(file.r2_key, file.filename, "attachment", file.content_type, 120);
     return NextResponse.redirect(url, {
       status: 302,
-      headers: { "cache-control": "private, no-store", "x-robots-tag": "noindex" },
+      headers: { "cache-control": "private, no-store", "x-robots-tag": "noindex", [APP_MARKER]: "1" },
     });
   } catch (e) {
     console.error("[download]", e);
     return new NextResponse("Download is temporarily unavailable. Please try again in a moment.", {
       status: 503,
-      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", [APP_MARKER]: "1" },
     });
   }
 }
