@@ -36,10 +36,32 @@ export interface VercelStatus {
   checked_at: string;
 }
 
+export interface DnsRecord {
+  type: "A" | "AAAA" | "CNAME" | string;
+  value: string;
+}
+
+/** One public resolver's answer for the hostname. */
+export interface DnsLookup {
+  resolver: string;
+  records: DnsRecord[];
+  /** Reverse-DNS name of the first non-Vercel address, when one exists — names the host that actually owns it. */
+  owner?: string;
+  error?: string;
+}
+
+export interface DnsCheck {
+  lookups: DnsLookup[];
+  /** vercel = every record points at Vercel; mixed = Vercel plus something else; none = no records at all. */
+  verdict: "vercel" | "not_vercel" | "mixed" | "none" | "unknown";
+  summary: string;
+}
+
 /** Result of asking a hostname, over the public internet, whether this deployment is what answers it. */
 export interface ReachResult {
   hostname: string;
   probe_url: string;
+  dns?: DnsCheck;
   /** true = this deployment answered; false = something else did; null = nothing answered. */
   serves: boolean | null;
   status: number;

@@ -85,7 +85,7 @@ export function DomainsManager() {
 
   const unreachable = data ? data.items.filter((d) => {
     const r = reach[d.id];
-    return r && r !== "loading" && !r.serves;
+    return r && r !== "loading" && (!r.serves || r.level === "fail");
   }) : [];
 
   async function checkVercel(d: Domain) {
@@ -351,6 +351,8 @@ function ReachCell({ result, onOpen, onRun }: { result: ReachResult | "loading" 
     <button type="button" onClick={onOpen} className="text-left" title={result.message}>
       {result.serves && result.level === "ok" ? (
         <Badge tone="ok">Reaches this app</Badge>
+      ) : result.serves && result.level === "warn" ? (
+        <Badge tone="warn">Works only sometimes</Badge>
       ) : result.serves === null ? (
         <Badge tone="danger">No answer</Badge>
       ) : result.serves ? (
@@ -401,6 +403,21 @@ function ReachDetail({ result, onRun, onDns }: { result: ReachResult | "loading"
               <tr>
                 <td className="text-text-muted">Redirects to</td>
                 <td className="font-mono break-all">{result.location}</td>
+              </tr>
+            ) : null}
+            {result.dns ? (
+              <tr>
+                <td className="text-text-muted">Public DNS</td>
+                <td>
+                  <div>{result.dns.summary}</div>
+                  {result.dns.lookups.map((l) => (
+                    <div key={l.resolver} className="font-mono text-[12px] text-text-muted mt-0.5 break-all">
+                      {l.resolver}:{" "}
+                      {l.error ? l.error : l.records.length ? l.records.map((r) => `${r.type} ${r.value}`).join(", ") : "no record"}
+                      {l.owner ? ` (${l.owner})` : ""}
+                    </div>
+                  ))}
+                </td>
               </tr>
             ) : null}
             {result.reason ? (
