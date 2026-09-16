@@ -4,6 +4,7 @@ export const PERMISSIONS = [
   { key: "upload", label: "Upload files", group: "Files" },
   { key: "replace", label: "Replace files", group: "Files" },
   { key: "rename", label: "Rename files", group: "Files" },
+  { key: "move", label: "Move files to another link", group: "Files" },
   { key: "delete", label: "Delete files", group: "Files" },
   { key: "preview", label: "Preview and download files", group: "Files" },
   { key: "create_link", label: "Create links", group: "Links" },

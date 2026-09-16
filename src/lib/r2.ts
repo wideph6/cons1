@@ -3,6 +3,7 @@ import {
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -131,6 +132,47 @@ export async function probeUrl(url: string, timeoutMs = 10_000): Promise<ProbeRe
   } catch (e) {
     return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+export interface StoredObject {
+  key: string;
+  size: number;
+  /** ISO timestamp, or null when the store did not report one. */
+  last_modified: string | null;
+}
+
+/** Prefix every key this app writes lives under; anything else in the bucket is left alone. */
+export const MANAGED_PREFIX = "files/";
+
+/**
+ * Every object this app owns, walked page by page. `truncated` is true when the bucket holds more
+ * than `maxKeys` objects, so a report can say it is partial instead of pretending the rest are gone.
+ */
+export async function listAllObjects(maxKeys = 50_000): Promise<{ objects: StoredObject[]; truncated: boolean }> {
+  const objects: StoredObject[] = [];
+  let token: string | undefined;
+  let truncated = false;
+
+  for (;;) {
+    const res = await r2().send(
+      new ListObjectsV2Command({ Bucket: bucket(), Prefix: MANAGED_PREFIX, ContinuationToken: token, MaxKeys: 1000 }),
+    );
+    for (const o of res.Contents ?? []) {
+      if (!o.Key) continue;
+      objects.push({
+        key: o.Key,
+        size: Number(o.Size ?? 0),
+        last_modified: o.LastModified ? new Date(o.LastModified).toISOString() : null,
+      });
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    if (!token) break;
+    if (objects.length >= maxKeys) {
+      truncated = true;
+      break;
+    }
+  }
+  return { objects, truncated };
 }
 
 export async function headObject(key: string): Promise<{ size: number; contentType: string | undefined } | null> {

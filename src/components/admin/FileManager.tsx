@@ -7,6 +7,7 @@ import {
   Eye,
   FileText,
   FolderPlus,
+  FolderTree,
   Globe,
   Link2,
   Pencil,
@@ -36,13 +37,14 @@ import {
   Input,
   Loading,
   Modal,
+  Select,
   Textarea,
   cx,
   errorMessage,
   useToast,
 } from "@/components/ui";
 import { api, copyText, postFormWithProgress, putWithProgress, ClientError } from "@/lib/client";
-import type { Domain, FileRow, LinkRow } from "@/lib/types";
+import type { Domain, FileRow, LinkRow, MoveResult } from "@/lib/types";
 import { buildLinkUrl, buildPublicUrl, cleanFilename, displayPath, formatBytes, formatDateTime, timeAgo } from "@/lib/utils";
 
 const SERVER_FALLBACK_LIMIT = 4 * 1024 * 1024;
@@ -76,6 +78,8 @@ export function FileManager() {
   const [newLinkDomain, setNewLinkDomain] = useState<Domain | null>(null);
   const [editLink, setEditLink] = useState<LinkRow | null>(null);
   const [deleteLink, setDeleteLink] = useState<LinkRow | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [bulkReplace, setBulkReplace] = useState<FileRow[] | null>(null);
   const [busy, setBusy] = useState(false);
 
   const loadTree = useCallback(async () => {
@@ -253,6 +257,40 @@ export function FileManager() {
     }
   }
 
+  /** Read from the full list, not the filtered one, so typing in the filter never drops a selected file. */
+  const selectedFiles = useMemo(() => (files ?? []).filter((f) => selected.has(f.id)), [files, selected]);
+
+  /** Every link across every domain, so files can be moved anywhere without leaving this page. */
+  const allLinks = useMemo(
+    () => (tree ?? []).flatMap((d) => (d.links ?? []).map((l) => ({ link: l, domain: d }))),
+    [tree],
+  );
+
+  async function doMove(linkId: string) {
+    if (!selectedFiles.length) return;
+    setBusy(true);
+    try {
+      const r = await api<MoveResult>("/api/admin/files/move", {
+        json: { file_ids: selectedFiles.map((f) => f.id), link_id: linkId },
+      });
+      setMoveOpen(false);
+      setSelected(new Set());
+      if (r.skipped.length) {
+        toast(
+          `Moved ${r.moved}, skipped ${r.skipped.length}: ${r.skipped.map((s) => `${s.filename} — ${s.reason}`).join("; ")}`,
+          r.moved ? "ok" : "danger",
+        );
+      } else {
+        toast(`Moved ${r.moved} file${r.moved === 1 ? "" : "s"}`);
+      }
+      await refreshAll();
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const filteredTree = useMemo(() => {
     if (!tree) return [];
     const q = treeFilter.trim().toLowerCase();
@@ -400,12 +438,22 @@ export function FileManager() {
                   Upload files
                 </Button>
               ) : null}
+              {selected.size > 0 && can("move") ? (
+                <Button size="sm" icon={<FolderTree className="size-3.5" />} onClick={() => setMoveOpen(true)}>
+                  Move selected ({selected.size})
+                </Button>
+              ) : null}
+              {selected.size > 0 && can("replace") ? (
+                <Button size="sm" icon={<Repeat className="size-3.5" />} onClick={() => setBulkReplace(selectedFiles)}>
+                  Replace selected ({selected.size})
+                </Button>
+              ) : null}
               {selected.size > 0 && can("delete") ? (
                 <Button
                   size="sm"
                   variant="danger"
                   icon={<Trash2 className="size-3.5" />}
-                  onClick={() => setDeleteTargets(visibleFiles.filter((f) => selected.has(f.id)))}
+                  onClick={() => setDeleteTargets(selectedFiles)}
                 >
                   Delete selected ({selected.size})
                 </Button>
@@ -552,14 +600,16 @@ export function FileManager() {
       {/* ---------- Dialogs ---------- */}
       {current ? (
         <UploadDialog
-          open={uploadOpen || Boolean(replaceTarget)}
+          open={uploadOpen || Boolean(replaceTarget) || Boolean(bulkReplace)}
           onClose={() => {
             setUploadOpen(false);
             setReplaceTarget(null);
+            setBulkReplace(null);
           }}
           linkId={current.link.id}
           baseUrl={baseUrl}
           replaceTarget={replaceTarget}
+          replaceMany={bulkReplace}
           existing={files ?? []}
           canReplace={can("replace")}
           onChanged={refreshAll}
@@ -612,6 +662,16 @@ export function FileManager() {
             link stops working. This cannot be undone.
           </p>
         }
+      />
+
+      <MoveDialog
+        open={moveOpen}
+        files={selectedFiles}
+        links={allLinks}
+        currentLinkId={current?.link.id ?? null}
+        busy={busy}
+        onClose={() => setMoveOpen(false)}
+        onSubmit={doMove}
       />
 
       <FilePreview file={preview} onClose={() => setPreview(null)} />
@@ -763,6 +823,100 @@ function LinkDialog({
   );
 }
 
+/* ---------------- Move ---------------- */
+
+function MoveDialog({
+  open,
+  files,
+  links,
+  currentLinkId,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  files: FileRow[];
+  links: Array<{ link: LinkRow; domain: Domain }>;
+  currentLinkId: string | null;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (linkId: string) => void;
+}) {
+  const [target, setTarget] = useState("");
+  useEffect(() => {
+    if (open) setTarget("");
+  }, [open]);
+
+  const choices = links.filter((l) => l.link.id !== currentLinkId);
+  const chosen = choices.find((l) => l.link.id === target);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={files.length === 1 ? "Move 1 file" : `Move ${files.length} files`}
+      width="max-w-md"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={busy} disabled={!target} onClick={() => onSubmit(target)}>
+            Move {files.length === 1 ? "file" : `${files.length} files`}
+          </Button>
+        </>
+      }
+    >
+      {choices.length === 0 ? (
+        <Alert tone="info">There is no other link to move these files into. Create one first.</Alert>
+      ) : (
+        <div className="space-y-3">
+          <Field label="Move to" hint="The file keeps its name. Its public address changes to the new link.">
+            <Select value={target} onChange={(e) => setTarget(e.target.value)}>
+              <option value="">Choose a link…</option>
+              {choices.map(({ link, domain }) => (
+                <option key={link.id} value={link.id}>
+                  {domain.hostname}
+                  {displayPath(link.path)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          {chosen ? (
+            <p className="address">
+              <span className="host">https://{chosen.domain.hostname}</span>
+              <span className="dim">/</span>
+              {chosen.link.path ? (
+                <>
+                  {chosen.link.path}
+                  <span className="dim">/</span>
+                </>
+              ) : null}
+              <span className="dim">‹file-name›</span>
+            </p>
+          ) : null}
+
+          <Alert tone="warn">
+            The current address of {files.length === 1 ? "this file" : "these files"} stops working straight away. A file
+            whose name is already taken in the chosen link is skipped and stays where it is.
+          </Alert>
+
+          <ul className="divide-y border rounded-md max-h-40 overflow-auto text-[13px]">
+            {files.map((f) => (
+              <li key={f.id} className="px-3 py-1.5 flex items-center gap-2">
+                <FileText className="size-4 text-text-faint shrink-0" />
+                <span className="truncate flex-1">{f.filename}</span>
+                <span className="text-text-faint whitespace-nowrap tabular-nums">{formatBytes(f.size)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 /* ---------------- Upload / replace ---------------- */
 
 interface UploadItem {
@@ -784,6 +938,7 @@ function UploadDialog({
   linkId,
   baseUrl,
   replaceTarget,
+  replaceMany,
   existing,
   canReplace,
   onChanged,
@@ -793,6 +948,8 @@ function UploadDialog({
   linkId: string;
   baseUrl: string;
   replaceTarget: FileRow | null;
+  /** Bulk replace: the selected files, each waiting for a dropped file with the same name. */
+  replaceMany: FileRow[] | null;
   /** Files already in this link, used to ask about same-name uploads before anything is sent. */
   existing: FileRow[];
   canReplace: boolean;
@@ -812,22 +969,54 @@ function UploadDialog({
       setAskConflicts(false);
       changedRef.current = false;
     }
-  }, [open, replaceTarget]);
+  }, [open, replaceTarget, replaceMany]);
 
-  /** Same comparison the server makes (cleaned name, case-insensitive), so the question is asked up front instead of failing later. */
-  function findExisting(name: string): FileRow | undefined {
+  /** Same comparison the server makes: cleaned name, case-insensitive. */
+  function matchByName(list: FileRow[], name: string): FileRow | undefined {
     let cleaned: string;
     try {
       cleaned = cleanFilename(name).toLowerCase();
     } catch {
       return undefined;
     }
-    return existing.find((f) => f.filename.toLowerCase() === cleaned);
+    return list.find((f) => f.filename.toLowerCase() === cleaned);
+  }
+
+  /** Used up front so a same-name upload is asked about instead of failing later. */
+  function findExisting(name: string): FileRow | undefined {
+    return matchByName(existing, name);
   }
 
   function addFiles(list: FileList | File[]) {
     const arr = Array.from(list);
     if (!arr.length) return;
+
+    if (replaceMany) {
+      // Each dropped file replaces the selected file carrying the same name; the rest are left out,
+      // so a mis-dropped file can never quietly overwrite something the user did not pick.
+      const taken = new Set(items.map((it) => it.replaceId).filter(Boolean) as string[]);
+      const paired: UploadItem[] = arr.map((file) => {
+        const match = matchByName(replaceMany, file.name);
+        const free = match && !taken.has(match.id);
+        if (free) taken.add(match.id);
+        return {
+          id: `${file.name}-${file.size}-${Math.random()}`,
+          file,
+          status: free ? "queued" : "skipped",
+          progress: 0,
+          conflict: match,
+          replaceId: free ? match.id : undefined,
+          error: match
+            ? free
+              ? undefined
+              : "Another dropped file is already replacing this one"
+            : "No selected file has this name",
+        };
+      });
+      setItems((prev) => [...prev, ...paired]);
+      return;
+    }
+
     const next: UploadItem[] = arr.map((file) => ({
       id: `${file.name}-${file.size}-${Math.random()}`,
       file,
@@ -942,7 +1131,13 @@ function UploadDialog({
     <Modal
       open={open}
       onClose={close}
-      title={replaceTarget ? `Replace ${replaceTarget.filename}` : "Upload files"}
+      title={
+        replaceTarget
+          ? `Replace ${replaceTarget.filename}`
+          : replaceMany
+            ? `Replace ${replaceMany.length} selected file${replaceMany.length === 1 ? "" : "s"}`
+            : "Upload files"
+      }
       width="max-w-xl"
       footer={
         <>
@@ -955,7 +1150,7 @@ function UploadDialog({
             {doneCount > 0 && pending === 0 ? "Close" : "Cancel"}
           </Button>
           <Button variant="primary" onClick={start} loading={running} disabled={pending === 0}>
-            {replaceTarget ? "Replace file" : `Upload ${pending || ""}`.trim()}
+            {replaceTarget ? "Replace file" : replaceMany ? `Replace ${pending || ""}`.trim() : `Upload ${pending || ""}`.trim()}
           </Button>
         </>
       }
@@ -964,11 +1159,28 @@ function UploadDialog({
         <Alert tone="info" className="mb-3">
           The file keeps its name and public address <span className="font-mono">{baseUrl}{encodeURIComponent(replaceTarget.filename)}</span>. Only the content changes.
         </Alert>
+      ) : replaceMany ? (
+        <Alert tone="info" className="mb-3">
+          Drop the new versions here. Each one replaces the selected file with the <strong>same name</strong>, so names and
+          public addresses stay exactly as they are. A dropped file that matches none of the names below is left out.
+        </Alert>
       ) : (
         <p className="text-[13px] text-text-muted mb-3">
           Each file becomes available at <span className="font-mono">{baseUrl}‹file-name›</span> as soon as it finishes.
         </p>
       )}
+
+      {replaceMany && items.length === 0 ? (
+        <ul className="mb-3 divide-y border rounded-md max-h-40 overflow-auto text-[13px]">
+          {replaceMany.map((f) => (
+            <li key={f.id} className="px-3 py-1.5 flex items-center gap-2">
+              <FileText className="size-4 text-text-faint shrink-0" />
+              <span className="truncate flex-1 font-mono">{f.filename}</span>
+              <span className="text-text-faint whitespace-nowrap tabular-nums">{formatBytes(f.size)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <div
         className={cx(
@@ -988,7 +1200,7 @@ function UploadDialog({
       >
         <Upload className="size-6 mx-auto text-text-faint" />
         <p className="mt-2 text-sm">
-          Drop {replaceTarget ? "the new file" : "PDF files"} here, or{" "}
+          Drop {replaceTarget ? "the new file" : replaceMany ? "the new versions" : "PDF files"} here, or{" "}
           <button className="text-teal-700 font-medium hover:underline" onClick={() => inputRef.current?.click()}>
             browse
           </button>
@@ -1016,7 +1228,7 @@ function UploadDialog({
                 {it.status === "done" ? <Badge tone="ok">done{it.via === "server" ? " (via server)" : ""}</Badge> : null}
                 {it.status === "error" ? <Badge tone="danger">failed</Badge> : null}
                 {it.status === "saving" ? <Badge tone="info">saving…</Badge> : null}
-                {it.status === "skipped" ? <Badge>skipped — existing kept</Badge> : null}
+                {it.status === "skipped" ? <Badge>{replaceMany ? "skipped — no match" : "skipped — existing kept"}</Badge> : null}
                 {it.status === "queued" && it.replaceId ? <Badge tone="warn">will replace</Badge> : null}
                 {it.status === "queued" && it.conflict && !it.replaceId ? (
                   <button type="button" onClick={() => setAskConflicts(true)} title="Decide whether to replace it">
@@ -1040,7 +1252,7 @@ function UploadDialog({
         </ul>
       ) : null}
 
-      {!replaceTarget && items.length === 0 ? (
+      {!replaceTarget && !replaceMany && items.length === 0 ? (
         <p className="mt-3 text-[12px] text-text-faint flex items-center gap-1.5">
           <FolderPlus className="size-3.5" /> If a file with the same name already exists in this link, you will be asked whether to replace it or keep the existing one.
         </p>

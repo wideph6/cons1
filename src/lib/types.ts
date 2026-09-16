@@ -169,6 +169,55 @@ export interface DashboardStats {
   uploads_7d: number;
 }
 
+/** One stored object with no file row pointing at it. */
+export interface StorageOrphan {
+  key: string;
+  size: number;
+  last_modified: string | null;
+  age_hours: number | null;
+  /** False while the object is younger than the grace window, i.e. an upload may still be finishing. */
+  deletable: boolean;
+}
+
+/** A file row whose object is not in the bucket — the public link is broken. */
+export interface StorageMissing {
+  id: string;
+  filename: string;
+  r2_key: string;
+  size: number;
+  uploaded_at: string;
+  hostname: string | null;
+  path: string | null;
+}
+
+/** A file row whose recorded size does not match the stored object. */
+export interface StorageMismatch extends StorageMissing {
+  real_size: number;
+}
+
+export interface StorageReport {
+  bucket_objects: number;
+  bucket_bytes: number;
+  db_files: number;
+  db_bytes: number;
+  orphans: StorageOrphan[];
+  orphan_bytes: number;
+  deletable_orphans: number;
+  deletable_bytes: number;
+  missing: StorageMissing[];
+  mismatched: StorageMismatch[];
+  /** Hours an orphan must survive before cleanup will touch it. */
+  grace_hours: number;
+  /** True when the bucket holds more objects than one report can list; comparisons are then incomplete. */
+  truncated: boolean;
+  checked_at: string;
+}
+
+export interface MoveResult {
+  moved: number;
+  skipped: Array<{ filename: string; reason: string }>;
+}
+
 export interface Paged<T> {
   items: T[];
   total: number;

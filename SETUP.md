@@ -559,6 +559,37 @@ MAX_UPLOAD_MB=200
 
 ---
 
+# Hissa 10 — Storage page (sirf super admin)
+
+Sidebar mein **Storage** panel ko R2 bucket aur database ka moqabla dikhata hai. Ise kabhi kabhi khol kar dekh lena kafi hai.
+
+| Number | Matlab |
+| --- | --- |
+| Objects in storage | Bucket mein kitni cheezein hain aur kitni jagah gheri hui hai |
+| Files in the panel | Panel ke hisab se kitni files honi chahiyen |
+| Leftovers | Wo objects jo kisi file se jure hue nahi — inhen delete karna mehfooz hai |
+| Broken files | Panel mein file mojood hai magar bucket mein uska object nahi — link kaam nahi karega |
+
+**Leftovers kyun bante hain:** file R2 tak pohanch jati hai lekin usay database mein save karne wali call nakaam ho jati hai (net tut gaya, tab band ho gaya). Object bucket mein para reh jata hai aur khamakha jagah khata hai.
+
+**Safai:** upar **Clean up N leftovers** dabayen. 6 ghante se nayi cheez ko haath nahi lagaya jata, kyunki mumkin hai koi upload abhi chal raha ho. Delete se pehle list dobara banti hai, is liye jo cheez is dauran asli file ban chuki ho wo mehfooz rehti hai. Kisi public link par koi asar nahi parta.
+
+**Broken files** nazar aayen to file manager mein ja kar us file par **Replace** karein (nayi copy chari ho jayegi) ya usay delete kar dein.
+
+---
+
+# Hissa 11 — Aik sath bohat si files par kaam
+
+File manager mein files ke aage wale checkbox lagayen, upar teen button aa jayenge:
+
+- **Move selected** — chuni hui files kisi doosre link (ya doosre domain ke link) mein bhej dein. Naam wahi rehta hai, sirf address badalta hai — purana address foran band ho jata hai. Jis file ka naam wahan pehle se mojood ho wo chhori ja kar apni jagah reh jati hai, aur aap ko bata diya jata hai.
+- **Replace selected** — nayi copies drag karein. Har nayi file usi purani file ki jagah legi jis ka **naam bilkul wahi** hai; naam aur link kuch nahi badalta. Jo dropped file kisi chuni hui file se match na kare usay chhor diya jata hai (galti se kuch overwrite na ho).
+- **Delete selected** — pehle se mojood tha.
+
+**Move** ki ijazat nayi hai: purane admin users ko ye khud ba khud nahi milti. Super admin **Users** mein ja kar us user ke liye "Move files to another link" par tick lagaye.
+
+---
+
 # Masail aur un ka hal
 
 | Kya ho raha hai | Wajah aur hal |
@@ -572,6 +603,8 @@ MAX_UPLOAD_MB=200
 | Domain par "Invalid Configuration" (Vercel) | DNS record abhi nahi phaila. 10–60 minute intezar karein, phir Vercel par **Refresh** dabayen |
 | Sab kuch achanak band, "project is paused" | Supabase free project 1 hafte tak koi request na aaye to pause hota hai. Dashboard par **Restore** dabayen |
 | Login page hi nahi khul raha | `AUTH_SECRET` set nahi hai ya 16 characters se chhota hai |
+| R2 ka size panel se zyada dikh raha hai | Adhoore uploads ke leftovers hain. **Storage** page kholen aur **Clean up leftovers** dabayen |
+| Kisi user ko "Move selected" button nazar nahi aata | Us ke pass `move` permission nahi. Users → user → "Move files to another link" tick karein |
 
 ---
 
