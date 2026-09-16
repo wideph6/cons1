@@ -149,6 +149,7 @@ export const ACTION_LABELS: Record<string, string> = {
   upload: "Uploaded",
   replace: "Replaced",
   rename: "Renamed",
+  move: "Moved",
   delete: "Deleted",
   create_link: "Created link",
   update_link: "Updated link",
@@ -161,6 +162,7 @@ export const ACTION_LABELS: Record<string, string> = {
   delete_user: "Deleted user",
   edit_counter: "Edited counter",
   change_password: "Changed password",
+  cleanup_storage: "Cleaned up storage",
 };
 
 export function displayPath(path: string): string {

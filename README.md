@@ -19,7 +19,9 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | --- | --- |
 | Domains | Add domains/subdomains, enable/disable, notes, attach to the Vercel project through the Vercel API (optional), DNS guidance |
 | Links | Create paths under a domain (`/`, `/brochures`, `/reports/2025`), rename, delete |
-| Files | Upload (direct browser → R2, multi-file, progress), replace, rename, delete, preview inside the panel, copy public link, download counts |
+| Files | Upload (direct browser → R2, multi-file, progress), replace, rename, move to another link, delete, preview inside the panel, copy public link, download counts |
+| Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
+| Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
 | Users | Super admin creates admin users, ticks exactly which actions they may perform |
 | Counters | Per-user counts of uploads / replaces / renames / deletes, totalled across all domains, with per-domain/link breakdown; super admin can set any value or reset to 0 |
@@ -110,13 +112,17 @@ Add as many domains as you like (4, 10, 50). Each gets its own links and files.
 3. `redirect` mode: 302 to a 2-minute signed R2 URL with `Content-Disposition: attachment` → browser saves the file.
    `proxy` mode: the file is streamed through Vercel with the same header.
 
-Renaming a file only changes its public name (the storage object stays). Replacing a file uploads the new content under the same name and address. Deleting removes the storage object and the database row.
+Renaming a file only changes its public name (the storage object stays). Moving a file to another link is the same idea: the object never moves, only the address changes. Replacing a file uploads the new content under the same name and address. Deleting removes the storage object and the database row.
+
+If a browser dies between the upload to R2 and the save into the database, the object is left in the bucket with nothing pointing at it. **Storage** in the admin panel lists those leftovers and deletes them; anything younger than 6 hours is left alone in case an upload is still running.
 
 ## Permissions
 
 Super admins can do everything. Admin users get only the boxes ticked for them:
 
-`upload` · `replace` · `rename` · `delete` · `preview` · `create_link` · `edit_link` · `delete_link` · `create_domain` · `edit_domain` · `delete_domain` · `search` · `view_activity`
+`upload` · `replace` · `rename` · `move` · `delete` · `preview` · `create_link` · `edit_link` · `delete_link` · `create_domain` · `edit_domain` · `delete_domain` · `search` · `view_activity`
+
+`move` is newer than the others, so existing admin users do not have it until the super admin ticks it.
 
 Permission changes take effect on the user's next request (no re-login needed).
 
@@ -140,9 +146,9 @@ To test downloads locally, add `localhost` as a domain in the panel and open `ht
 ```
 src/app/[...slug]/route.ts      public download endpoint (all domains)
 src/app/admin/*                 admin pages
-src/app/api/admin/*             admin API (domains, links, files, users, counters, activity)
+src/app/api/admin/*             admin API (domains, links, files, move, storage, users, counters, activity)
 src/app/api/auth/*              login / logout / password
-src/components/admin/*          File manager, Domains, Search, Activity, Users
+src/components/admin/*          File manager, Domains, Storage, Search, Activity, Users
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions
 ```
