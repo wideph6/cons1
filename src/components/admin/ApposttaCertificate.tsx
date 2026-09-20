@@ -56,7 +56,6 @@ export function ApposttaCertificate({
     return buildCertificateSvg({
       orgName: settings?.org_name ?? "",
       orgTagline: settings?.org_tagline ?? "",
-      label: "Appostta",
       number: record.number,
       issuedOn: record.issued_on,
       fields: record.fields,
@@ -64,6 +63,10 @@ export function ApposttaCertificate({
       signatureDataUri: signature,
       verifyUrl: record.verify_url,
       footerNote: settings?.footer_note ?? "",
+      watermarkText: settings?.watermark_text ?? "",
+      stampText: settings?.stamp_text ?? "",
+      stampAfterRow: settings?.stamp_after_row ?? 0,
+      verifyNote: settings?.verify_note ?? "",
     });
   }, [record, settings, signature, signatoryName]);
 

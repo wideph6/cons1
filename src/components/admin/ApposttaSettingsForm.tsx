@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ApposttaFieldDefs } from "@/components/admin/ApposttaFieldDefs";
 import { ApposttaSignatures, type PendingSignature } from "@/components/admin/ApposttaSignatures";
-import { Alert, Button, Field, Input, Modal, Textarea, errorMessage, useToast } from "@/components/ui";
+import { Alert, Button, Field, Input, Modal, Select, Textarea, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
 import { uploadApposttaFile } from "@/lib/appostta-client";
+import { TOKEN_HELP } from "@/lib/certificate";
 import type { ApposttaFieldDef, ApposttaSettings, ApposttaSignature } from "@/lib/types";
 
 interface SettingsResponse {
@@ -124,6 +125,10 @@ export function ApposttaSettingsForm({
           signatures,
           default_signature_id: draft.default_signature_id,
           footer_note: draft.footer_note,
+          watermark_text: draft.watermark_text,
+          stamp_text: draft.stamp_text,
+          stamp_after_row: draft.stamp_after_row,
+          verify_note: draft.verify_note,
         },
       });
       toast("Appostta settings saved");
@@ -221,6 +226,46 @@ export function ApposttaSettingsForm({
               />
             </Field>
 
+            <Field
+              label="Background watermark"
+              hint="Repeated faintly across the whole certificate. Leave empty for a plain background."
+            >
+              <Input
+                value={draft.watermark_text}
+                disabled={!canEdit || busy}
+                placeholder="Your organisation's name"
+                onChange={(e) => set("watermark_text", e.target.value)}
+              />
+            </Field>
+
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
+              <Field
+                label="Certification mark"
+                hint="Printed in italic across the certificate, for example “Certified”. Leave empty for none."
+              >
+                <Input
+                  value={draft.stamp_text}
+                  disabled={!canEdit || busy}
+                  onChange={(e) => set("stamp_text", e.target.value)}
+                />
+              </Field>
+
+              <Field label="Printed after row" hint="Where it sits among the rows.">
+                <Select
+                  value={String(draft.stamp_after_row)}
+                  disabled={!canEdit || busy || !draft.stamp_text.trim()}
+                  onChange={(e) => set("stamp_after_row", Number(e.target.value))}
+                >
+                  <option value="0">After the last row</option>
+                  {draft.field_defs.map((def, i) => (
+                    <option key={def.id} value={String(i + 1)}>
+                      After row {i + 1} — {def.label || "untitled"}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+
             <Field label="Footer note" hint="Small print at the bottom of every certificate.">
               <Textarea
                 value={draft.footer_note}
@@ -228,6 +273,33 @@ export function ApposttaSettingsForm({
                 onChange={(e) => set("footer_note", e.target.value)}
               />
             </Field>
+
+            <Field
+              label="Verification line"
+              hint="Always the last line on a certificate. Use {{url}} for the record's own verification link. Empty uses “To verify, visit {{url}}”."
+            >
+              <Textarea
+                value={draft.verify_note}
+                disabled={!canEdit || busy}
+                placeholder="To verify, visit {{url}}"
+                onChange={(e) => set("verify_note", e.target.value)}
+              />
+            </Field>
+
+            <div className="rounded-md border bg-surface-2/40 px-3 py-2">
+              <div className="text-[12.5px] font-medium mb-1">Values that fill themselves in</div>
+              <p className="text-[12px] text-text-muted mb-1.5">
+                Type one of these into any row value, the certification mark or the notes above. It is replaced when
+                the certificate is drawn, so it follows the record if the number or date is edited later.
+              </p>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {TOKEN_HELP.map((t) => (
+                  <span key={t.token} className="text-[12px] text-text-muted">
+                    <code className="font-mono text-text">{t.token}</code> {t.means}
+                  </span>
+                ))}
+              </div>
+            </div>
           </>
         ) : null}
       </div>

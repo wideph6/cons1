@@ -284,6 +284,14 @@ export interface ApposttaSettings {
   /** Preselected in the record form. Blank means the first signature. */
   default_signature_id: string;
   footer_note: string;
+  /** Repeated faintly across every certificate's background. Blank leaves the page plain. */
+  watermark_text: string;
+  /** Printed in italic under the rows, as a certification mark. Blank prints nothing. */
+  stamp_text: string;
+  /** Which row the mark follows. 0 puts it after the last row. */
+  stamp_after_row: number;
+  /** The line every certificate ends on. Blank falls back to the default wording. */
+  verify_note: string;
   updated_by: string | null;
   updated_at: string;
 }

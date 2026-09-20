@@ -29,6 +29,15 @@ create table if not exists public.appostta_settings (
 
   footer_note text not null default '',
 
+  -- Repeated faintly across every certificate background. Blank leaves the page plain.
+  watermark_text text not null default '',
+  -- Printed in italic under the rows, as a certification mark. Blank prints nothing.
+  stamp_text text not null default '',
+  -- Which row the mark follows. 0 puts it after the last row.
+  stamp_after_row integer not null default 0,
+  -- The line every certificate ends on. Blank falls back to the built-in wording.
+  verify_note text not null default '',
+
   -- Superseded by field_defs and signatures. Kept so the carry-forward below runs as plain SQL on a
   -- database of either age, and so a panel set up before this change is never read as empty.
   default_fields jsonb not null default '[]'::jsonb,
@@ -50,6 +59,10 @@ alter table public.appostta_settings add column if not exists default_fields jso
 alter table public.appostta_settings add column if not exists signatory_name text not null default '';
 alter table public.appostta_settings add column if not exists signature_r2_key text;
 alter table public.appostta_settings add column if not exists signature_content_type text;
+alter table public.appostta_settings add column if not exists watermark_text text not null default '';
+alter table public.appostta_settings add column if not exists stamp_text text not null default '';
+alter table public.appostta_settings add column if not exists stamp_after_row integer not null default 0;
+alter table public.appostta_settings add column if not exists verify_note text not null default '';
 
 -- ---------- Records ----------
 create table if not exists public.appostta_records (

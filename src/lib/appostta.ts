@@ -409,7 +409,8 @@ export function applyFieldValues(existing: ApposttaField[], input: unknown): App
 /* ---------------- Settings ---------------- */
 
 const SETTINGS_COLUMNS =
-  "org_name,org_tagline,number_prefix,field_defs,signatures,default_signature_id,footer_note,updated_by,updated_at";
+  "org_name,org_tagline,number_prefix,field_defs,signatures,default_signature_id,footer_note," +
+  "watermark_text,stamp_text,stamp_after_row,verify_note,updated_by,updated_at";
 
 export async function getSettings(): Promise<ApposttaSettings> {
   const { data, error } = await db().from("appostta_settings").select(SETTINGS_COLUMNS).eq("id", true).maybeSingle();
@@ -424,6 +425,10 @@ export async function getSettings(): Promise<ApposttaSettings> {
     field_defs: sanitizeFieldDefs(row.field_defs),
     signatures: sanitizeSignatures(row.signatures),
     default_signature_id: String(row.default_signature_id ?? ""),
+    watermark_text: String(row.watermark_text ?? ""),
+    stamp_text: String(row.stamp_text ?? ""),
+    stamp_after_row: Number(row.stamp_after_row ?? 0),
+    verify_note: String(row.verify_note ?? ""),
   };
 }
 

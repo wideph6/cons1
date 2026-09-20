@@ -12,8 +12,6 @@ import { formatIssued } from "./utils";
 export interface CertificateInput {
   orgName: string;
   orgTagline: string;
-  /** Wordmark shown on the band under the header. */
-  label: string;
   number: string;
   issuedOn: string;
   fields: ApposttaField[];
@@ -22,6 +20,51 @@ export interface CertificateInput {
   signatureDataUri: string | null;
   verifyUrl: string;
   footerNote: string;
+  /** Repeated faintly across the background. Blank leaves the page plain. */
+  watermarkText?: string;
+  /** Printed between the rows, in italic, as a certification mark. Blank prints nothing. */
+  stampText?: string;
+  /** Which row the mark follows. 0, or past the last row, puts it after them all. */
+  stampAfterRow?: number;
+  /** The always-present bottom line. Blank falls back to the default wording. */
+  verifyNote?: string;
+}
+
+/** What `{{name}}` in a value, the stamp or the footer stands for. */
+export type TokenContext = Record<string, string>;
+
+/**
+ * Replaces `{{number}}`, `{{date}}` and the rest at render time rather than when the value is saved,
+ * so a row that carries the number or the issue date follows the record when either is edited.
+ * An unknown name is left as typed, which shows the mistake instead of silently blanking the row.
+ */
+export function fillTokens(value: string, ctx: TokenContext): string {
+  return String(value ?? "").replace(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g, (whole, name: string) => {
+    const hit = ctx[name.toLowerCase()];
+    return hit === undefined ? whole : hit;
+  });
+}
+
+/** The names a row value may use, with a short description for the settings screen. */
+export const TOKEN_HELP: Array<{ token: string; means: string }> = [
+  { token: "{{number}}", means: "this record's reference number" },
+  { token: "{{date}}", means: "the issue date, written out" },
+  { token: "{{day}}", means: "the issue day, 01-31" },
+  { token: "{{month}}", means: "the issue month, 01-12" },
+  { token: "{{year}}", means: "the issue year" },
+  { token: "{{url}}", means: "the verification link" },
+];
+
+function tokenContext(input: CertificateInput): TokenContext {
+  const d = /^(\d{4})-(\d{2})-(\d{2})/.exec(input.issuedOn ?? "");
+  return {
+    number: input.number ?? "",
+    date: formatIssued(input.issuedOn),
+    day: d?.[3] ?? "",
+    month: d?.[2] ?? "",
+    year: d?.[1] ?? "",
+    url: input.verifyUrl ?? "",
+  };
 }
 
 const W = 560;
@@ -35,7 +78,9 @@ const MONO = "'Courier New', Courier, monospace";
 const INK = "#111111";
 const MUTED = "#555555";
 const RULE = "#111111";
-const BAND = "#eef1f5";
+/** Pale enough to read the certificate straight through it, dark enough to survive printing. */
+const WATERMARK_FILL = "#1a1a1a";
+const WATERMARK_OPACITY = 0.07;
 
 export function escapeXml(s: string): string {
   return String(s ?? "")
@@ -119,8 +164,39 @@ function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * The repeating background phrase, drawn as plain text elements rather than an SVG pattern.
+ * A pattern would be the shorter way to say it, but patterns holding text rasterise unevenly once
+ * the SVG is drawn onto a canvas, and the PNG export is the whole point of this file.
+ *
+ * Every other line is offset by half a step so the phrase does not stack into visible columns.
+ */
+function watermarkLayer(phrase: string, height: number): string {
+  const clean = String(phrase ?? "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+
+  const size = 15;
+  const stepX = clean.length * charWidth(size, SANS, true) + 26;
+  const stepY = 34;
+
+  const out: string[] = [];
+  let row = 0;
+  for (let ty = 22; ty < height; ty += stepY, row++) {
+    const offset = (row % 2) * (stepX / 2);
+    for (let tx = -offset; tx < W; tx += stepX) {
+      out.push(`<text x="${round(tx)}" y="${round(ty)}">${escapeXml(clean)}</text>`);
+    }
+  }
+
+  return (
+    `<g fill="${WATERMARK_FILL}" fill-opacity="${WATERMARK_OPACITY}" font-family="${SANS}" ` +
+    `font-size="${size}" font-weight="700" letter-spacing="1">${out.join("")}</g>`
+  );
+}
+
 export function buildCertificateSvg(input: CertificateInput): { svg: string; width: number; height: number } {
   const parts: string[] = [];
+  const tokens = tokenContext(input);
   let y = MARGIN + 12;
 
   /* ---- Header ---- */
@@ -138,23 +214,6 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
   y += 12;
   parts.push(hline(y, MARGIN, W - MARGIN, 1.4));
 
-  /* ---- Wordmark band ---- */
-  const bandH = 30;
-  parts.push(
-    `<rect x="${MARGIN}" y="${round(y)}" width="${CONTENT_W}" height="${bandH}" fill="${BAND}"/>`,
-  );
-  parts.push(
-    text(W / 2, y + 20.5, (input.label || "APPOSTTA").toUpperCase(), {
-      size: 14,
-      family: SERIF,
-      bold: true,
-      anchor: "middle",
-      letterSpacing: 4,
-    }),
-  );
-  y += bandH;
-  parts.push(hline(y, MARGIN, W - MARGIN, 1.4));
-
   /* ---- Numbered field rows ---- */
   const numX = MARGIN + 8;
   const textX = MARGIN + 30;
@@ -165,6 +224,24 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
 
   const hasText = (s: string | undefined) => Boolean((s ?? "").trim());
   const rows = input.fields.filter((f) => hasText(f.label) || hasText(f.value) || hasText(f.second?.label) || hasText(f.second?.value));
+
+  /**
+   * The certification mark. It gets its own band with no number, because it marks the rows rather
+   * than being one of them, and it can sit between two rows instead of only after the last.
+   */
+  const stampLines = wrap(fillTokens(input.stampText ?? "", tokens), CONTENT_W - 40, 16, SERIF);
+  const stampAfter = Math.trunc(input.stampAfterRow ?? 0);
+  // Anything outside the row range, including the default 0, means "after them all".
+  const stampRow = stampLines.length ? (stampAfter >= 1 && stampAfter <= rows.length ? stampAfter : rows.length) : -1;
+
+  function drawStamp() {
+    for (const line of stampLines) {
+      y += 22;
+      parts.push(text(W / 2, y, line, { size: 16, family: SERIF, italic: true, anchor: "middle" }));
+    }
+    y += 8;
+    parts.push(hline(y));
+  }
 
   rows.forEach((f, i) => {
     // A split row is two headings on one numbered row, so both halves are laid out from the same top
@@ -181,7 +258,8 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
     halves.forEach((half, h) => {
       const colX = textX + h * (colW + SPLIT_GAP);
       const labelLines = wrap(half.label, colW, 11, SANS);
-      const valueLines = wrap(half.value, colW, 13, SANS, true);
+      // Only the value takes tokens. A heading is set in settings and is meant to read literally.
+      const valueLines = wrap(fillTokens(half.value, tokens), colW, 13, SANS, true);
 
       let cy = top + 5;
       for (const line of labelLines) {
@@ -206,7 +284,12 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
     if (top === y) y += 20;
     if (split) parts.push(vline(textX + colW + SPLIT_GAP / 2, top + 3, y - 3));
     parts.push(hline(y));
+
+    if (stampRow === i + 1) drawStamp();
   });
+
+  // A mark on a certificate that has no rows at all still belongs on it.
+  if (stampRow === 0) drawStamp();
 
   /* ---- Reference / QR / signature strip ---- */
   const stripTop = y;
@@ -262,11 +345,15 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
 
   /* ---- Footer ---- */
   y += 6;
-  for (const line of wrap(input.footerNote, CONTENT_W - 16, 9.5, SANS)) {
+  for (const line of wrap(fillTokens(input.footerNote, tokens), CONTENT_W - 16, 9.5, SANS)) {
     y += 12;
     parts.push(text(W / 2, y, line, { size: 9.5, fill: MUTED, anchor: "middle" }));
   }
-  for (const line of wrap(`To verify, visit ${input.verifyUrl}`, CONTENT_W - 8, 9, SANS, true)) {
+
+  // Always printed, so a certificate never leaves without saying how to check it. The wording is
+  // the panel's own; blank falls back to the plain sentence rather than to nothing.
+  const verifyLine = fillTokens(input.verifyNote?.trim() || "To verify, visit {{url}}", tokens);
+  for (const line of wrap(verifyLine, CONTENT_W - 8, 9, SANS, true)) {
     y += 12;
     parts.push(text(W / 2, y, line, { size: 9, bold: true, anchor: "middle" }));
   }
@@ -282,6 +369,8 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
     `width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Certificate">` +
     `<rect width="${W}" height="${H}" fill="#ffffff"/>` +
+    // Behind the content: the QR paints its own white backing, so it stays scannable over this.
+    watermarkLayer(input.watermarkText ?? "", H) +
     parts.join("") +
     frame +
     `</svg>`;

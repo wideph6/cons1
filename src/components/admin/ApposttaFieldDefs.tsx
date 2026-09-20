@@ -93,7 +93,7 @@ function PartEditor({
         <Input
           value={draft}
           disabled={disabled || part.options.length >= MAX_OPTIONS}
-          placeholder="Add a value, then press Enter"
+          placeholder="Add a value, or {{number}} / {{date}}"
           onChange={(e) => onDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;

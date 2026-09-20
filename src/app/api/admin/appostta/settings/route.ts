@@ -1,7 +1,14 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
-import { getSettings, normalizePrefix, sanitizeFieldDefs, sanitizeSignatures, signatureKeyInUse } from "@/lib/appostta";
+import {
+  MAX_FIELDS,
+  getSettings,
+  normalizePrefix,
+  sanitizeFieldDefs,
+  sanitizeSignatures,
+  signatureKeyInUse,
+} from "@/lib/appostta";
 import { deleteObjects, getObjectBytes, headObject, isApposttaKey } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { ApposttaSignature } from "@/lib/types";
@@ -16,6 +23,10 @@ interface PatchBody {
   signatures?: unknown;
   default_signature_id?: string;
   footer_note?: string;
+  watermark_text?: string;
+  stamp_text?: string;
+  stamp_after_row?: number;
+  verify_note?: string;
 }
 
 /**
@@ -73,6 +84,16 @@ export async function PATCH(req: NextRequest) {
     if (body.org_name !== undefined) patch.org_name = String(body.org_name).trim().slice(0, 160);
     if (body.org_tagline !== undefined) patch.org_tagline = String(body.org_tagline).trim().slice(0, 200);
     if (body.footer_note !== undefined) patch.footer_note = String(body.footer_note).trim().slice(0, 600);
+    // Repeated across the whole background, so a long phrase is capped well below the other notes.
+    if (body.watermark_text !== undefined) patch.watermark_text = String(body.watermark_text).trim().slice(0, 80);
+    if (body.stamp_text !== undefined) patch.stamp_text = String(body.stamp_text).trim().slice(0, 120);
+    // Clamped rather than rejected: a row list that changed under the form is not worth
+    // failing a whole save over, and anything out of range simply means after the last row.
+    if (body.stamp_after_row !== undefined) {
+      const n = Math.trunc(Number(body.stamp_after_row));
+      patch.stamp_after_row = Number.isFinite(n) ? Math.min(Math.max(n, 0), MAX_FIELDS) : 0;
+    }
+    if (body.verify_note !== undefined) patch.verify_note = String(body.verify_note).trim().slice(0, 300);
     if (body.number_prefix !== undefined) patch.number_prefix = normalizePrefix(body.number_prefix);
 
     // Replacing this list changes what later records start with. Records already created carry their
