@@ -368,7 +368,11 @@ update public.appostta_settings
    and jsonb_array_length(signatures) = 0
    and coalesce(signature_r2_key, '') <> '';
 
-create or replace view public.appostta_view as
+-- Dropped rather than replaced: the view is select r.*, so a column added to the table since it was
+-- last created shifts the positions, and create-or-replace can only append to a view, never reorder.
+drop view if exists public.appostta_view;
+
+create view public.appostta_view as
 select r.*, d.hostname as domain_hostname, d.is_active as domain_is_active
 from public.appostta_records r
 join public.domains d on d.id = r.domain_id;
