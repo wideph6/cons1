@@ -177,29 +177,46 @@ function round(n: number): number {
  * A pattern would be the shorter way to say it, but patterns holding text rasterise unevenly once
  * the SVG is drawn onto a canvas, and the PNG export is the whole point of this file.
  *
- * Every other line is offset by half a step so the phrase does not stack into visible columns.
+ * Every other line is offset by half a step so the phrase does not stack into visible columns. The
+ * grid is drawn a step past each edge, then clipped to `watermarkInset(style)`, so a repeat runs off
+ * the edge of its own tile the way a printed watermark does, but never crosses into the border.
  */
-function watermarkLayer(phrase: string, height: number): string {
+function watermarkLayer(phrase: string, height: number, style: BorderStyle, clipId: string): string {
   const clean = String(phrase ?? "").replace(/\s+/g, " ").trim();
   if (!clean) return "";
 
   const size = 17;
-  const stepX = clean.length * charWidth(size, SANS, true) + 30;
-  const stepY = 38;
+  const letterSpacing = 1;
+  // A conservative per-character advance for bold, all-caps sans text — wider than the mixed-case
+  // estimate `charWidth` uses for row labels. Underestimating it, and ignoring letter-spacing, is
+  // what let consecutive repeats overlap.
+  const phraseWidth = clean.length * size * 0.68 + Math.max(0, clean.length - 1) * letterSpacing;
+  const stepX = phraseWidth + 28;
+  const stepY = 26;
+  const inset = watermarkInset(style);
 
   const out: string[] = [];
   let row = 0;
-  for (let ty = 22; ty < height; ty += stepY, row++) {
+  for (let ty = inset + size; ty < height - inset; ty += stepY, row++) {
     const offset = (row % 2) * (stepX / 2);
-    for (let tx = -offset; tx < W; tx += stepX) {
+    for (let tx = inset - stepX - offset; tx < W - inset + stepX; tx += stepX) {
       out.push(`<text x="${round(tx)}" y="${round(ty)}">${escapeXml(clean)}</text>`);
     }
   }
 
   return (
-    `<g fill="${WATERMARK_FILL}" fill-opacity="${WATERMARK_OPACITY}" font-family="${SANS}" ` +
-    `font-size="${size}" font-weight="700" letter-spacing="1">${out.join("")}</g>`
+    `<clipPath id="${clipId}"><rect x="${round(inset)}" y="${round(inset)}" ` +
+    `width="${round(W - inset * 2)}" height="${round(height - inset * 2)}"/></clipPath>` +
+    `<g clip-path="url(#${clipId})" fill="${WATERMARK_FILL}" fill-opacity="${WATERMARK_OPACITY}" font-family="${SANS}" ` +
+    `font-size="${size}" font-weight="700" letter-spacing="${letterSpacing}">${out.join("")}</g>`
   );
+}
+
+/** How far the watermark's clip box sits from the page edge, clear of whichever border is drawn. */
+function watermarkInset(style: BorderStyle): number {
+  if (style === "plain") return 20;
+  if (style === "double") return 23;
+  return 26; // ornament: clear of the star/dot motifs, centred at inset 15 with radius 6.5
 }
 
 /**
@@ -472,15 +489,19 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
     `height="${round(tableBottom - tableTop)}" fill="none" stroke="${RULE}" stroke-width="1.2"/>` +
     rules.map((ry) => hline(ry)).join("");
 
+  const borderStyle = input.borderStyle ?? "ornament";
+  // Unique per record, so two certificates open in the same page never share a clip id.
+  const clipId = `wm-clip-${(input.number || "cert").replace(/[^a-zA-Z0-9]/g, "").slice(0, 32) || "x"}`;
+
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
     `width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Certificate">` +
     `<rect width="${W}" height="${H}" fill="#ffffff"/>` +
     // Behind the content: the QR paints its own white backing, so it stays scannable over this.
-    watermarkLayer(input.watermarkText ?? "", H) +
+    watermarkLayer(input.watermarkText ?? "", H, borderStyle, clipId) +
     table +
     parts.join("") +
-    borderLayer(input.borderStyle ?? "ornament", H) +
+    borderLayer(borderStyle, H) +
     `</svg>`;
 
   return { svg, width: W, height: H };
