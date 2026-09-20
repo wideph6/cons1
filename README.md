@@ -126,7 +126,9 @@ A record is a document plus the details printed on its certificate.
 3. A **reference number** is generated in the form `APT-MUBN-NGDW-EGCW` (the prefix comes from Appostta settings). The number and the issue date both stay editable; changing either changes the link.
 4. The link is `https://<domain>/verify-appostta?number=<number>&day=DD&month=MM&year=YYYY`, and the QR code on the certificate resolves to exactly that URL.
 
-**Certificate rows** are defined once, in Appostta settings: a label plus the values that row offers. Creating a record does not edit rows — it picks a value per row from a dropdown, or types one where the row has no list (or allows a value outside it).
+**Certificate rows** are defined once, in Appostta settings: a heading plus the values that row offers. Creating a record does not edit rows — it picks a value per row from a dropdown, or types one where the row has no list (or allows a value outside it).
+
+A row can be **split into two parts**. Each part has its own heading and its own values, and the two sit side by side on one row, so the row number is printed once at the start rather than once per part.
 
 Each record freezes the rows as they read at the moment it was created. Change the rows in settings and only records created afterwards carry the new set; every record already issued keeps its own. Editing an old record changes its values, never its rows.
 

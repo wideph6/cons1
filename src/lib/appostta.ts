@@ -4,6 +4,7 @@ import { db } from "./supabase";
 import type {
   ApposttaField,
   ApposttaFieldDef,
+  ApposttaFieldPart,
   ApposttaRecord,
   ApposttaSettings,
   ApposttaSignature,
@@ -184,8 +185,42 @@ function normalizeId(input: unknown, prefix: string): string {
 }
 
 /**
+ * One half of a row: its heading and the values it offers. Returns null when the heading is blank,
+ * which is how an unfilled second part is told apart from a real one.
+ */
+function sanitizePart(raw: unknown): ApposttaFieldPart | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Partial<ApposttaFieldPart>;
+  const label = String(r.label ?? "").trim().slice(0, MAX_LABEL);
+  if (!label) return null;
+
+  const options: string[] = [];
+  if (Array.isArray(r.options)) {
+    if (r.options.length > MAX_OPTIONS) {
+      throw new ApiError(400, `"${label}" has too many values (max ${MAX_OPTIONS})`);
+    }
+    for (const o of r.options) {
+      const value = String(o ?? "").trim().slice(0, MAX_VALUE);
+      if (value && !options.includes(value)) options.push(value);
+    }
+  }
+
+  const defaultValue = String(r.default_value ?? "").trim().slice(0, MAX_VALUE);
+  return {
+    label,
+    options,
+    // Without a list of values there is nothing to pick from, so free text is the only way to fill it.
+    allow_custom: options.length === 0 ? true : r.allow_custom !== false,
+    // A default that is no longer one of the offered values would be a pick nobody can make again.
+    default_value: options.length && !options.includes(defaultValue) ? "" : defaultValue,
+  };
+}
+
+/**
  * Keeps only well-formed definitions and trims them. A definition with no label is dropped, because
  * the label is the whole point of the row; options are deduplicated and blanks removed.
+ *
+ * A row may carry a second part, which is sanitized the same way and dropped if it has no heading.
  */
 export function sanitizeFieldDefs(input: unknown): ApposttaFieldDef[] {
   if (input === undefined || input === null) return [];
@@ -197,35 +232,16 @@ export function sanitizeFieldDefs(input: unknown): ApposttaFieldDef[] {
   for (const raw of input) {
     if (!raw || typeof raw !== "object") continue;
     const r = raw as Partial<ApposttaFieldDef>;
-    const label = String(r.label ?? "").trim().slice(0, MAX_LABEL);
-    if (!label) continue;
-
-    const options: string[] = [];
-    if (Array.isArray(r.options)) {
-      if (r.options.length > MAX_OPTIONS) {
-        throw new ApiError(400, `"${label}" has too many values (max ${MAX_OPTIONS})`);
-      }
-      for (const o of r.options) {
-        const value = String(o ?? "").trim().slice(0, MAX_VALUE);
-        if (value && !options.includes(value)) options.push(value);
-      }
-    }
+    const first = sanitizePart(r);
+    if (!first) continue;
 
     // Two definitions sharing an id would make a record's values land on the wrong row.
     let id = normalizeId(r.id, "f");
     while (seen.has(id)) id = makeId("f");
     seen.add(id);
 
-    const defaultValue = String(r.default_value ?? "").trim().slice(0, MAX_VALUE);
-    out.push({
-      id,
-      label,
-      options,
-      // Without a list of values there is nothing to pick from, so free text is the only way to fill it.
-      allow_custom: options.length === 0 ? true : r.allow_custom !== false,
-      // A default that is no longer one of the offered values would be a pick nobody can make again.
-      default_value: options.length && !options.includes(defaultValue) ? "" : defaultValue,
-    });
+    const second = sanitizePart(r.second);
+    out.push(second ? { id, ...first, second } : { id, ...first });
   }
   return out;
 }
@@ -288,17 +304,32 @@ export function sanitizeFields(input: unknown): ApposttaField[] {
     const r = raw as ApposttaField;
     const label = String(r.label ?? "").trim().slice(0, MAX_LABEL);
     const value = String(r.value ?? "").trim().slice(0, MAX_VALUE);
-    if (!label && !value) continue;
+
+    // The second half of a split row. It shares the row's number, so it is kept with the row rather
+    // than promoted to one of its own.
+    let second: ApposttaField["second"];
+    if (r.second && typeof r.second === "object") {
+      const sLabel = String(r.second.label ?? "").trim().slice(0, MAX_LABEL);
+      const sValue = String(r.second.value ?? "").trim().slice(0, MAX_VALUE);
+      if (sLabel || sValue) second = { label: sLabel, value: sValue };
+    }
+
+    if (!label && !value && !second) continue;
     const id = r.id ? normalizeId(r.id, "f") : undefined;
-    out.push(id ? { id, label, value } : { label, value });
+    const row: ApposttaField = { label, value };
+    if (id) row.id = id;
+    if (second) row.second = second;
+    out.push(row);
   }
   return out;
 }
 
-/** What the client sends for the rows: a value per definition, and nothing else. */
+/** What the client sends for the rows: a value per part, and nothing else. */
 export interface FieldValueInput {
   id?: string;
   value?: unknown;
+  /** The second part's value, on a split row. */
+  second?: unknown;
 }
 
 function readValues(input: unknown): FieldValueInput[] {
@@ -309,42 +340,69 @@ function readValues(input: unknown): FieldValueInput[] {
 }
 
 /**
- * Matches an incoming value to a row by id, falling back to its position. The id is what makes this
- * safe when the definitions were reordered between the form loading and the record being saved.
+ * Matches an incoming row to a definition by id, falling back to its position. The id is what makes
+ * this safe when the definitions were reordered between the form loading and the record being saved.
  */
-function valueFor(values: FieldValueInput[], id: string | undefined, index: number): string | undefined {
+function inputFor(values: FieldValueInput[], id: string | undefined, index: number): FieldValueInput | undefined {
   const byId = id ? values.find((v) => String(v.id ?? "") === id) : undefined;
-  const hit = byId ?? values[index];
-  if (!hit || hit.value === undefined || hit.value === null) return undefined;
-  return String(hit.value).trim().slice(0, MAX_VALUE);
+  return byId ?? values[index];
+}
+
+function readOne(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  return String(raw).trim().slice(0, MAX_VALUE);
+}
+
+/** Rejects a value typed around a part that was set up as a fixed list of choices. */
+function checkAgainstOptions(part: ApposttaFieldPart, value: string): void {
+  if (value && part.options.length && !part.allow_custom && !part.options.includes(value)) {
+    throw new ApiError(400, `"${value}" is not one of the values set up for ${part.label}`);
+  }
 }
 
 /**
  * Builds a new record's rows from the definitions in force right now. The labels come from settings
  * and never from the client, which is what freezes the record: later edits to the definitions
  * produce different rows for later records and leave this one untouched.
+ *
+ * A split definition produces one row holding both parts, so it keeps a single number.
  */
 export function buildRecordFields(defs: ApposttaFieldDef[], input: unknown): ApposttaField[] {
   const values = readValues(input);
   return defs.map((def, i) => {
-    const raw = valueFor(values, def.id, i);
+    const incoming = inputFor(values, def.id, i);
+
+    const raw = readOne(incoming?.value);
     const value = raw === undefined ? def.default_value : raw;
-    if (value && def.options.length && !def.allow_custom && !def.options.includes(value)) {
-      throw new ApiError(400, `"${value}" is not one of the values set up for ${def.label}`);
+    checkAgainstOptions(def, value);
+
+    const row: ApposttaField = { id: def.id, label: def.label, value };
+    if (def.second) {
+      const rawSecond = readOne(incoming?.second);
+      const secondValue = rawSecond === undefined ? def.second.default_value : rawSecond;
+      checkAgainstOptions(def.second, secondValue);
+      row.second = { label: def.second.label, value: secondValue };
     }
-    return { id: def.id, label: def.label, value };
+    return row;
   });
 }
 
 /**
  * Applies new values to a record that already exists. Only the values move: the rows themselves stay
- * exactly as they were frozen, so editing an old record never pulls in newer definitions.
+ * exactly as they were frozen, so editing an old record never pulls in newer definitions, and a row
+ * that was split when it was created stays split with the same two headings.
  */
 export function applyFieldValues(existing: ApposttaField[], input: unknown): ApposttaField[] {
   const values = readValues(input);
   return existing.map((field, i) => {
-    const raw = valueFor(values, field.id, i);
-    return { ...field, value: raw === undefined ? field.value : raw };
+    const incoming = inputFor(values, field.id, i);
+    const raw = readOne(incoming?.value);
+    const next: ApposttaField = { ...field, value: raw === undefined ? field.value : raw };
+    if (field.second) {
+      const rawSecond = readOne(incoming?.second);
+      next.second = { ...field.second, value: rawSecond === undefined ? field.second.value : rawSecond };
+    }
+    return next;
   });
 }
 

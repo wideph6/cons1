@@ -7,6 +7,7 @@ import {
   rowsFromDefs,
   rowsFromRecord,
   type RowSpec,
+  type RowValue,
 } from "@/components/admin/ApposttaRecordFields";
 import { Alert, Button, Field, Input, Modal, Select, Textarea, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
@@ -24,8 +25,8 @@ interface Draft {
   domain_id: string;
   number: string;
   issued_on: string;
-  /** One value per row, in the order the rows are shown. */
-  values: string[];
+  /** One entry per row, holding a value for each of its parts. */
+  values: RowValue[];
   signature_id: string;
   notes: string;
 }
@@ -115,9 +116,14 @@ export function ApposttaForm({
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
-  /** Sent as id + value; the labels live in settings and are never round-tripped through the client. */
+  /** Sent as id + value per part; the labels live in settings and never round-trip through the client. */
   const fieldValues = useMemo(
-    () => rows.map((row, i) => ({ id: row.id, value: draft.values[i] ?? "" })),
+    () =>
+      rows.map((row, i) => ({
+        id: row.id,
+        value: draft.values[i]?.value ?? "",
+        second: draft.values[i]?.second ?? "",
+      })),
     [rows, draft.values],
   );
 

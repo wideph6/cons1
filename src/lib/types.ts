@@ -236,14 +236,12 @@ export interface ApposttaField {
   id?: string;
   label: string;
   value: string;
+  /** The row's second half, when it was split. Shares the row's number and carries its own heading. */
+  second?: { label: string; value: string };
 }
 
-/**
- * A certificate row the admin defines once in settings. Every record created afterwards starts with
- * these rows, and whoever fills a record only picks a value.
- */
-export interface ApposttaFieldDef {
-  id: string;
+/** One half of a certificate row: its own heading and its own list of values. */
+export interface ApposttaFieldPart {
   label: string;
   /** Values offered when a record is created. May be empty, which means free text. */
   options: string[];
@@ -251,6 +249,19 @@ export interface ApposttaFieldDef {
   allow_custom: boolean;
   /** Preselected on a new record. */
   default_value: string;
+}
+
+/**
+ * A certificate row the admin defines once in settings. Every record created afterwards starts with
+ * these rows, and whoever fills a record only picks a value.
+ *
+ * A row may be split into two parts. Both sit on the same numbered row and each has its own heading
+ * and its own values, so the number is printed once at the start and never per part.
+ */
+export interface ApposttaFieldDef extends ApposttaFieldPart {
+  id: string;
+  /** Present only on a split row. */
+  second?: ApposttaFieldPart;
 }
 
 /** One of the signatures set up in settings, chosen by name when a record is created. */

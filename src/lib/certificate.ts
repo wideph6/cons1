@@ -160,34 +160,51 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
   const textX = MARGIN + 30;
   const rowW = CONTENT_W - 38;
 
-  const rows = input.fields.filter((f) => (f.label ?? "").trim() || (f.value ?? "").trim());
+  /** Gap between the two halves of a split row, holding the divider. */
+  const SPLIT_GAP = 16;
+
+  const hasText = (s: string | undefined) => Boolean((s ?? "").trim());
+  const rows = input.fields.filter((f) => hasText(f.label) || hasText(f.value) || hasText(f.second?.label) || hasText(f.second?.value));
+
   rows.forEach((f, i) => {
-    const labelLines = wrap(f.label, rowW, 11, SANS);
-    const valueLines = wrap(f.value, rowW, 13, SANS, true);
+    // A split row is two headings on one numbered row, so both halves are laid out from the same top
+    // and the row ends at whichever runs longer.
+    const split = f.second && (hasText(f.second.label) || hasText(f.second.value)) ? f.second : null;
+    const colW = split ? (rowW - SPLIT_GAP) / 2 : rowW;
+    const halves = split ? [f, split] : [f];
     const top = y;
 
-    y += 5;
-    let first = true;
-    for (const line of labelLines) {
-      y += 13;
-      if (first) {
-        parts.push(text(numX, y, String(i + 1), { size: 11, fill: MUTED }));
-        first = false;
+    let bottom = top;
+    /** Baseline of the row's first line of text, wherever it falls, so the number sits level with it. */
+    let firstBaseline = Infinity;
+
+    halves.forEach((half, h) => {
+      const colX = textX + h * (colW + SPLIT_GAP);
+      const labelLines = wrap(half.label, colW, 11, SANS);
+      const valueLines = wrap(half.value, colW, 13, SANS, true);
+
+      let cy = top + 5;
+      for (const line of labelLines) {
+        cy += 13;
+        firstBaseline = Math.min(firstBaseline, cy);
+        parts.push(text(colX, cy, line, { size: 11, fill: MUTED }));
       }
-      parts.push(text(textX, y, line, { size: 11, fill: MUTED }));
-    }
-    for (const line of valueLines) {
-      y += 16;
-      if (first) {
-        parts.push(text(numX, y, String(i + 1), { size: 11, fill: MUTED }));
-        first = false;
+      for (const line of valueLines) {
+        cy += 16;
+        firstBaseline = Math.min(firstBaseline, cy);
+        parts.push(text(colX, cy, line, { size: 13, bold: true }));
       }
-      parts.push(text(textX, y, line, { size: 13, bold: true }));
-    }
-    // An empty row still needs height, otherwise its rule would sit on the one above it.
-    if (first) y += 14;
-    y += 6;
+      // An empty half still needs height, otherwise the rule would sit on the row above it.
+      if (!labelLines.length && !valueLines.length) cy += 14;
+      bottom = Math.max(bottom, cy);
+    });
+
+    // Printed once, at the start of the row, however many halves it has.
+    parts.push(text(numX, Number.isFinite(firstBaseline) ? firstBaseline : top + 19, String(i + 1), { size: 11, fill: MUTED }));
+
+    y = bottom + 6;
     if (top === y) y += 20;
+    if (split) parts.push(vline(textX + colW + SPLIT_GAP / 2, top + 3, y - 3));
     parts.push(hline(y));
   });
 
