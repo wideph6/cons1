@@ -19,6 +19,8 @@ export function ApposttaCertificate({
 }) {
   const { toast } = useToast();
   const [signature, setSignature] = useState<string | null>(null);
+  /** Resolved server-side: the record's own signatory, or the settings default when it has none. */
+  const [signatoryName, setSignatoryName] = useState("");
   const [loadingSig, setLoadingSig] = useState(false);
   const [busy, setBusy] = useState<"png" | "svg" | null>(null);
 
@@ -32,9 +34,11 @@ export function ApposttaCertificate({
     let cancelled = false;
     setLoadingSig(true);
     setSignature(null);
-    api<{ data_uri: string | null }>(`/api/admin/appostta/${record.id}/signature`)
+    api<{ data_uri: string | null; signatory_name?: string }>(`/api/admin/appostta/${record.id}/signature`)
       .then((r) => {
-        if (!cancelled) setSignature(r.data_uri);
+        if (cancelled) return;
+        setSignature(r.data_uri);
+        setSignatoryName(r.signatory_name ?? "");
       })
       .catch(() => {
         if (!cancelled) setSignature(null);
@@ -56,12 +60,12 @@ export function ApposttaCertificate({
       number: record.number,
       issuedOn: record.issued_on,
       fields: record.fields,
-      signatoryName: record.signatory_name || settings?.signatory_name || "",
+      signatoryName: record.signatory_name || signatoryName,
       signatureDataUri: signature,
       verifyUrl: record.verify_url,
       footerNote: settings?.footer_note ?? "",
     });
-  }, [record, settings, signature]);
+  }, [record, settings, signature, signatoryName]);
 
   async function save(kind: "png" | "svg") {
     if (!built || !record) return;
@@ -112,7 +116,7 @@ export function ApposttaCertificate({
           {!settings?.org_name ? (
             <Alert tone="warn">
               No organisation name is set yet. Open <span className="font-medium">Appostta settings</span> to set the name,
-              tagline and shared signature that appear on every certificate.
+              tagline and signatures that appear on every certificate.
             </Alert>
           ) : null}
 
@@ -120,7 +124,7 @@ export function ApposttaCertificate({
             <Loading label="Loading signature…" />
           ) : !signature ? (
             <Alert tone="info">
-              No signature image is set for this record or in the settings, so the signature line is left blank.
+              This record has no signature, and the settings hold none to fall back on, so the signature line is left blank.
             </Alert>
           ) : null}
 

@@ -1,33 +1,61 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
-import { getSettings, normalizePrefix, sanitizeFields } from "@/lib/appostta";
-import { deleteObject, getObjectBytes, headObject, isApposttaKey } from "@/lib/r2";
+import { getSettings, normalizePrefix, sanitizeFieldDefs, sanitizeSignatures, signatureKeyInUse } from "@/lib/appostta";
+import { deleteObjects, getObjectBytes, headObject, isApposttaKey } from "@/lib/r2";
 import { db } from "@/lib/supabase";
+import type { ApposttaSignature } from "@/lib/types";
 
 interface PatchBody {
   org_name?: string;
   org_tagline?: string;
   number_prefix?: string;
-  default_fields?: unknown;
-  signatory_name?: string;
-  /** A new key replaces the shared signature; null removes it. */
-  signature_key?: string | null;
+  /** The whole row list, replacing what is there. Rows keep their ids so records stay matched to them. */
+  field_defs?: unknown;
+  /** The whole signature list, replacing what is there. New entries carry a freshly uploaded key. */
+  signatures?: unknown;
+  default_signature_id?: string;
   footer_note?: string;
 }
 
-/** GET /api/admin/appostta/settings — panel-wide defaults, with the signature inlined for preview. */
+/**
+ * GET /api/admin/appostta/settings — panel-wide defaults.
+ *
+ * Each signature image is inlined so the settings screen and the record form can show it without a
+ * second round trip per signature, and so the certificate export is never blocked by a tainted canvas.
+ */
 export async function GET() {
   return run(async () => {
     await requireUser();
     const settings = await getSettings();
-    let signature_data_uri: string | null = null;
-    if (settings.signature_r2_key) {
-      const obj = await getObjectBytes(settings.signature_r2_key);
-      if (obj) signature_data_uri = `data:${obj.contentType};base64,${Buffer.from(obj.bytes).toString("base64")}`;
-    }
-    return ok({ settings, signature_data_uri });
+
+    const signature_data_uris: Record<string, string> = {};
+    await Promise.all(
+      settings.signatures.map(async (s) => {
+        if (!s.r2_key) return;
+        const obj = await getObjectBytes(s.r2_key);
+        if (obj) signature_data_uris[s.id] = `data:${obj.contentType};base64,${Buffer.from(obj.bytes).toString("base64")}`;
+      }),
+    );
+
+    return ok({ settings, signature_data_uris });
   });
+}
+
+/**
+ * Confirms every signature image really is in storage before it is saved, so the record form never
+ * offers a signature that would print as a blank space.
+ */
+async function verifySignatures(next: ApposttaSignature[]): Promise<ApposttaSignature[]> {
+  return Promise.all(
+    next.map(async (s) => {
+      if (!s.r2_key) throw new ApiError(400, `Upload an image for the signature "${s.name}"`);
+      if (!isApposttaKey(s.r2_key, "signatures")) throw new ApiError(400, "Invalid signature storage key");
+      const head = await headObject(s.r2_key);
+      if (!head) throw new ApiError(400, `The image for "${s.name}" was not found in storage. Please upload it again.`);
+      return { ...s, content_type: head.contentType ?? s.content_type ?? "image/png" };
+    }),
+  );
 }
 
 /** PATCH /api/admin/appostta/settings */
@@ -39,28 +67,38 @@ export async function PATCH(req: NextRequest) {
     const existing = await getSettings();
 
     const patch: Record<string, unknown> = {};
-    let stale: string | null = null;
+    /** Images the settings stop pointing at, removed only after the row update succeeds. */
+    let dropped: string[] = [];
 
     if (body.org_name !== undefined) patch.org_name = String(body.org_name).trim().slice(0, 160);
     if (body.org_tagline !== undefined) patch.org_tagline = String(body.org_tagline).trim().slice(0, 200);
     if (body.footer_note !== undefined) patch.footer_note = String(body.footer_note).trim().slice(0, 600);
-    if (body.signatory_name !== undefined) patch.signatory_name = String(body.signatory_name).trim().slice(0, 160);
     if (body.number_prefix !== undefined) patch.number_prefix = normalizePrefix(body.number_prefix);
-    if (body.default_fields !== undefined) patch.default_fields = sanitizeFields(body.default_fields);
 
-    if (body.signature_key !== undefined) {
-      if (body.signature_key === null) {
-        stale = existing.signature_r2_key;
-        patch.signature_r2_key = null;
-        patch.signature_content_type = null;
-      } else {
-        if (!isApposttaKey(body.signature_key, "signatures")) throw new ApiError(400, "Invalid signature storage key");
-        const head = await headObject(body.signature_key);
-        if (!head) throw new ApiError(400, "The uploaded signature was not found in storage. Please upload again.");
-        if (existing.signature_r2_key && existing.signature_r2_key !== body.signature_key) stale = existing.signature_r2_key;
-        patch.signature_r2_key = body.signature_key;
-        patch.signature_content_type = head.contentType ?? "image/png";
-      }
+    // Replacing this list changes what later records start with. Records already created carry their
+    // own frozen copy of the rows, so none of them is touched by this.
+    if (body.field_defs !== undefined) patch.field_defs = sanitizeFieldDefs(body.field_defs);
+
+    let signatures = existing.signatures;
+    if (body.signatures !== undefined) {
+      signatures = await verifySignatures(sanitizeSignatures(body.signatures));
+      patch.signatures = signatures;
+
+      const keptKeys = new Set(signatures.map((s) => s.r2_key));
+      const candidates = existing.signatures.map((s) => s.r2_key).filter((k) => k && !keptKeys.has(k));
+      // A record issued under a signature keeps its own copy of the key, so deleting the object here
+      // would blank a certificate that was already handed out. Only unreferenced images go.
+      const unused = await Promise.all(candidates.map(async (k) => (await signatureKeyInUse(k)) ? null : k));
+      dropped = unused.filter((k): k is string => Boolean(k));
+    }
+
+    if (body.default_signature_id !== undefined) {
+      const id = String(body.default_signature_id).trim();
+      if (id && !signatures.some((s) => s.id === id)) throw new ApiError(400, "That signature is not in the list");
+      patch.default_signature_id = id;
+    } else if (patch.signatures && existing.default_signature_id) {
+      // The default was just deleted, so point it at nothing rather than at a signature that is gone.
+      if (!signatures.some((s) => s.id === existing.default_signature_id)) patch.default_signature_id = "";
     }
 
     if (!Object.keys(patch).length) throw new ApiError(400, "Nothing to update");
@@ -69,12 +107,16 @@ export async function PATCH(req: NextRequest) {
 
     const { error } = await db().from("appostta_settings").update(patch).eq("id", true);
     if (error) throw new ApiError(500, error.message);
-    if (stale) await deleteObject(stale);
+    await deleteObjects(dropped);
 
     await logActivity({
       user_id: user.id,
       action: "update_appostta_settings",
-      details: { changed: Object.keys(patch).filter((k) => k !== "updated_at" && k !== "updated_by") },
+      details: {
+        changed: Object.keys(patch).filter((k) => k !== "updated_at" && k !== "updated_by"),
+        rows: Array.isArray(patch.field_defs) ? patch.field_defs.length : undefined,
+        signatures: patch.signatures ? signatures.length : undefined,
+      },
     });
     return ok({ settings: await getSettings() });
   });

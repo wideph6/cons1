@@ -57,15 +57,16 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
     const linkIds = (links ?? []).map((l) => l.id as string);
     const keys = await listLinkKeys(linkIds);
 
-    // Appostta records cascade with the domain, so their stored objects go now or they leak.
+    // Appostta records cascade with the domain, so their documents go now or they leak. Their
+    // signature images do not: those belong to the settings list and other records still print them.
     const { data: appostta, error: aErr } = await db()
       .from("appostta_records")
-      .select("doc_r2_key,signature_r2_key")
+      .select("doc_r2_key")
       .eq("domain_id", id);
     if (aErr) throw new ApiError(500, aErr.message);
-    const apposttaKeys = (appostta ?? []).flatMap((a) =>
-      [a.doc_r2_key, a.signature_r2_key].filter((k): k is string => typeof k === "string" && k.length > 0),
-    );
+    const apposttaKeys = (appostta ?? [])
+      .map((a) => a.doc_r2_key)
+      .filter((k): k is string => typeof k === "string" && k.length > 0);
 
     await deleteObjects([...keys, ...apposttaKeys]);
 

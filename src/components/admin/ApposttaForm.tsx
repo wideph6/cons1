@@ -1,12 +1,17 @@
 "use client";
 
-import { FileUp, RefreshCw, Upload, X } from "lucide-react";
+import { FileUp, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ApposttaFields } from "@/components/admin/ApposttaFields";
+import {
+  ApposttaRecordFields,
+  rowsFromDefs,
+  rowsFromRecord,
+  type RowSpec,
+} from "@/components/admin/ApposttaRecordFields";
 import { Alert, Button, Field, Input, Modal, Select, Textarea, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
 import { uploadApposttaFile } from "@/lib/appostta-client";
-import type { ApposttaField, ApposttaRecord, ApposttaSettings, Domain } from "@/lib/types";
+import type { ApposttaRecord, ApposttaSettings, Domain } from "@/lib/types";
 import { formatBytes } from "@/lib/utils";
 
 function todayLocalIso(): string {
@@ -19,8 +24,9 @@ interface Draft {
   domain_id: string;
   number: string;
   issued_on: string;
-  fields: ApposttaField[];
-  signatory_name: string;
+  /** One value per row, in the order the rows are shown. */
+  values: string[];
+  signature_id: string;
   notes: string;
 }
 
@@ -47,13 +53,16 @@ export function ApposttaForm({
     domain_id: "",
     number: "",
     issued_on: todayLocalIso(),
-    fields: [],
-    signatory_name: "",
+    values: [],
+    signature_id: "",
     notes: "",
   });
+  /**
+   * The rows themselves, which this form never edits. A new record takes them from the settings
+   * definitions; an existing one keeps the rows it was created with.
+   */
+  const [rows, setRows] = useState<RowSpec[]>([]);
   const [doc, setDoc] = useState<File | null>(null);
-  const [signature, setSignature] = useState<File | null>(null);
-  const [clearSignature, setClearSignature] = useState(false);
   const [progress, setProgress] = useState<{ what: string; value: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,26 +70,31 @@ export function ApposttaForm({
   useEffect(() => {
     if (!open) return;
     setDoc(null);
-    setSignature(null);
-    setClearSignature(false);
     setProgress(null);
     setError(null);
+
+    const defs = settings?.field_defs ?? [];
     if (record) {
+      const built = rowsFromRecord(record.fields, defs);
+      setRows(built.rows);
       setDraft({
         domain_id: record.domain_id,
         number: record.number,
         issued_on: record.issued_on.slice(0, 10),
-        fields: record.fields,
-        signatory_name: record.signatory_name,
+        values: built.values,
+        signature_id: record.signature_id,
         notes: record.notes,
       });
     } else {
+      const built = rowsFromDefs(defs);
+      setRows(built.rows);
       setDraft({
         domain_id: domains[0]?.id ?? "",
         number: "",
         issued_on: todayLocalIso(),
-        fields: settings?.default_fields.length ? settings.default_fields : [{ label: "", value: "" }],
-        signatory_name: "",
+        values: built.values,
+        // Whichever signature the settings preselect, so the usual case needs no choice at all.
+        signature_id: settings?.default_signature_id || settings?.signatures[0]?.id || "",
         notes: "",
       });
     }
@@ -101,6 +115,12 @@ export function ApposttaForm({
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
+  /** Sent as id + value; the labels live in settings and are never round-tripped through the client. */
+  const fieldValues = useMemo(
+    () => rows.map((row, i) => ({ id: row.id, value: draft.values[i] ?? "" })),
+    [rows, draft.values],
+  );
+
   async function save() {
     setError(null);
     if (!draft.domain_id) {
@@ -119,26 +139,16 @@ export function ApposttaForm({
         setProgress({ what: doc.name, value: 0 });
         docUpload = await uploadApposttaFile(doc, "docs", (v) => setProgress({ what: doc.name, value: v }));
       }
-
-      let signatureKey: string | null | undefined;
-      if (signature) {
-        setProgress({ what: signature.name, value: 0 });
-        const up = await uploadApposttaFile(signature, "signatures", (v) => setProgress({ what: signature.name, value: v }));
-        signatureKey = up.key;
-      } else if (clearSignature) {
-        signatureKey = null;
-      }
       setProgress(null);
 
       const payload: Record<string, unknown> = {
         domain_id: draft.domain_id,
         issued_on: draft.issued_on,
-        fields: draft.fields,
-        signatory_name: draft.signatory_name,
+        field_values: fieldValues,
+        signature_id: draft.signature_id,
         notes: draft.notes,
       };
       if (draft.number.trim()) payload.number = draft.number.trim();
-      if (signatureKey !== undefined) payload.signature_key = signatureKey;
       if (docUpload) {
         payload.doc_key = docUpload.key;
         payload.doc_filename = docUpload.filename;
@@ -162,7 +172,11 @@ export function ApposttaForm({
     }
   }
 
-  const hasSignature = Boolean(record?.signature_r2_key) && !clearSignature && !signature;
+  const signatures = settings?.signatures ?? [];
+  // A signature this record was issued under that has since been dropped from settings. It still
+  // prints, so the picker has to be able to say so rather than silently showing a different name.
+  const goneSignature =
+    editing && record?.signature_id && !signatures.some((s) => s.id === record.signature_id) ? record : null;
 
   return (
     <Modal
@@ -274,55 +288,50 @@ export function ApposttaForm({
           </div>
         </Field>
 
-        <Field label="Certificate rows" hint="Each row is printed on the certificate, numbered in this order.">
-          <ApposttaFields value={draft.fields} onChange={(f) => set("fields", f)} disabled={busy} />
+        <Field
+          label="Certificate rows"
+          hint={
+            editing
+              ? "These are the rows this record was created with. They stay as they are even after the settings change."
+              : "Set in Appostta settings. Fill in the values for this record."
+          }
+        >
+          <ApposttaRecordFields
+            // Remounted per record so one record's "type a custom value" state never carries to the next.
+            key={record?.id ?? "new"}
+            rows={rows}
+            values={draft.values}
+            disabled={busy}
+            onChange={(v) => set("values", v)}
+          />
         </Field>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field
-            label="Signatory name"
-            hint={settings?.signatory_name ? `Blank uses the shared name: ${settings.signatory_name}` : "Blank leaves it empty."}
+        <Field
+          label="Signature"
+          hint={
+            signatures.length
+              ? "Pick the person this record is issued under. The choice is copied onto the record."
+              : "No signatures set up yet. Add them in Appostta settings."
+          }
+        >
+          <Select
+            value={draft.signature_id}
+            disabled={busy || (signatures.length === 0 && !goneSignature)}
+            onChange={(e) => set("signature_id", e.target.value)}
           >
-            <Input
-              value={draft.signatory_name}
-              disabled={busy}
-              placeholder={settings?.signatory_name || "Name printed under the signature"}
-              onChange={(e) => set("signatory_name", e.target.value)}
-            />
-          </Field>
-
-          <Field
-            label="Signature image"
-            hint={hasSignature ? "This record has its own signature image." : "Blank uses the shared signature from settings."}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex">
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  className="sr-only"
-                  disabled={busy}
-                  onChange={(e) => {
-                    setSignature(e.target.files?.[0] ?? null);
-                    setClearSignature(false);
-                  }}
-                />
-                <span className="inline-flex items-center gap-2 h-9 px-3.5 rounded-md border border-line-strong bg-surface text-sm font-medium cursor-pointer hover:bg-surface-2">
-                  <Upload className="size-4" />
-                  {signature ? "Change" : "Upload"}
-                </span>
-              </label>
-              {signature ? (
-                <span className="text-[13px] text-text-muted">{signature.name}</span>
-              ) : hasSignature ? (
-                <Button size="sm" disabled={busy} onClick={() => setClearSignature(true)}>
-                  Use shared
-                </Button>
-              ) : null}
-              {clearSignature ? <span className="text-[13px] text-text-muted">Will fall back to the shared signature</span> : null}
-            </div>
-          </Field>
-        </div>
+            <option value="">— no signature —</option>
+            {goneSignature ? (
+              <option value={goneSignature.signature_id}>
+                {goneSignature.signatory_name || "Unnamed"} (removed from settings)
+              </option>
+            ) : null}
+            {signatures.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
 
         <Field label="Notes" hint="Internal only — never shown on the certificate or the public page.">
           <Textarea value={draft.notes} disabled={busy} onChange={(e) => set("notes", e.target.value)} />

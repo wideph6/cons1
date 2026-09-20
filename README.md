@@ -23,7 +23,7 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
 | Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
-| Appostta | Upload a document against any domain; a unique reference number and a verification link (with QR code) are generated; every certificate row, the signatory name and the signature image are editable per record; certificate downloads as PNG or SVG |
+| Appostta | Upload a document against any domain; a unique reference number and a verification link (with QR code) are generated; the certificate rows and the signatures are set once in Appostta settings, so a record only picks values; certificate downloads as PNG or SVG |
 | Users | Super admin creates admin users, ticks exactly which actions they may perform |
 | Counters | Per-user counts of uploads / replaces / renames / deletes, totalled across all domains, with per-domain/link breakdown; super admin can set any value or reset to 0 |
 | Activity | Full history of every action with filters |
@@ -126,9 +126,11 @@ A record is a document plus the details printed on its certificate.
 3. A **reference number** is generated in the form `APT-MUBN-NGDW-EGCW` (the prefix comes from Appostta settings). The number and the issue date both stay editable; changing either changes the link.
 4. The link is `https://<domain>/verify-appostta?number=<number>&day=DD&month=MM&year=YYYY`, and the QR code on the certificate resolves to exactly that URL.
 
-**Certificate rows** are free label/value pairs, numbered in the order shown. A new record starts from the default rows in Appostta settings; editing one record's rows never touches another's.
+**Certificate rows** are defined once, in Appostta settings: a label plus the values that row offers. Creating a record does not edit rows — it picks a value per row from a dropdown, or types one where the row has no list (or allows a value outside it).
 
-**Signature** — the signatory name and signature image are set once in settings and used by every record, or overridden per record. The image reaches the browser as a `data:` URI, because an `<img>` pointing at storage would taint the canvas and block the PNG export.
+Each record freezes the rows as they read at the moment it was created. Change the rows in settings and only records created afterwards carry the new set; every record already issued keeps its own. Editing an old record changes its values, never its rows.
+
+**Signatures** are also set up in settings, as many as you issue under: a name and an image each, with one preselected. A record picks one by name and keeps a copy of it, so renaming or removing a signature later leaves certificates already issued exactly as they were. A signature image is only deleted from storage once no record still points at it. The image reaches the browser as a `data:` URI, because an `<img>` pointing at storage would taint the canvas and block the PNG export.
 
 **Download** — the certificate is built as a self-contained SVG (generic font families, no external assets) and rasterised to PNG at 3x in the browser.
 

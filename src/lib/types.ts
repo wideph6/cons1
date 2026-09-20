@@ -227,20 +227,51 @@ export interface Paged<T> {
 
 /* ---------------- Appostta ---------------- */
 
-/** One editable row on a record's certificate. */
+/**
+ * One row printed on a record's certificate. The label is copied from the settings definition the
+ * row came from, so changing that definition later never rewrites a record that already exists.
+ */
 export interface ApposttaField {
+  /** The settings definition this row came from. Absent on rows created before definitions existed. */
+  id?: string;
   label: string;
   value: string;
+}
+
+/**
+ * A certificate row the admin defines once in settings. Every record created afterwards starts with
+ * these rows, and whoever fills a record only picks a value.
+ */
+export interface ApposttaFieldDef {
+  id: string;
+  label: string;
+  /** Values offered when a record is created. May be empty, which means free text. */
+  options: string[];
+  /** Lets a record use a value that is not in the list. Forced on when there are no options. */
+  allow_custom: boolean;
+  /** Preselected on a new record. */
+  default_value: string;
+}
+
+/** One of the signatures set up in settings, chosen by name when a record is created. */
+export interface ApposttaSignature {
+  id: string;
+  /** Printed under the signature line. */
+  name: string;
+  r2_key: string;
+  content_type: string;
 }
 
 export interface ApposttaSettings {
   org_name: string;
   org_tagline: string;
   number_prefix: string;
-  default_fields: ApposttaField[];
-  signatory_name: string;
-  signature_r2_key: string | null;
-  signature_content_type: string | null;
+  /** The certificate rows every new record starts with. */
+  field_defs: ApposttaFieldDef[];
+  /** Every signature a record can be issued under. */
+  signatures: ApposttaSignature[];
+  /** Preselected in the record form. Blank means the first signature. */
+  default_signature_id: string;
   footer_note: string;
   updated_by: string | null;
   updated_at: string;
@@ -258,8 +289,11 @@ export interface ApposttaRecord {
   doc_content_type: string | null;
   doc_uploaded_at: string | null;
   doc_replaced_at: string | null;
+  /** Frozen at creation from the field definitions in force at that moment. */
   fields: ApposttaField[];
-  /** Blank means the shared signatory from settings is used. */
+  /** The settings signature this record was issued under. Blank when none was chosen. */
+  signature_id: string;
+  /** Copied from that signature, so the certificate keeps reading the same when settings change. */
   signatory_name: string;
   signature_r2_key: string | null;
   signature_content_type: string | null;

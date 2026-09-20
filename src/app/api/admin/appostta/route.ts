@@ -2,15 +2,16 @@ import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, intParam, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
 import {
+  buildRecordFields,
   getDomain,
   getRecord,
   mapRecord,
   normalizeNumber,
   numberTaken,
   parseIssuedOn,
+  pickSignature,
   issuedToIso,
   getSettings,
-  sanitizeFields,
   todayIso,
   uniqueNumber,
 } from "@/lib/appostta";
@@ -23,9 +24,10 @@ interface CreateBody {
   domain_id?: string;
   number?: string;
   issued_on?: string;
-  fields?: unknown;
-  signatory_name?: string;
-  signature_key?: string | null;
+  /** One value per row defined in settings: `[{ id, value }]`. Labels are never sent by the client. */
+  field_values?: unknown;
+  /** Which of the signatures in settings to issue under. Omitted means the default one. */
+  signature_id?: string;
   notes?: string;
   doc_key?: string;
   doc_filename?: string;
@@ -76,14 +78,25 @@ export async function POST(req: NextRequest) {
     if (body.number && (await numberTaken(number))) throw new ApiError(409, `${number} is already used by another record`);
 
     const issuedOn = issuedToIso(parseIssuedOn(body.issued_on ?? todayIso()));
-    const fields = body.fields === undefined ? settings.default_fields : sanitizeFields(body.fields);
+
+    // The rows come from the definitions in settings as they read right now, and are frozen onto the
+    // record. Editing those definitions later changes what the next record starts with, never this one.
+    const fields = buildRecordFields(settings.field_defs, body.field_values);
+
+    // Same idea for the signature: the record keeps a copy, so it survives the settings entry being
+    // renamed or removed.
+    const signature = pickSignature(settings, body.signature_id);
+    if (body.signature_id && !signature) throw new ApiError(400, "That signature is not in the Appostta settings");
 
     const row: Record<string, unknown> = {
       domain_id: domain.id,
       number,
       issued_on: issuedOn,
       fields,
-      signatory_name: (body.signatory_name ?? "").trim(),
+      signature_id: signature?.id ?? "",
+      signatory_name: signature?.name ?? "",
+      signature_r2_key: signature?.r2_key ?? null,
+      signature_content_type: signature?.content_type ?? null,
       notes: (body.notes ?? "").trim(),
       created_by: user.id,
     };
@@ -98,14 +111,6 @@ export async function POST(req: NextRequest) {
       row.doc_size = head.size;
       row.doc_content_type = guessContentType(filename, body.doc_content_type ?? head.contentType);
       row.doc_uploaded_at = new Date().toISOString();
-    }
-
-    if (body.signature_key) {
-      if (!isApposttaKey(body.signature_key, "signatures")) throw new ApiError(400, "Invalid signature storage key");
-      const head = await headObject(body.signature_key);
-      if (!head) throw new ApiError(400, "The uploaded signature was not found in storage. Please upload again.");
-      row.signature_r2_key = body.signature_key;
-      row.signature_content_type = head.contentType ?? "image/png";
     }
 
     const { data, error } = await db().from("appostta_records").insert(row).select("id").single();

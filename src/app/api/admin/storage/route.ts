@@ -77,7 +77,7 @@ async function buildReport(): Promise<StorageReport> {
     listAllObjects(APPOSTTA_PREFIX),
     allFileRows(),
     allApposttaRows(),
-    db().from("appostta_settings").select("signature_r2_key").eq("id", true).maybeSingle(),
+    db().from("appostta_settings").select("signatures").eq("id", true).maybeSingle(),
   ]);
 
   const objects = [...files.objects, ...appostta.objects];
@@ -90,8 +90,11 @@ async function buildReport(): Promise<StorageReport> {
     if (a.doc_r2_key) usedKeys.add(a.doc_r2_key);
     if (a.signature_r2_key) usedKeys.add(a.signature_r2_key);
   }
-  const sharedSignature = (settings.data as { signature_r2_key: string | null } | null)?.signature_r2_key;
-  if (sharedSignature) usedKeys.add(sharedSignature);
+  // Every signature the panel offers, including ones no record has used yet.
+  const sharedSignatures = (settings.data as { signatures: Array<{ r2_key?: string }> | null } | null)?.signatures;
+  for (const s of sharedSignatures ?? []) {
+    if (s?.r2_key) usedKeys.add(s.r2_key);
+  }
 
   const now = Date.now();
 

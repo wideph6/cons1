@@ -16,7 +16,7 @@ export const PERMISSIONS = [
   { key: "appostta_create", label: "Create Appostta records and upload their documents", group: "Appostta" },
   { key: "appostta_edit", label: "Edit Appostta records (number, date, fields, signature)", group: "Appostta" },
   { key: "appostta_delete", label: "Delete Appostta records", group: "Appostta" },
-  { key: "appostta_settings", label: "Change Appostta defaults and the shared signature", group: "Appostta" },
+  { key: "appostta_settings", label: "Change Appostta defaults, certificate rows and signatures", group: "Appostta" },
   { key: "search", label: "Search files by date", group: "Other" },
   { key: "view_activity", label: "View own activity history", group: "Other" },
 ] as const;
