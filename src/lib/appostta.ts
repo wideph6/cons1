@@ -1,5 +1,6 @@
 import { ApiError } from "./errors";
 import { can } from "./permissions";
+import { BORDER_STYLES, type BorderStyle } from "./certificate";
 import { db } from "./supabase";
 import type {
   ApposttaField,
@@ -241,7 +242,9 @@ export function sanitizeFieldDefs(input: unknown): ApposttaFieldDef[] {
     seen.add(id);
 
     const second = sanitizePart(r.second);
-    out.push(second ? { id, ...first, second } : { id, ...first });
+    const def: ApposttaFieldDef = second ? { id, ...first, second } : { id, ...first };
+    if (r.inline) def.inline = true;
+    out.push(def);
   }
   return out;
 }
@@ -318,6 +321,7 @@ export function sanitizeFields(input: unknown): ApposttaField[] {
     const id = r.id ? normalizeId(r.id, "f") : undefined;
     const row: ApposttaField = { label, value };
     if (id) row.id = id;
+    if (r.inline) row.inline = true;
     if (second) row.second = second;
     out.push(row);
   }
@@ -377,6 +381,7 @@ export function buildRecordFields(defs: ApposttaFieldDef[], input: unknown): App
     checkAgainstOptions(def, value);
 
     const row: ApposttaField = { id: def.id, label: def.label, value };
+    if (def.inline) row.inline = true;
     if (def.second) {
       const rawSecond = readOne(incoming?.second);
       const secondValue = rawSecond === undefined ? def.second.default_value : rawSecond;
@@ -410,7 +415,7 @@ export function applyFieldValues(existing: ApposttaField[], input: unknown): App
 
 const SETTINGS_COLUMNS =
   "org_name,org_tagline,number_prefix,field_defs,signatures,default_signature_id,footer_note," +
-  "watermark_text,stamp_text,stamp_after_row,verify_note,updated_by,updated_at";
+  "watermark_text,stamp_text,stamp_after_row,verify_note,border_style,updated_by,updated_at";
 
 export async function getSettings(): Promise<ApposttaSettings> {
   const { data, error } = await db().from("appostta_settings").select(SETTINGS_COLUMNS).eq("id", true).maybeSingle();
@@ -428,6 +433,8 @@ export async function getSettings(): Promise<ApposttaSettings> {
     watermark_text: String(row.watermark_text ?? ""),
     stamp_text: String(row.stamp_text ?? ""),
     stamp_after_row: Number(row.stamp_after_row ?? 0),
+    // An unknown value from an older row, or a blank one, reads as the panel default.
+    border_style: BORDER_STYLES.includes(row.border_style as BorderStyle) ? row.border_style : "ornament",
     verify_note: String(row.verify_note ?? ""),
   };
 }

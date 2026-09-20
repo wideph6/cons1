@@ -247,7 +247,7 @@ export function ApposttaFieldDefs({
             ) : null}
           </div>
 
-          <div className="pl-6">
+          <div className="pl-6 flex flex-wrap items-center gap-x-4 gap-y-2">
             <Button
               size="sm"
               icon={def.second ? <X className="size-3.5" /> : <Columns2 className="size-3.5" />}
@@ -256,6 +256,13 @@ export function ApposttaFieldDefs({
             >
               {def.second ? "Merge back into one" : "Split into two parts"}
             </Button>
+
+            <Checkbox
+              checked={Boolean(def.inline)}
+              disabled={disabled}
+              label="Value on the same line as the heading"
+              onChange={(e) => patch(i, { inline: e.target.checked })}
+            />
           </div>
         </div>
       ))}

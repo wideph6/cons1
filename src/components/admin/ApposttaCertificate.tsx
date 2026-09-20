@@ -4,7 +4,7 @@ import { Download, FileImage, FileCode2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Loading, Modal, errorMessage, useToast } from "@/components/ui";
 import { api, downloadSvgAsPng, downloadSvgFile } from "@/lib/client";
-import { buildCertificateSvg } from "@/lib/certificate";
+import { buildCertificateSvg, type BorderStyle } from "@/lib/certificate";
 import type { ApposttaRecord, ApposttaSettings } from "@/lib/types";
 
 /** Preview of a record's certificate, with the PNG/SVG export. */
@@ -67,6 +67,7 @@ export function ApposttaCertificate({
       stampText: settings?.stamp_text ?? "",
       stampAfterRow: settings?.stamp_after_row ?? 0,
       verifyNote: settings?.verify_note ?? "",
+      borderStyle: (settings?.border_style as BorderStyle) || "ornament",
     });
   }, [record, settings, signature, signatoryName]);
 

@@ -255,6 +255,8 @@ create table if not exists public.appostta_settings (
   stamp_after_row integer not null default 0,
   -- The line every certificate ends on. Blank falls back to the built-in wording.
   verify_note text not null default '',
+  -- How the page edge is drawn: ornament, double or plain.
+  border_style text not null default 'ornament',
 
   -- Superseded by field_defs and signatures. Kept so the carry-forward below runs as plain SQL on a
   -- database of either age, and so a panel set up before this change is never read as empty.
@@ -281,6 +283,7 @@ alter table public.appostta_settings add column if not exists watermark_text tex
 alter table public.appostta_settings add column if not exists stamp_text text not null default '';
 alter table public.appostta_settings add column if not exists stamp_after_row integer not null default 0;
 alter table public.appostta_settings add column if not exists verify_note text not null default '';
+alter table public.appostta_settings add column if not exists border_style text not null default 'ornament';
 
 -- ---------- Records ----------
 create table if not exists public.appostta_records (

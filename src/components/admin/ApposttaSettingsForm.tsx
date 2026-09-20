@@ -129,6 +129,7 @@ export function ApposttaSettingsForm({
           stamp_text: draft.stamp_text,
           stamp_after_row: draft.stamp_after_row,
           verify_note: draft.verify_note,
+          border_style: draft.border_style,
         },
       });
       toast("Appostta settings saved");
@@ -224,6 +225,19 @@ export function ApposttaSettingsForm({
                 disabled={!canEdit || busy}
                 busy={uploading}
               />
+            </Field>
+
+            <Field label="Page border" hint="The frame drawn around the whole certificate.">
+              <Select
+                value={draft.border_style}
+                disabled={!canEdit || busy}
+                className="w-56"
+                onChange={(e) => set("border_style", e.target.value)}
+              >
+                <option value="ornament">Ornamental — repeating motif</option>
+                <option value="double">Double rule</option>
+                <option value="plain">Single rule</option>
+              </Select>
             </Field>
 
             <Field

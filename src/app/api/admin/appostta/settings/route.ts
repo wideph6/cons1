@@ -9,6 +9,7 @@ import {
   sanitizeSignatures,
   signatureKeyInUse,
 } from "@/lib/appostta";
+import { BORDER_STYLES } from "@/lib/certificate";
 import { deleteObjects, getObjectBytes, headObject, isApposttaKey } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { ApposttaSignature } from "@/lib/types";
@@ -27,6 +28,7 @@ interface PatchBody {
   stamp_text?: string;
   stamp_after_row?: number;
   verify_note?: string;
+  border_style?: string;
 }
 
 /**
@@ -94,6 +96,11 @@ export async function PATCH(req: NextRequest) {
       patch.stamp_after_row = Number.isFinite(n) ? Math.min(Math.max(n, 0), MAX_FIELDS) : 0;
     }
     if (body.verify_note !== undefined) patch.verify_note = String(body.verify_note).trim().slice(0, 300);
+    if (body.border_style !== undefined) {
+      const style = String(body.border_style);
+      if (!BORDER_STYLES.includes(style as never)) throw new ApiError(400, "Unknown border style");
+      patch.border_style = style;
+    }
     if (body.number_prefix !== undefined) patch.number_prefix = normalizePrefix(body.number_prefix);
 
     // Replacing this list changes what later records start with. Records already created carry their

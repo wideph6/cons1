@@ -236,6 +236,8 @@ export interface ApposttaField {
   id?: string;
   label: string;
   value: string;
+  /** Heading and value on one line instead of stacked. Frozen with the rest of the row. */
+  inline?: boolean;
   /** The row's second half, when it was split. Shares the row's number and carries its own heading. */
   second?: { label: string; value: string };
 }
@@ -262,6 +264,8 @@ export interface ApposttaFieldDef extends ApposttaFieldPart {
   id: string;
   /** Present only on a split row. */
   second?: ApposttaFieldPart;
+  /** Heading and value on one line instead of stacked. */
+  inline?: boolean;
 }
 
 /** One of the signatures set up in settings, chosen by name when a record is created. */
@@ -292,6 +296,8 @@ export interface ApposttaSettings {
   stamp_after_row: number;
   /** The line every certificate ends on. Blank falls back to the default wording. */
   verify_note: string;
+  /** How the page edge is drawn: ornament, double or plain. */
+  border_style: string;
   updated_by: string | null;
   updated_at: string;
 }
