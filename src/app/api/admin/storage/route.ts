@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
-import { deleteObjects, listAllObjects } from "@/lib/r2";
+import { APPOSTTA_PREFIX, deleteObjects, listAllObjects, MANAGED_PREFIX } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { StorageMismatch, StorageMissing, StorageOrphan, StorageReport } from "@/lib/types";
 
@@ -42,12 +42,57 @@ function place(r: FileRowLite): Pick<StorageMissing, "hostname" | "path"> {
   return { hostname: r.links?.domains?.hostname ?? null, path: r.links?.path ?? null };
 }
 
+interface ApposttaRowLite {
+  id: string;
+  number: string;
+  issued_on: string;
+  doc_filename: string | null;
+  doc_r2_key: string | null;
+  doc_size: number | null;
+  signature_r2_key: string | null;
+  created_at: string;
+  domain_hostname: string | null;
+}
+
+/** Appostta rows carry a document and, optionally, their own signature image. */
+async function allApposttaRows(): Promise<ApposttaRowLite[]> {
+  const out: ApposttaRowLite[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db()
+      .from("appostta_view")
+      .select("id,number,issued_on,doc_filename,doc_r2_key,doc_size,signature_r2_key,created_at,domain_hostname")
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) throw new ApiError(500, error.message);
+    const rows = (data ?? []) as unknown as ApposttaRowLite[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
 /** Compares what the bucket holds with what the database expects to be there. */
 async function buildReport(): Promise<StorageReport> {
-  const [{ objects, truncated }, rows] = await Promise.all([listAllObjects(), allFileRows()]);
+  const [files, appostta, rows, apposttaRows, settings] = await Promise.all([
+    listAllObjects(MANAGED_PREFIX),
+    listAllObjects(APPOSTTA_PREFIX),
+    allFileRows(),
+    allApposttaRows(),
+    db().from("appostta_settings").select("signature_r2_key").eq("id", true).maybeSingle(),
+  ]);
+
+  const objects = [...files.objects, ...appostta.objects];
+  const truncated = files.truncated || appostta.truncated;
 
   const byKey = new Map(objects.map((o) => [o.key, o]));
   const usedKeys = new Set(rows.map((r) => r.r2_key));
+  // Appostta keys live outside files/, so they must be registered here or cleanup would call them rubbish.
+  for (const a of apposttaRows) {
+    if (a.doc_r2_key) usedKeys.add(a.doc_r2_key);
+    if (a.signature_r2_key) usedKeys.add(a.signature_r2_key);
+  }
+  const sharedSignature = (settings.data as { signature_r2_key: string | null } | null)?.signature_r2_key;
+  if (sharedSignature) usedKeys.add(sharedSignature);
+
   const now = Date.now();
 
   const orphans: StorageOrphan[] = objects
@@ -82,14 +127,32 @@ async function buildReport(): Promise<StorageReport> {
       if (!o) missing.push(base);
       else if (o.size !== base.size) mismatched.push({ ...base, real_size: o.size });
     }
+
+    // A missing Appostta document breaks that record's public link just as badly.
+    for (const a of apposttaRows) {
+      if (!a.doc_r2_key) continue;
+      const base = {
+        id: a.id,
+        filename: a.doc_filename ?? a.number,
+        r2_key: a.doc_r2_key,
+        size: Number(a.doc_size ?? 0),
+        uploaded_at: a.created_at,
+        hostname: a.domain_hostname,
+        path: `appostta ${a.number}`,
+      };
+      const o = byKey.get(a.doc_r2_key);
+      if (!o) missing.push(base);
+      else if (o.size !== base.size) mismatched.push({ ...base, real_size: o.size });
+    }
   }
 
   const deletable = orphans.filter((o) => o.deletable);
+  const apposttaBytes = apposttaRows.reduce((s, a) => s + (a.doc_r2_key ? Number(a.doc_size ?? 0) : 0), 0);
   return {
     bucket_objects: objects.length,
     bucket_bytes: objects.reduce((s, o) => s + o.size, 0),
-    db_files: rows.length,
-    db_bytes: rows.reduce((s, r) => s + Number(r.size ?? 0), 0),
+    db_files: rows.length + apposttaRows.filter((a) => a.doc_r2_key).length,
+    db_bytes: rows.reduce((s, r) => s + Number(r.size ?? 0), 0) + apposttaBytes,
     orphans,
     orphan_bytes: orphans.reduce((s, o) => s + o.size, 0),
     deletable_orphans: deletable.length,

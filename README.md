@@ -23,6 +23,7 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
 | Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
+| Appostta | Upload a document against any domain; a unique reference number and a verification link (with QR code) are generated; every certificate row, the signatory name and the signature image are editable per record; certificate downloads as PNG or SVG |
 | Users | Super admin creates admin users, ticks exactly which actions they may perform |
 | Counters | Per-user counts of uploads / replaces / renames / deletes, totalled across all domains, with per-domain/link breakdown; super admin can set any value or reset to 0 |
 | Activity | Full history of every action with filters |
@@ -116,13 +117,30 @@ Renaming a file only changes its public name (the storage object stays). Moving 
 
 If a browser dies between the upload to R2 and the save into the database, the object is left in the bucket with nothing pointing at it. **Storage** in the admin panel lists those leftovers and deletes them; anything younger than 6 hours is left alone in case an upload is still running.
 
+## Appostta
+
+A record is a document plus the details printed on its certificate.
+
+1. Pick a **domain** — the verification link is built on it.
+2. Upload the **document**. It is stored in R2 under the `appostta/` prefix, kept apart from the file manager's `files/` prefix so neither cleanup can claim the other's objects.
+3. A **reference number** is generated in the form `APT-MUBN-NGDW-EGCW` (the prefix comes from Appostta settings). The number and the issue date both stay editable; changing either changes the link.
+4. The link is `https://<domain>/verify-appostta?number=<number>&day=DD&month=MM&year=YYYY`, and the QR code on the certificate resolves to exactly that URL.
+
+**Certificate rows** are free label/value pairs, numbered in the order shown. A new record starts from the default rows in Appostta settings; editing one record's rows never touches another's.
+
+**Signature** — the signatory name and signature image are set once in settings and used by every record, or overridden per record. The image reaches the browser as a `data:` URI, because an `<img>` pointing at storage would taint the canvas and block the PNG export.
+
+**Download** — the certificate is built as a self-contained SVG (generic font families, no external assets) and rasterised to PNG at 3x in the browser.
+
+> The public page at `/verify-appostta` is not built yet. Until it is, opening a verification link falls through to the catch-all download route and returns 404.
+
 ## Permissions
 
 Super admins can do everything. Admin users get only the boxes ticked for them:
 
-`upload` · `replace` · `rename` · `move` · `delete` · `preview` · `create_link` · `edit_link` · `delete_link` · `create_domain` · `edit_domain` · `delete_domain` · `search` · `view_activity`
+`upload` · `replace` · `rename` · `move` · `delete` · `preview` · `create_link` · `edit_link` · `delete_link` · `create_domain` · `edit_domain` · `delete_domain` · `appostta_create` · `appostta_edit` · `appostta_delete` · `appostta_settings` · `search` · `view_activity`
 
-`move` is newer than the others, so existing admin users do not have it until the super admin ticks it.
+`move` and the four `appostta_*` keys are newer than the others, so existing admin users do not have them until the super admin ticks them.
 
 Permission changes take effect on the user's next request (no re-login needed).
 
@@ -146,11 +164,14 @@ To test downloads locally, add `localhost` as a domain in the panel and open `ht
 ```
 src/app/[...slug]/route.ts      public download endpoint (all domains)
 src/app/admin/*                 admin pages
-src/app/api/admin/*             admin API (domains, links, files, move, storage, users, counters, activity)
+src/app/api/admin/*             admin API (domains, links, files, move, storage, appostta, users, counters, activity)
 src/app/api/auth/*              login / logout / password
-src/components/admin/*          File manager, Domains, Storage, Search, Activity, Users
+src/components/admin/*          File manager, Domains, Storage, Search, Activity, Users, Appostta
+src/lib/qr.ts                   dependency-free QR encoder (ISO/IEC 18004, byte mode)
+src/lib/certificate.ts          builds the Appostta certificate as a standalone SVG
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
-supabase/schema.sql             database schema, views, functions
+supabase/schema.sql             database schema, views, functions (includes Appostta)
+supabase/appostta.sql           the Appostta tables on their own, for adding them to an existing database
 ```
 
 ## Notes on the free tiers

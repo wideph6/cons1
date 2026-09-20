@@ -118,6 +118,18 @@ export function formatBytes(n: number | null | undefined): string {
   return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
 }
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * `2026-03-16` -> `16 Mar 2026`. Reads the parts out of the string rather than going through Date,
+ * which would treat a plain date as UTC midnight and can show the day before in a western zone.
+ */
+export function formatIssued(iso: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  if (!m) return iso ?? "";
+  return `${Number(m[3])} ${SHORT_MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}`;
+}
+
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -163,6 +175,11 @@ export const ACTION_LABELS: Record<string, string> = {
   edit_counter: "Edited counter",
   change_password: "Changed password",
   cleanup_storage: "Cleaned up storage",
+  create_appostta: "Created Appostta record",
+  update_appostta: "Updated Appostta record",
+  replace_appostta_doc: "Replaced Appostta document",
+  delete_appostta: "Deleted Appostta record",
+  update_appostta_settings: "Updated Appostta settings",
 };
 
 export function displayPath(path: string): string {

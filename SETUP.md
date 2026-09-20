@@ -590,6 +590,109 @@ File manager mein files ke aage wale checkbox lagayen, upar teen button aa jayen
 
 ---
 
+# Hissa 12 — Appostta tab
+
+Har record = **aik document** + wo tafseelat jo us ke certificate par chhapti hain.
+
+## 12.0 Pehle database mein tables banayen
+
+Supabase → **SQL Editor** → **New query** → `supabase/appostta.sql` ka poora content paste karen → **Run**.
+
+(Poori `schema.sql` dobara chalana bhi theek hai — dono safe hain aur dobara chalane se kuch kharab nahi hota. Lekin chhoti file jaldi chalti hai.)
+
+Ban gaya ya nahi, ye check karen:
+
+```sql
+select table_name from information_schema.tables
+where table_schema = 'public'
+  and table_name in ('appostta_settings', 'appostta_records');
+```
+
+**2 rows** aaney chahiyen. Na aayen to file dobara chalayen.
+
+### "Failed to fetch (api.supabase.com)" aa raha hai?
+
+Ye SQL ka error nahi — browser Supabase tak pohanch hi nahi raha. Tarteeb se ye karen:
+
+1. Upar wali check query chalayen — mumkin hai SQL chal chuka ho aur sirf jawab na aaya ho.
+2. Page **refresh** karen (F5) aur dobara koshish karen.
+3. Ad-blocker / privacy extension band karen, ya **incognito window** mein kholen.
+4. VPN chal raha hai to band kar ke dekhen; nahi chal raha to laga kar dekhen.
+5. Doosra browser ya mobile data se koshish karen.
+6. [status.supabase.com](https://status.supabase.com) dekhen — kabhi kabhi Supabase khud down hota hai.
+7. Free-tier project **paused** to nahi? Dashboard par "Restore project" ka button aata hai — pehle usay restore karen.
+
+## 12.1 Pehli dafa: settings bhar lein
+
+Sidebar → **Appostta** → upar **Settings**:
+
+| Khana | Kya rakhna hai |
+| --- | --- |
+| Organisation name | Certificate ke sab se upar chhapne wala naam |
+| Tagline | Naam ke neeche choti si line (marzi ki baat hai) |
+| Number prefix | Naye number is se shuru honge, jaise `APT` → `APT-MUBN-NGDW-EGCW` |
+| Default certificate rows | Har naye record mein ye rows pehle se bhari milengi |
+| Shared signatory name | Signature ke neeche chhapne wala naam |
+| Shared signature image | Digital signature ki image (PNG jis ka background transparent ho, sab se behtar) |
+| Footer note | Certificate ke neeche choti si ibarat |
+
+Ye sab baad mein kabhi bhi badla ja sakta hai. Settings badalne se **purane records nahi badalte** — un ki rows wesi hi rehti hain jesi save hui thin.
+
+## 12.2 Naya record banana
+
+1. **New record** dabayen.
+2. **Domain** chunein — link isi domain par banega.
+3. **Issue date** rakhen (default aaj ki tareekh). Yehi link mein day/month/year ban kar jati hai.
+4. **Reference number** khali chhor dein to khud ban jata hai. Apna likhna ho to likh dein.
+5. **Document** chunein — yehi file R2 mein jati hai.
+6. **Certificate rows** bhar dein — har row ka label aur value aap ke apne alfaaz mein. Rows ki tarteeb wohi hai jo certificate par numbering banti hai.
+7. **Signatory name / signature image** khali chhorenge to settings wale shared use honge; is record ke liye alag chahiye to yahan upload kar dein.
+8. **Create record** dabayen.
+
+Bante hi link tayyar ho jata hai:
+
+```
+https://<domain>/verify-appostta?number=APT-MUBN-NGDW-EGCW&day=16&month=03&year=2026
+```
+
+## 12.3 Baad mein badalna
+
+List mein har record ke aage **pencil** (Edit) se: number, date, domain, rows, signature, document — sab badla ja sakta hai.
+
+> **Dehan rahe:** number ya date badalne se **link bhi badal jata hai**. Jo certificate pehle chhap chuka hai us ka QR purane link par jayega, jo ab kaam nahi karega. Number/date badlen to certificate dobara download kar ke lagayen.
+
+Document badalna ho to Edit mein nayi file chunein — purani file storage se hata di jati hai.
+
+## 12.4 Certificate download
+
+Record ke aage **stamp** wala button dabayen. Preview khulta hai, aur:
+
+- **Download PNG** — 3x resolution, chhapne ke liye
+- **Download SVG** — vector, kisi bhi size par saaf
+
+QR code us record ke poore link par jata hai — phone se scan kar ke khud check kar lein.
+
+## 12.5 Permissions
+
+Nayi permissions super admin ko **Users** mein tick karni hongi (purane users ko khud ba khud nahi miltin):
+
+- `Create Appostta records and upload their documents`
+- `Edit Appostta records (number, date, fields, signature)`
+- `Delete Appostta records`
+- `Change Appostta defaults and the shared signature`
+
+## 12.6 Storage ka taluq
+
+Appostta ki files bucket mein `appostta/` ke neeche rehti hain, file manager ki `files/` se alag. **Storage** page dono ko ginta hai, aur cleanup kabhi aise object ko haath nahi lagata jo kisi record se jura hua ho.
+
+Domain delete karenge to us domain ke Appostta records aur un ki files bhi chali jati hain — confirm karne se pehle dekh lein.
+
+## 12.7 Abhi kya nahi bana
+
+`/verify-appostta` wala **public page abhi nahi bana**. Us waqt tak link kholne par 404 aata hai. Admin panel ka sab kaam — upload, number, date, rows, QR, certificate download — mukammal chalta hai.
+
+---
+
 # Masail aur un ka hal
 
 | Kya ho raha hai | Wajah aur hal |

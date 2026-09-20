@@ -56,7 +56,18 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
     if (lErr) throw new ApiError(500, lErr.message);
     const linkIds = (links ?? []).map((l) => l.id as string);
     const keys = await listLinkKeys(linkIds);
-    await deleteObjects(keys);
+
+    // Appostta records cascade with the domain, so their stored objects go now or they leak.
+    const { data: appostta, error: aErr } = await db()
+      .from("appostta_records")
+      .select("doc_r2_key,signature_r2_key")
+      .eq("domain_id", id);
+    if (aErr) throw new ApiError(500, aErr.message);
+    const apposttaKeys = (appostta ?? []).flatMap((a) =>
+      [a.doc_r2_key, a.signature_r2_key].filter((k): k is string => typeof k === "string" && k.length > 0),
+    );
+
+    await deleteObjects([...keys, ...apposttaKeys]);
 
     const { error } = await db().from("domains").delete().eq("id", id);
     if (error) throw new ApiError(500, error.message);
@@ -68,8 +79,19 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
       user_id: user.id,
       action: "delete_domain",
       domain: { id: null, hostname: domain.hostname },
-      details: { links: linkIds.length, files: keys.length, removed_from_vercel: vercel?.ok ?? false },
+      details: {
+        links: linkIds.length,
+        files: keys.length,
+        appostta: appostta?.length ?? 0,
+        removed_from_vercel: vercel?.ok ?? false,
+      },
     });
-    return ok({ ok: true, files_deleted: keys.length, links_deleted: linkIds.length, vercel });
+    return ok({
+      ok: true,
+      files_deleted: keys.length,
+      links_deleted: linkIds.length,
+      appostta_deleted: appostta?.length ?? 0,
+      vercel,
+    });
   });
 }

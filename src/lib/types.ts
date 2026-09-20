@@ -224,3 +224,53 @@ export interface Paged<T> {
   limit: number;
   offset: number;
 }
+
+/* ---------------- Appostta ---------------- */
+
+/** One editable row on a record's certificate. */
+export interface ApposttaField {
+  label: string;
+  value: string;
+}
+
+export interface ApposttaSettings {
+  org_name: string;
+  org_tagline: string;
+  number_prefix: string;
+  default_fields: ApposttaField[];
+  signatory_name: string;
+  signature_r2_key: string | null;
+  signature_content_type: string | null;
+  footer_note: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface ApposttaRecord {
+  id: string;
+  domain_id: string;
+  number: string;
+  /** ISO date (YYYY-MM-DD); the day/month/year in the verification link come from this. */
+  issued_on: string;
+  doc_filename: string | null;
+  doc_r2_key: string | null;
+  doc_size: number;
+  doc_content_type: string | null;
+  doc_uploaded_at: string | null;
+  doc_replaced_at: string | null;
+  fields: ApposttaField[];
+  /** Blank means the shared signatory from settings is used. */
+  signatory_name: string;
+  signature_r2_key: string | null;
+  signature_content_type: string | null;
+  notes: string;
+  download_count: number;
+  last_downloaded_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  domain_hostname: string;
+  domain_is_active: boolean;
+  /** Built by the server so every caller shows the same link. */
+  verify_url: string;
+}

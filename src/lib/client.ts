@@ -147,3 +147,56 @@ export function qs(params: Record<string, string | number | boolean | undefined 
   const s = sp.toString();
   return s ? `?${s}` : "";
 }
+
+/** Triggers a browser download for an in-memory blob. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoked on the next tick so the click has already started the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function downloadSvgFile(svg: string, filename: string): void {
+  downloadBlob(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), filename);
+}
+
+/**
+ * Rasterises an SVG string to a PNG and saves it.
+ *
+ * The SVG must be fully self-contained: any <image> inside it has to be a data: URI, because an
+ * external URL taints the canvas and makes toBlob return null on most browsers.
+ */
+export async function downloadSvgAsPng(svg: string, filename: string, scale = 3): Promise<void> {
+  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("The certificate image could not be rendered"));
+      el.src = url;
+    });
+
+    const width = Math.round((img.naturalWidth || 560) * scale);
+    const height = Math.round((img.naturalHeight || 780) * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This browser cannot export the certificate");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!png) throw new Error("The certificate could not be converted to PNG");
+    downloadBlob(png, filename);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

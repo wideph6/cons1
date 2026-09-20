@@ -47,6 +47,19 @@ export function isManagedKey(key: unknown): key is string {
   return typeof key === "string" && /^files\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/.test(key);
 }
 
+/** Appostta objects live outside the files/ prefix so the file-row cleanup can never claim them. */
+export type ApposttaKind = "docs" | "signatures";
+
+export function makeApposttaKey(kind: ApposttaKind, filename: string): string {
+  const safe = cleanFilename(filename).replace(/[^A-Za-z0-9._-]/g, "_");
+  return `appostta/${kind}/${crypto.randomUUID()}/${safe}`;
+}
+
+export function isApposttaKey(key: unknown, kind?: ApposttaKind): key is string {
+  const part = kind ?? "(?:docs|signatures)";
+  return typeof key === "string" && new RegExp(`^appostta/${part}/[0-9a-f-]{36}/[A-Za-z0-9._-]+$`).test(key);
+}
+
 export async function presignUpload(key: string, contentType: string, expiresIn = 900): Promise<string> {
   return getSignedUrl(
     r2(),
@@ -141,21 +154,26 @@ export interface StoredObject {
   last_modified: string | null;
 }
 
-/** Prefix every key this app writes lives under; anything else in the bucket is left alone. */
+/** Prefix the file manager's keys live under; anything else in the bucket is left alone. */
 export const MANAGED_PREFIX = "files/";
+/** Prefix the Appostta documents and signature images live under. */
+export const APPOSTTA_PREFIX = "appostta/";
 
 /**
- * Every object this app owns, walked page by page. `truncated` is true when the bucket holds more
+ * Every object under one prefix, walked page by page. `truncated` is true when the bucket holds more
  * than `maxKeys` objects, so a report can say it is partial instead of pretending the rest are gone.
  */
-export async function listAllObjects(maxKeys = 50_000): Promise<{ objects: StoredObject[]; truncated: boolean }> {
+export async function listAllObjects(
+  prefix: string = MANAGED_PREFIX,
+  maxKeys = 50_000,
+): Promise<{ objects: StoredObject[]; truncated: boolean }> {
   const objects: StoredObject[] = [];
   let token: string | undefined;
   let truncated = false;
 
   for (;;) {
     const res = await r2().send(
-      new ListObjectsV2Command({ Bucket: bucket(), Prefix: MANAGED_PREFIX, ContinuationToken: token, MaxKeys: 1000 }),
+      new ListObjectsV2Command({ Bucket: bucket(), Prefix: prefix, ContinuationToken: token, MaxKeys: 1000 }),
     );
     for (const o of res.Contents ?? []) {
       if (!o.Key) continue;
@@ -195,6 +213,26 @@ export async function putObject(key: string, body: Uint8Array, contentType: stri
 export async function getObjectStream(key: string) {
   const res = await r2().send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
   return res;
+}
+
+/**
+ * Whole object in memory. Only for small objects such as a signature image, which has to reach the
+ * browser as a data: URI — an <img> pointing at storage would taint the canvas and block the PNG export.
+ */
+export async function getObjectBytes(key: string, maxBytes = 2 * 1024 * 1024): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  try {
+    const res = await r2().send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
+    if (res.ContentLength && res.ContentLength > maxBytes) return null;
+    const body = res.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined;
+    if (!body?.transformToByteArray) return null;
+    const bytes = await body.transformToByteArray();
+    if (bytes.byteLength > maxBytes) return null;
+    return { bytes, contentType: res.ContentType ?? "application/octet-stream" };
+  } catch (e) {
+    const status = (e as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+    if (status === 404 || (e as { name?: string })?.name === "NoSuchKey") return null;
+    throw e;
+  }
 }
 
 export async function deleteObject(key: string): Promise<void> {
