@@ -82,6 +82,9 @@ const CONTENT_W = W - MARGIN * 2;
 const SERIF = "Georgia, 'Times New Roman', Times, serif";
 const SANS = "Helvetica, Arial, sans-serif";
 const MONO = "'Courier New', Courier, monospace";
+/** For the certification mark only — named script faces first, generic `cursive` as the last resort
+ * so the mark still renders as something rather than erroring wherever none of them are installed. */
+const SCRIPT = "'Segoe Script', 'Brush Script MT', 'Lucida Handwriting', cursive";
 
 const INK = "#111111";
 const MUTED = "#555555";
@@ -294,17 +297,17 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
   y += 6;
   for (const line of nameLines) {
     y += 24;
-    parts.push(text(W / 2, y, line, { size: 20, family: SERIF, bold: true, anchor: "middle" }));
+    parts.push(text(W / 2, y, line, { size: 20, family: SERIF, bold: true, anchor: "middle", letterSpacing: 3 }));
   }
   y += 8;
   rules.push(y);
 
-  const taglineLines = wrap(input.orgTagline, CONTENT_W - 24, 12, SANS);
+  const taglineLines = wrap(input.orgTagline, CONTENT_W - 24, 12, SERIF);
   if (taglineLines.length) {
     y += 4;
     for (const line of taglineLines) {
       y += 16;
-      parts.push(text(W / 2, y, line, { size: 12, anchor: "middle" }));
+      parts.push(text(W / 2, y, line, { size: 12, family: SERIF, italic: true, anchor: "middle" }));
     }
     y += 7;
     rules.push(y);
@@ -335,8 +338,11 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
   function drawStamp() {
     y += 4;
     for (const line of stampLines) {
-      y += 21;
-      parts.push(text(W / 2, y, line, { size: 17, family: SERIF, italic: true, anchor: "middle" }));
+      y += 22;
+      // A script face reads as a handwritten certification mark; an italic serif reads as a
+      // heading. `SCRIPT` tries the common named script fonts first and falls back to the
+      // generic `cursive` family only if none of them are installed.
+      parts.push(text(W / 2, y, line, { size: 19, family: SCRIPT, anchor: "middle" }));
     }
     y += 6;
     rules.push(y);
@@ -416,25 +422,27 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
   const colA = MARGIN + CONTENT_W * 0.38;
   const colB = MARGIN + CONTENT_W * 0.68;
 
-  // Left: the two values a verifier is asked to match.
-  parts.push(text(MARGIN + 10, stripTop + 22, "Reference No.", { size: 9.5, fill: MUTED }));
-  const numberLines = wrap(input.number, colA - MARGIN - 20, 12.5, MONO, true);
-  let ny = stripTop + 22;
-  for (const line of numberLines) {
-    ny += 16;
-    parts.push(text(MARGIN + 10, ny, line, { size: 12.5, family: MONO, bold: true }));
-  }
-  parts.push(text(MARGIN + 10, ny + 22, "Date of issue", { size: 9.5, fill: MUTED }));
-  parts.push(text(MARGIN + 10, ny + 38, formatIssued(input.issuedOn), { size: 12.5, bold: true }));
+  // Left: the issue date inline with its label, and blank room below for the physical seal —
+  // the reference certificate this layout follows never repeats the reference number here, since
+  // it's already row 8 of the numbered table.
+  const dateLabel = "Date: ";
+  parts.push(text(MARGIN + 10, stripTop + 24, dateLabel, { size: 12.5 }));
+  parts.push(
+    text(MARGIN + 10 + charWidth(12.5, SANS, false) * dateLabel.length, stripTop + 24, formatIssued(input.issuedOn), {
+      size: 12.5,
+      bold: true,
+    }),
+  );
+  parts.push(text(MARGIN + 10, stripTop + stripH - 26, "Seal/Stamp", { size: 12.5 }));
 
   // Middle: the QR a phone camera resolves to the verification link.
   const qrSize = 94;
   const qrX = colA + (colB - colA - qrSize) / 2;
   const qrY = stripTop + 16;
   parts.push(qrBlock(input.verifyUrl, qrX, qrY, qrSize));
-  parts.push(text((colA + colB) / 2, qrY + qrSize + 13, "Scan to verify", { size: 9, fill: MUTED, anchor: "middle" }));
 
-  // Right: signature image over the signatory's name.
+  // Right: signature image over the signatory's name, with no caption or rule beneath it — the
+  // name alone is what the reference certificate prints there.
   const sigCx = (colB + (W - MARGIN)) / 2;
   if (input.signatureDataUri) {
     const sigW = Math.min(130, W - MARGIN - colB - 16);
@@ -443,16 +451,12 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
         `width="${round(sigW)}" height="52" preserveAspectRatio="xMidYMid meet"/>`,
     );
   }
-  parts.push(
-    `<line x1="${round(sigCx - 58)}" y1="${round(stripTop + 82)}" x2="${round(sigCx + 58)}" y2="${round(stripTop + 82)}" stroke="${RULE}" stroke-width="0.8"/>`,
-  );
   const sigNameLines = wrap(input.signatoryName, 132, 10, SANS).slice(0, 2);
   let sy = stripTop + 82;
   for (const line of sigNameLines) {
     sy += 13;
     parts.push(text(sigCx, sy, line, { size: 10, anchor: "middle" }));
   }
-  parts.push(text(sigCx, Math.max(sy, stripTop + 82) + 14, "Authorised signature", { size: 8.5, fill: MUTED, anchor: "middle" }));
 
   const tableBottom = stripTop + stripH;
   parts.push(vline(colA, stripTop, tableBottom));
