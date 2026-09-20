@@ -191,8 +191,10 @@ function watermarkLayer(phrase: string, height: number, style: BorderStyle, clip
   // estimate `charWidth` uses for row labels. Underestimating it, and ignoring letter-spacing, is
   // what let consecutive repeats overlap.
   const phraseWidth = clean.length * size * 0.68 + Math.max(0, clean.length - 1) * letterSpacing;
-  const stepX = phraseWidth + 28;
-  const stepY = 26;
+  const horizontalGap = 6; // was 28, cut 80% so repeats sit close together without touching
+  const verticalGap = 3; // extra space beyond the line's own height; was 9, cut 65%
+  const stepX = phraseWidth + horizontalGap;
+  const stepY = size + verticalGap;
   const inset = watermarkInset(style);
 
   const out: string[] = [];
