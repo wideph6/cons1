@@ -555,7 +555,7 @@ const TPL_H = 1125;
  * asked every overlaid value to follow for style, weight and size. Measured by comparing rendered
  * cap-heights against that fixed text directly, since the image's own font metrics don't line up
  * with this file's generic-family width estimate. */
-const TPL_VALUE_SIZE = 29;
+const TPL_VALUE_SIZE = 20;
 const TPL_ROW1 = { leftX: 125, rightX: 335, y: 250 };
 /** Rows 2-4: value stacked under the fixed label, at this x and baseline. */
 const TPL_STACKED = [
@@ -571,8 +571,8 @@ const TPL_INLINE = [
   { field: 7, x: 184, y: 692 },
 ];
 const TPL_DATE = { x: 165, y: 735 };
-const TPL_QR = { x: 368, y: 711, size: 126 };
-const TPL_SIGNATURE = { cx: 642, y: 715, w: 140, h: 55, nameY: 800 };
+const TPL_QR = { x: 365, y: 709, size: 134 };
+const TPL_SIGNATURE = { cx: 642, y: 712, w: 170, h: 67, nameY: 812 };
 /** Where an overflow row (past the template's fixed 8) starts, and the same numbered-row layout
  * the fully-drawn certificate uses for it. */
 const TPL_OVERFLOW_MARGIN = 32;
@@ -608,7 +608,9 @@ function buildTemplateCertificateSvg(
   // "Date:" repeats row 6's value (the issue date row), per the template's own layout.
   parts.push(text(TPL_DATE.x, TPL_DATE.y, value(5), { size: TPL_VALUE_SIZE, bold: true }));
 
-  parts.push(qrBlock(input.verifyUrl, TPL_QR.x, TPL_QR.y, TPL_QR.size));
+  // A tight quiet zone: the template's own placeholder box already frames it, so the code doesn't
+  // need its usual margin on top of that.
+  parts.push(qrBlock(input.verifyUrl, TPL_QR.x, TPL_QR.y, TPL_QR.size, 1));
 
   if (input.signatureDataUri) {
     parts.push(
@@ -655,16 +657,19 @@ function buildTemplateCertificateSvg(
   return { svg, width: TPL_W, height };
 }
 
-/** The QR as a nested group, scaled so its modules land on the requested pixel box. */
-function qrBlock(url: string, x: number, y: number, size: number): string {
+/**
+ * The QR as a nested group, scaled so its modules land on the requested pixel box.
+ * `quiet` is the blank margin around the modules, in modules — the spec default (4) is generous;
+ * callers overlaying onto an already-framed placeholder can pass less since the frame itself
+ * supplies separation from surrounding content.
+ */
+function qrBlock(url: string, x: number, y: number, size: number, quiet = 4): string {
   let matrix;
   try {
     matrix = encodeQr(url, "M");
   } catch {
     return text(x, y + size / 2, "QR unavailable", { size: 9, fill: MUTED });
   }
-  // The spec's four-module quiet zone; with the cell divider lines this close, scanners need it.
-  const quiet = 4;
   const span = matrix.size + quiet * 2;
   const scale = size / span;
   return (
