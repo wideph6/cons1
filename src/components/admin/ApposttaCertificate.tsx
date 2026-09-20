@@ -23,6 +23,23 @@ export function ApposttaCertificate({
   const [signatoryName, setSignatoryName] = useState("");
   const [loadingSig, setLoadingSig] = useState(false);
   const [busy, setBusy] = useState<"png" | "svg" | null>(null);
+  /** The fixed apostille background, fetched once — a static asset, not per-record. Falling back
+   * to the fully-drawn certificate if this never arrives (e.g. offline) beats blocking on it. */
+  const [templateBg, setTemplateBg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ data_uri: string }>("/api/admin/appostta/template")
+      .then((r) => {
+        if (!cancelled) setTemplateBg(r.data_uri);
+      })
+      .catch(() => {
+        /* falls back to the fully-drawn certificate */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // The image has to arrive as a data: URI or the canvas export is blocked, so it is fetched
   // here rather than pointed at storage.
@@ -68,8 +85,9 @@ export function ApposttaCertificate({
       stampAfterRow: settings?.stamp_after_row ?? 0,
       verifyNote: settings?.verify_note ?? "",
       borderStyle: (settings?.border_style as BorderStyle) || "ornament",
+      templateBackground: templateBg,
     });
-  }, [record, settings, signature, signatoryName]);
+  }, [record, settings, signature, signatoryName, templateBg]);
 
   async function save(kind: "png" | "svg") {
     if (!built || !record) return;

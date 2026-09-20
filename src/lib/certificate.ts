@@ -30,6 +30,14 @@ export interface CertificateInput {
   verifyNote?: string;
   /** How the page edge is drawn. */
   borderStyle?: BorderStyle;
+  /**
+   * The fixed apostille template's background, as a data: URI (see `signatureDataUri` for why it
+   * can't be a plain URL). When set, values are overlaid onto this image at the coordinates
+   * measured for it instead of the border/watermark/labels being drawn from scratch — see
+   * `buildTemplateCertificateSvg`. Fields past the template's fixed first 8 still print below it
+   * in the fully-drawn style, so extra rows a settings panel adds keep working.
+   */
+  templateBackground?: string | null;
 }
 
 /** The page-edge treatments the panel offers. */
@@ -281,7 +289,85 @@ function borderLayer(style: BorderStyle, height: number): string {
   return `<g fill="${INK}">${glyphs.join("")}</g>`;
 }
 
+const SPLIT_GAP = 14;
+const hasText = (s: string | undefined) => Boolean((s ?? "").trim());
+
+/**
+ * Draws one numbered row (optionally split into two halves under the same number) and returns
+ * where it ends, so both the fully-drawn certificate and the image-backed one's overflow rows
+ * (fields past the template's fixed 8) can share the same row layout.
+ */
+function drawFieldRow(
+  parts: string[],
+  tokens: TokenContext,
+  num: number,
+  field: ApposttaField,
+  top: number,
+  textX: number,
+  numX: number,
+  rowW: number,
+): { bottom: number; colW: number; split: ApposttaField["second"] | null } {
+  const split = field.second && (hasText(field.second.label) || hasText(field.second.value)) ? field.second : null;
+  const colW = split ? (rowW - SPLIT_GAP) / 2 : rowW;
+  const halves = split ? [field, split] : [field];
+
+  let bottom = top;
+  /** Baseline of the row's first line of text, so the number sits level with it. */
+  let firstBaseline = Infinity;
+
+  halves.forEach((half, h) => {
+    const colX = textX + h * (colW + SPLIT_GAP);
+    let cy = top + 5;
+
+    if (field.inline) {
+      // Heading and value on one line, the value starting at a fixed indent so a column of inline
+      // rows lines up with itself however long each heading is.
+      const labelW = Math.min(colW * 0.42, 116);
+      const labelLines = wrap(half.label, labelW, 12, SANS);
+      // Only the value takes tokens. A heading is set in settings and is meant to read literally.
+      const valueLines = wrap(fillTokens(half.value, tokens), colW - labelW - 10, 13, SANS, true);
+      const lines = Math.max(labelLines.length, valueLines.length, 1);
+      for (let k = 0; k < lines; k++) {
+        cy += 17;
+        if (k === 0) firstBaseline = Math.min(firstBaseline, cy);
+        const lab = labelLines[k];
+        const val = valueLines[k];
+        if (lab) parts.push(text(colX, cy, lab, { size: 12 }));
+        if (val) parts.push(text(colX + labelW + 10, cy, val, { size: 13, bold: true }));
+      }
+    } else {
+      const labelLines = wrap(half.label, colW, 12, SANS);
+      const valueLines = wrap(fillTokens(half.value, tokens), colW, 13, SANS, true);
+      for (const line of labelLines) {
+        cy += 16;
+        firstBaseline = Math.min(firstBaseline, cy);
+        parts.push(text(colX, cy, line, { size: 12 }));
+      }
+      for (const line of valueLines) {
+        cy += 18;
+        firstBaseline = Math.min(firstBaseline, cy);
+        parts.push(text(colX, cy, line, { size: 13, bold: true }));
+      }
+      // An empty half still needs height, otherwise the rule would sit on the row above it.
+      if (!labelLines.length && !valueLines.length) cy += 16;
+    }
+
+    bottom = Math.max(bottom, cy);
+  });
+
+  // Printed once, at the start of the row, however many halves it has.
+  parts.push(text(numX, Number.isFinite(firstBaseline) ? firstBaseline : top + 21, String(num), { size: 12 }));
+
+  return { bottom, colW, split };
+}
+
 export function buildCertificateSvg(input: CertificateInput): { svg: string; width: number; height: number } {
+  return input.templateBackground
+    ? buildTemplateCertificateSvg(input, input.templateBackground)
+    : buildDrawnCertificateSvg(input);
+}
+
+function buildDrawnCertificateSvg(input: CertificateInput): { svg: string; width: number; height: number } {
   const parts: string[] = [];
   const tokens = tokenContext(input);
 
@@ -318,10 +404,6 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
   const textX = MARGIN + 28;
   const rowW = CONTENT_W - 36;
 
-  /** Gap between the two halves of a split row, holding the divider. */
-  const SPLIT_GAP = 14;
-
-  const hasText = (s: string | undefined) => Boolean((s ?? "").trim());
   const rows = input.fields.filter(
     (f) => hasText(f.label) || hasText(f.value) || hasText(f.second?.label) || hasText(f.second?.value),
   );
@@ -349,65 +431,12 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
   }
 
   rows.forEach((f, i) => {
-    // A split row is two headings on one numbered row, so both halves are laid out from the same top
-    // and the row ends at whichever runs longer.
-    const split = f.second && (hasText(f.second.label) || hasText(f.second.value)) ? f.second : null;
-    const colW = split ? (rowW - SPLIT_GAP) / 2 : rowW;
-    const halves = split ? [f, split] : [f];
     const top = y;
+    const drawn = drawFieldRow(parts, tokens, i + 1, f, top, textX, numX, rowW);
 
-    let bottom = top;
-    /** Baseline of the row's first line of text, so the number sits level with it. */
-    let firstBaseline = Infinity;
-
-    halves.forEach((half, h) => {
-      const colX = textX + h * (colW + SPLIT_GAP);
-      let cy = top + 5;
-
-      if (f.inline) {
-        // Heading and value on one line, the value starting at a fixed indent so a column of inline
-        // rows lines up with itself however long each heading is.
-        const labelW = Math.min(colW * 0.42, 116);
-        const labelLines = wrap(half.label, labelW, 12, SANS);
-        // Only the value takes tokens. A heading is set in settings and is meant to read literally.
-        const valueLines = wrap(fillTokens(half.value, tokens), colW - labelW - 10, 13, SANS, true);
-        const lines = Math.max(labelLines.length, valueLines.length, 1);
-        for (let k = 0; k < lines; k++) {
-          cy += 17;
-          if (k === 0) firstBaseline = Math.min(firstBaseline, cy);
-          const lab = labelLines[k];
-          const val = valueLines[k];
-          if (lab) parts.push(text(colX, cy, lab, { size: 12 }));
-          if (val) parts.push(text(colX + labelW + 10, cy, val, { size: 13, bold: true }));
-        }
-      } else {
-        const labelLines = wrap(half.label, colW, 12, SANS);
-        const valueLines = wrap(fillTokens(half.value, tokens), colW, 13, SANS, true);
-        for (const line of labelLines) {
-          cy += 16;
-          firstBaseline = Math.min(firstBaseline, cy);
-          parts.push(text(colX, cy, line, { size: 12 }));
-        }
-        for (const line of valueLines) {
-          cy += 18;
-          firstBaseline = Math.min(firstBaseline, cy);
-          parts.push(text(colX, cy, line, { size: 13, bold: true }));
-        }
-        // An empty half still needs height, otherwise the rule would sit on the row above it.
-        if (!labelLines.length && !valueLines.length) cy += 16;
-      }
-
-      bottom = Math.max(bottom, cy);
-    });
-
-    // Printed once, at the start of the row, however many halves it has.
-    parts.push(
-      text(numX, Number.isFinite(firstBaseline) ? firstBaseline : top + 21, String(i + 1), { size: 12 }),
-    );
-
-    y = bottom + 6;
+    y = drawn.bottom + 6;
     if (top === y) y += 22;
-    if (split) parts.push(vline(textX + colW + SPLIT_GAP / 2, top, y));
+    if (drawn.split) parts.push(vline(textX + drawn.colW + SPLIT_GAP / 2, top, y));
     rules.push(y);
 
     if (stampRow === i + 1) drawStamp();
@@ -511,6 +540,119 @@ export function buildCertificateSvg(input: CertificateInput): { svg: string; wid
     `</svg>`;
 
   return { svg, width: W, height: H };
+}
+
+/**
+ * Pixel layout for the `apostille_padded_40px` template image (862x1125), measured directly from
+ * its rule lines and baked-in label glyphs. A value placed at these coordinates lands under or
+ * beside its printed label without the label needing to be drawn at all — everything static
+ * (border, watermark, title, the numbered labels, row 7's fixed value, the footer) is already
+ * pixels in the image; only the record's own values are drawn on top of it.
+ */
+const TPL_W = 862;
+const TPL_H = 1125;
+/** Bold size that matches row 7's baked-in "Ministry of Foreign Affairs" — the reference the panel
+ * asked every overlaid value to follow for style, weight and size. Measured by comparing rendered
+ * cap-heights against that fixed text directly, since the image's own font metrics don't line up
+ * with this file's generic-family width estimate. */
+const TPL_VALUE_SIZE = 29;
+const TPL_ROW1 = { leftX: 125, rightX: 335, y: 250 };
+/** Rows 2-4: value stacked under the fixed label, at this x and baseline. */
+const TPL_STACKED = [
+  { x: 125, y: 327 },
+  { x: 125, y: 405 },
+  { x: 125, y: 482 },
+];
+/** Rows 5, 6, 8: value inline beside the fixed label — row 7's value is fixed in the image itself,
+ * so there is no entry for it here. */
+const TPL_INLINE = [
+  { field: 4, x: 178, y: 574 },
+  { field: 5, x: 192, y: 613 },
+  { field: 7, x: 184, y: 692 },
+];
+const TPL_DATE = { x: 165, y: 735 };
+const TPL_QR = { x: 368, y: 711, size: 126 };
+const TPL_SIGNATURE = { cx: 642, y: 715, w: 140, h: 55, nameY: 800 };
+/** Where an overflow row (past the template's fixed 8) starts, and the same numbered-row layout
+ * the fully-drawn certificate uses for it. */
+const TPL_OVERFLOW_MARGIN = 32;
+
+function buildTemplateCertificateSvg(
+  input: CertificateInput,
+  backgroundDataUri: string,
+): { svg: string; width: number; height: number } {
+  const tokens = tokenContext(input);
+  const parts: string[] = [];
+  const fields = input.fields;
+  const value = (i: number) => fillTokens(fields[i]?.value ?? "", tokens);
+
+  const row1 = fields[0];
+  if (row1) {
+    parts.push(text(TPL_ROW1.leftX, TPL_ROW1.y, fillTokens(row1.value ?? "", tokens), { size: TPL_VALUE_SIZE, bold: true }));
+    if (row1.second) {
+      parts.push(
+        text(TPL_ROW1.rightX, TPL_ROW1.y, fillTokens(row1.second.value ?? "", tokens), { size: TPL_VALUE_SIZE, bold: true }),
+      );
+    }
+  }
+
+  TPL_STACKED.forEach((pos, i) => {
+    parts.push(text(pos.x, pos.y, value(i + 1), { size: TPL_VALUE_SIZE, bold: true }));
+  });
+
+  // Row 7 (fields[6]) is intentionally skipped: its value is baked into the template image.
+  TPL_INLINE.forEach((pos) => {
+    parts.push(text(pos.x, pos.y, value(pos.field), { size: TPL_VALUE_SIZE, bold: true }));
+  });
+
+  // "Date:" repeats row 6's value (the issue date row), per the template's own layout.
+  parts.push(text(TPL_DATE.x, TPL_DATE.y, value(5), { size: TPL_VALUE_SIZE, bold: true }));
+
+  parts.push(qrBlock(input.verifyUrl, TPL_QR.x, TPL_QR.y, TPL_QR.size));
+
+  if (input.signatureDataUri) {
+    parts.push(
+      `<image href="${escapeXml(input.signatureDataUri)}" x="${round(TPL_SIGNATURE.cx - TPL_SIGNATURE.w / 2)}" ` +
+        `y="${round(TPL_SIGNATURE.y)}" width="${round(TPL_SIGNATURE.w)}" height="${round(TPL_SIGNATURE.h)}" ` +
+        `preserveAspectRatio="xMidYMid meet"/>`,
+    );
+  }
+  const sigNameLines = wrap(input.signatoryName, 240, 14, SANS).slice(0, 2);
+  let sy = TPL_SIGNATURE.nameY;
+  for (const line of sigNameLines) {
+    parts.push(text(TPL_SIGNATURE.cx, sy, line, { size: 14, anchor: "middle" }));
+    sy += 18;
+  }
+
+  // Fields past the template's fixed first 8 print below the image in the fully-drawn row style,
+  // so a settings panel that adds a 9th row still has somewhere for it to go.
+  let height = TPL_H;
+  const overflow = fields.slice(8);
+  if (overflow.length) {
+    const numX = TPL_OVERFLOW_MARGIN + 8;
+    const textX = TPL_OVERFLOW_MARGIN + 28;
+    const rowW = TPL_W - TPL_OVERFLOW_MARGIN * 2 - 36;
+    let y = TPL_H + TPL_OVERFLOW_MARGIN;
+    overflow.forEach((f, i) => {
+      const top = y;
+      const drawn = drawFieldRow(parts, tokens, i + 9, f, top, textX, numX, rowW);
+      parts.push(hline(top, TPL_OVERFLOW_MARGIN, TPL_W - TPL_OVERFLOW_MARGIN));
+      y = drawn.bottom + 6;
+      if (drawn.split) parts.push(vline(textX + drawn.colW + SPLIT_GAP / 2, top, y));
+    });
+    parts.push(hline(y, TPL_OVERFLOW_MARGIN, TPL_W - TPL_OVERFLOW_MARGIN));
+    height = y + TPL_OVERFLOW_MARGIN;
+  }
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
+    `width="${TPL_W}" height="${height}" viewBox="0 0 ${TPL_W} ${height}" role="img" aria-label="Certificate">` +
+    `<rect width="${TPL_W}" height="${height}" fill="#ffffff"/>` +
+    `<image href="${escapeXml(backgroundDataUri)}" x="0" y="0" width="${TPL_W}" height="${TPL_H}"/>` +
+    parts.join("") +
+    `</svg>`;
+
+  return { svg, width: TPL_W, height };
 }
 
 /** The QR as a nested group, scaled so its modules land on the requested pixel box. */
