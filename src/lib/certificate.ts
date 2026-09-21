@@ -555,7 +555,7 @@ const TPL_H = 1125;
  * asked every overlaid value to follow for style, weight and size. Measured by comparing rendered
  * cap-heights against that fixed text directly, since the image's own font metrics don't line up
  * with this file's generic-family width estimate. */
-const TPL_VALUE_SIZE = 20;
+const TPL_VALUE_SIZE = 22;
 const TPL_ROW1 = { leftX: 125, rightX: 335, y: 250 };
 /** Rows 2-4: value stacked under the fixed label, at this x and baseline. */
 const TPL_STACKED = [
@@ -571,8 +571,11 @@ const TPL_INLINE = [
   { field: 7, x: 184, y: 692 },
 ];
 const TPL_DATE = { x: 165, y: 735 };
-const TPL_QR = { x: 365, y: 709, size: 134 };
-const TPL_SIGNATURE = { cx: 642, y: 712, w: 170, h: 67, nameY: 812 };
+/** The QR's cell runs from x 364 to 500 (persistent column rules either side); maxed to that width
+ * and left square, so it comes out taller than the cell — the panel asked for the width filled
+ * rather than the aspect ratio changed to fit both dimensions. */
+const TPL_QR = { x: 364, y: 707, size: 136 };
+const TPL_SIGNATURE = { cx: 642, y: 726, w: 195, h: 77, nameY: 828 };
 /** Where an overflow row (past the template's fixed 8) starts, and the same numbered-row layout
  * the fully-drawn certificate uses for it. */
 const TPL_OVERFLOW_MARGIN = 32;
@@ -608,9 +611,9 @@ function buildTemplateCertificateSvg(
   // "Date:" repeats row 6's value (the issue date row), per the template's own layout.
   parts.push(text(TPL_DATE.x, TPL_DATE.y, value(5), { size: TPL_VALUE_SIZE, bold: true }));
 
-  // A tight quiet zone: the template's own placeholder box already frames it, so the code doesn't
-  // need its usual margin on top of that.
-  parts.push(qrBlock(input.verifyUrl, TPL_QR.x, TPL_QR.y, TPL_QR.size, 1));
+  // No backing rect: the template's own cell is already blank, and drawing one on top of it only
+  // risks a seam where a pure white rect meets the image's JPEG-compressed near-white pixels.
+  parts.push(qrBlock(input.verifyUrl, TPL_QR.x, TPL_QR.y, TPL_QR.size, 1, false));
 
   if (input.signatureDataUri) {
     parts.push(
@@ -663,7 +666,7 @@ function buildTemplateCertificateSvg(
  * callers overlaying onto an already-framed placeholder can pass less since the frame itself
  * supplies separation from surrounding content.
  */
-function qrBlock(url: string, x: number, y: number, size: number, quiet = 4): string {
+function qrBlock(url: string, x: number, y: number, size: number, quiet = 4, whiteBg = true): string {
   let matrix;
   try {
     matrix = encodeQr(url, "M");
@@ -674,7 +677,7 @@ function qrBlock(url: string, x: number, y: number, size: number, quiet = 4): st
   const scale = size / span;
   return (
     `<g transform="translate(${round(x)} ${round(y)}) scale(${round(scale)})">` +
-    `<rect width="${span}" height="${span}" fill="#ffffff"/>` +
+    (whiteBg ? `<rect width="${span}" height="${span}" fill="#ffffff"/>` : "") +
     `<path transform="translate(${quiet} ${quiet})" fill="#000000" d="${qrToPathData(matrix)}"/>` +
     `</g>`
   );
