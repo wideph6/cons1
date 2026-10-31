@@ -4,11 +4,12 @@ import { Download, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, Button, CopyButton, Loading, Modal } from "@/components/ui";
 import { api } from "@/lib/client";
+import { OLD_M_TAB, type MTab } from "@/lib/m";
 import type { FileRow } from "@/lib/types";
 import { buildPublicUrl, formatBytes, formatDateTime } from "@/lib/utils";
 
 /** Opens a file inline (PDF/image) inside the admin panel using a short-lived storage URL. */
-export function FilePreview({ file, onClose }: { file: FileRow | null; onClose: () => void }) {
+export function FilePreview({ file, tab = OLD_M_TAB, onClose }: { file: FileRow | null; tab?: MTab; onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +18,7 @@ export function FilePreview({ file, onClose }: { file: FileRow | null; onClose: 
     setError(null);
     if (!file) return;
     let cancelled = false;
-    api<{ url: string }>(`/api/admin/files/${file.id}/preview`)
+    api<{ url: string }>(`${tab.filesApi}/${file.id}/preview`)
       .then((r) => {
         if (!cancelled) setUrl(r.url);
       })
@@ -27,15 +28,15 @@ export function FilePreview({ file, onClose }: { file: FileRow | null; onClose: 
     return () => {
       cancelled = true;
     };
-  }, [file]);
+  }, [file, tab.filesApi]);
 
   async function download() {
     if (!file) return;
-    const r = await api<{ url: string }>(`/api/admin/files/${file.id}/preview?download=1`);
+    const r = await api<{ url: string }>(`${tab.filesApi}/${file.id}/preview?download=1`);
     window.location.href = r.url;
   }
 
-  const publicUrl = file?.link ? buildPublicUrl(file.link.domain.hostname, file.link.path, file.filename) : null;
+  const publicUrl = file?.link && tab.isPublic ? buildPublicUrl(file.link.domain.hostname, file.link.path, file.filename) : null;
   const isImage = file?.content_type.startsWith("image/");
   const isPdf = file?.content_type === "application/pdf";
 
@@ -50,7 +51,8 @@ export function FilePreview({ file, onClose }: { file: FileRow | null; onClose: 
           <>
             <span className="mr-auto text-[12.5px] text-text-muted">
               {formatBytes(file.size)} · uploaded {formatDateTime(file.uploaded_at)}
-              {file.uploader ? ` by ${file.uploader.name || file.uploader.email}` : ""} · {file.download_count} downloads
+              {file.uploader ? ` by ${file.uploader.name || file.uploader.email}` : ""}
+              {tab.isPublic ? ` · ${file.download_count} downloads` : ""}
             </span>
             {publicUrl ? <CopyButton text={publicUrl} size="md" /> : null}
             {url ? (

@@ -44,6 +44,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { api, copyText, postFormWithProgress, putWithProgress, ClientError } from "@/lib/client";
+import { OLD_M_TAB, type MAction, type MTab } from "@/lib/m";
 import type { Domain, FileRow, LinkRow, MoveResult } from "@/lib/types";
 import { buildLinkUrl, buildPublicUrl, cleanFilename, displayPath, formatBytes, formatDateTime, timeAgo } from "@/lib/utils";
 
@@ -51,8 +52,10 @@ const SERVER_FALLBACK_LIMIT = 4 * 1024 * 1024;
 
 type SortKey = "filename" | "size" | "uploaded_at" | "updated_at" | "download_count";
 
-export function FileManager() {
-  const { can } = useSession();
+/** The file manager behind both Old M and New M; `tab` says whose links, files and permissions it shows. */
+export function FileManager({ tab = OLD_M_TAB }: { tab?: MTab }) {
+  const { can: canDo } = useSession();
+  const can = (action: MAction | "create_domain") => canDo(action === "create_domain" ? action : tab.perms[action]);
   const { toast } = useToast();
   const router = useRouter();
   const sp = useSearchParams();
@@ -84,23 +87,23 @@ export function FileManager() {
 
   const loadTree = useCallback(async () => {
     try {
-      const r = await api<{ items: Domain[] }>("/api/admin/domains?include=links");
+      const r = await api<{ items: Domain[] }>(tab.treeApi);
       setTree(r.items);
       setTreeError(null);
     } catch (e) {
       setTreeError(errorMessage(e));
     }
-  }, []);
+  }, [tab.treeApi]);
 
   const loadFiles = useCallback(async (linkId: string) => {
     try {
-      const r = await api<{ items: FileRow[] }>(`/api/admin/files?link_id=${encodeURIComponent(linkId)}`);
+      const r = await api<{ items: FileRow[] }>(`${tab.filesApi}?link_id=${encodeURIComponent(linkId)}`);
       setFiles(r.items);
       setFilesError(null);
     } catch (e) {
       setFilesError(errorMessage(e));
     }
-  }, []);
+  }, [tab.filesApi]);
 
   useEffect(() => {
     loadTree();
@@ -125,11 +128,11 @@ export function FileManager() {
   useEffect(() => {
     if (!tree || selectedLinkId) return;
     const first = tree.find((d) => d.links && d.links.length)?.links?.[0];
-    if (first) router.replace(`/admin/files?link=${first.id}`);
-  }, [tree, selectedLinkId, router]);
+    if (first) router.replace(`${tab.page}?link=${first.id}`);
+  }, [tree, selectedLinkId, router, tab.page]);
 
   function selectLink(id: string) {
-    router.replace(`/admin/files?link=${id}`);
+    router.replace(`${tab.page}?link=${id}`);
   }
 
   function toggleDomain(id: string) {
@@ -179,7 +182,7 @@ export function FileManager() {
     if (!renameTarget) return;
     setBusy(true);
     try {
-      await api(`/api/admin/files/${renameTarget.id}`, { method: "PATCH", json: { filename: name } });
+      await api(`${tab.filesApi}/${renameTarget.id}`, { method: "PATCH", json: { filename: name } });
       toast(`Renamed to ${name}`);
       setRenameTarget(null);
       await refreshAll();
@@ -196,7 +199,7 @@ export function FileManager() {
     let failed = 0;
     for (const f of deleteTargets) {
       try {
-        await api(`/api/admin/files/${f.id}`, { method: "DELETE" });
+        await api(`${tab.filesApi}/${f.id}`, { method: "DELETE" });
       } catch {
         failed++;
       }
@@ -214,7 +217,7 @@ export function FileManager() {
   async function doCreateLink(domainId: string, path: string, notes: string) {
     setBusy(true);
     try {
-      const r = await api<{ item: LinkRow }>("/api/admin/links", { json: { domain_id: domainId, path, notes } });
+      const r = await api<{ item: LinkRow }>(tab.linksApi, { json: { domain_id: domainId, path, notes } });
       toast(`Link ${displayPath(r.item.path)} created`);
       setNewLinkDomain(null);
       await loadTree();
@@ -230,7 +233,7 @@ export function FileManager() {
     if (!editLink) return;
     setBusy(true);
     try {
-      await api(`/api/admin/links/${editLink.id}`, { method: "PATCH", json: { path, notes } });
+      await api(`${tab.linksApi}/${editLink.id}`, { method: "PATCH", json: { path, notes } });
       toast("Link updated");
       setEditLink(null);
       await refreshAll();
@@ -245,10 +248,10 @@ export function FileManager() {
     if (!deleteLink) return;
     setBusy(true);
     try {
-      await api(`/api/admin/links/${deleteLink.id}`, { method: "DELETE" });
+      await api(`${tab.linksApi}/${deleteLink.id}`, { method: "DELETE" });
       toast(`Link ${displayPath(deleteLink.path)} deleted`);
       setDeleteLink(null);
-      if (selectedLinkId === deleteLink.id) router.replace("/admin/files");
+      if (selectedLinkId === deleteLink.id) router.replace(tab.page);
       await loadTree();
     } catch (e) {
       toast(errorMessage(e), "danger");
@@ -270,7 +273,7 @@ export function FileManager() {
     if (!selectedFiles.length) return;
     setBusy(true);
     try {
-      const r = await api<MoveResult>("/api/admin/files/move", {
+      const r = await api<MoveResult>(`${tab.filesApi}/move`, {
         json: { file_ids: selectedFiles.map((f) => f.id), link_id: linkId },
       });
       setMoveOpen(false);
@@ -361,7 +364,7 @@ export function FileManager() {
                         key={l.id}
                         className={cx("tree-row", selectedLinkId === l.id && "is-active")}
                         onClick={() => selectLink(l.id)}
-                        title={buildLinkUrl(d.hostname, l.path)}
+                        title={tab.isPublic ? buildLinkUrl(d.hostname, l.path) : `${d.hostname}${displayPath(l.path)}`}
                       >
                         <Link2 className="size-3.5 shrink-0 text-text-faint" />
                         <span className="truncate font-mono text-[12.5px]">{displayPath(l.path)}</span>
@@ -398,7 +401,9 @@ export function FileManager() {
                 <div className="min-w-0">
                   <div className="text-[12.5px] text-text-muted flex items-center gap-1.5">
                     <Globe className="size-3.5" /> {current.domain.hostname}
-                    {!current.domain.is_active ? <Badge tone="warn">Domain disabled — public links return 404</Badge> : null}
+                    {!current.domain.is_active ? (
+                      <Badge tone="warn">{tab.isPublic ? "Domain disabled — public links return 404" : "Domain disabled"}</Badge>
+                    ) : null}
                   </div>
                   <h1 className="text-lg font-semibold font-mono leading-tight mt-0.5">{displayPath(current.link.path)}</h1>
                   {current.link.notes ? <p className="text-[13px] text-text-muted mt-1">{current.link.notes}</p> : null}
@@ -416,20 +421,26 @@ export function FileManager() {
                   ) : null}
                 </div>
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <p className="address flex-1" title="Public address for files in this link">
-                  <span className="host">https://{current.domain.hostname}</span>
-                  <span className="dim">/</span>
-                  {current.link.path ? (
-                    <>
-                      {current.link.path}
-                      <span className="dim">/</span>
-                    </>
-                  ) : null}
-                  <span className="dim">‹file-name.pdf›</span>
-                </p>
-                <CopyButton text={baseUrl} label="Copy base URL" size="md" />
-              </div>
+              {tab.isPublic ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <p className="address flex-1" title="Public address for files in this link">
+                    <span className="host">https://{current.domain.hostname}</span>
+                    <span className="dim">/</span>
+                    {current.link.path ? (
+                      <>
+                        {current.link.path}
+                        <span className="dim">/</span>
+                      </>
+                    ) : null}
+                    <span className="dim">‹file-name.pdf›</span>
+                  </p>
+                  <CopyButton text={baseUrl} label="Copy base URL" size="md" />
+                </div>
+              ) : (
+                <Alert tone="info" className="mt-3">
+                  Files here are stored and can be previewed in the panel. Their page on the front end is not set up yet.
+                </Alert>
+              )}
             </div>
 
             <div className="flex items-center gap-2 px-4 py-2.5 border-b flex-wrap">
@@ -476,7 +487,7 @@ export function FileManager() {
               <div className="p-6">
                 <EmptyState
                   title="This link has no files"
-                  description={`Upload a PDF and it will be available at ${baseUrl}‹file-name›.pdf`}
+                  description={tab.isPublic ? `Upload a PDF and it will be available at ${baseUrl}‹file-name›.pdf` : "Upload a PDF to keep it in this link."}
                   action={
                     can("upload") ? (
                       <Button variant="primary" icon={<Upload className="size-4" />} onClick={() => setUploadOpen(true)}>
@@ -546,17 +557,21 @@ export function FileManager() {
                           <td className="tabular-nums">{f.download_count}</td>
                           <td>
                             <div className="flex items-center justify-end gap-0.5">
-                              <IconButton
-                                label="Copy public link"
-                                onClick={async () => {
-                                  if (await copyText(url)) toast("Link copied");
-                                }}
-                              >
-                                <Copy className="size-3.5" />
-                              </IconButton>
-                              <IconButton label="Check public link" onClick={() => setCheckTarget(f)}>
-                                <ShieldCheck className="size-3.5" />
-                              </IconButton>
+                              {tab.isPublic ? (
+                                <>
+                                  <IconButton
+                                    label="Copy public link"
+                                    onClick={async () => {
+                                      if (await copyText(url)) toast("Link copied");
+                                    }}
+                                  >
+                                    <Copy className="size-3.5" />
+                                  </IconButton>
+                                  <IconButton label="Check public link" onClick={() => setCheckTarget(f)}>
+                                    <ShieldCheck className="size-3.5" />
+                                  </IconButton>
+                                </>
+                              ) : null}
                               {can("preview") ? (
                                 <IconButton label="Preview" onClick={() => setPreview(f)}>
                                   <Eye className="size-3.5" />
@@ -607,7 +622,8 @@ export function FileManager() {
             setBulkReplace(null);
           }}
           linkId={current.link.id}
-          baseUrl={baseUrl}
+          filesApi={tab.filesApi}
+          baseUrl={tab.isPublic ? baseUrl : null}
           replaceTarget={replaceTarget}
           replaceMany={bulkReplace}
           existing={files ?? []}
@@ -616,7 +632,7 @@ export function FileManager() {
         />
       ) : null}
 
-      <RenameDialog file={renameTarget} onClose={() => setRenameTarget(null)} onSubmit={doRename} busy={busy} />
+      <RenameDialog file={renameTarget} isPublic={tab.isPublic} onClose={() => setRenameTarget(null)} onSubmit={doRename} busy={busy} />
 
       <ConfirmDialog
         open={Boolean(deleteTargets)}
@@ -628,7 +644,10 @@ export function FileManager() {
         confirmLabel="Delete"
         message={
           <>
-            <p>The public link{deleteTargets && deleteTargets.length > 1 ? "s" : ""} will stop working immediately. This cannot be undone.</p>
+            <p>
+              {tab.isPublic ? `The public link${deleteTargets && deleteTargets.length > 1 ? "s" : ""} will stop working immediately. ` : ""}
+              This cannot be undone.
+            </p>
             <ul className="mt-2 max-h-40 overflow-auto font-mono text-[12.5px] text-text-muted space-y-0.5">
               {deleteTargets?.map((f) => <li key={f.id}>{f.filename}</li>)}
             </ul>
@@ -640,6 +659,7 @@ export function FileManager() {
         open={Boolean(newLinkDomain) || Boolean(editLink)}
         domain={newLinkDomain ?? current?.domain ?? null}
         link={editLink}
+        isPublic={tab.isPublic}
         busy={busy}
         onClose={() => {
           setNewLinkDomain(null);
@@ -658,8 +678,8 @@ export function FileManager() {
         confirmLabel="Delete link and files"
         message={
           <p>
-            This removes the link and <strong>{deleteLink?.file_count ?? 0}</strong> file{deleteLink?.file_count === 1 ? "" : "s"} stored under it. Every public address under this
-            link stops working. This cannot be undone.
+            This removes the link and <strong>{deleteLink?.file_count ?? 0}</strong> file{deleteLink?.file_count === 1 ? "" : "s"} stored under it.
+            {tab.isPublic ? " Every public address under this link stops working." : ""} This cannot be undone.
           </p>
         }
       />
@@ -669,13 +689,14 @@ export function FileManager() {
         files={selectedFiles}
         links={allLinks}
         currentLinkId={current?.link.id ?? null}
+        isPublic={tab.isPublic}
         busy={busy}
         onClose={() => setMoveOpen(false)}
         onSubmit={doMove}
       />
 
-      <FilePreview file={preview} onClose={() => setPreview(null)} />
-      <LinkCheck file={checkTarget} onClose={() => setCheckTarget(null)} />
+      <FilePreview file={preview} tab={tab} onClose={() => setPreview(null)} />
+      {tab.isPublic ? <LinkCheck file={checkTarget} onClose={() => setCheckTarget(null)} /> : null}
     </div>
   );
 }
@@ -694,7 +715,19 @@ function SortTh({ label, k, sort, onClick }: { label: string; k: SortKey; sort: 
 
 /* ---------------- Rename ---------------- */
 
-function RenameDialog({ file, onClose, onSubmit, busy }: { file: FileRow | null; onClose: () => void; onSubmit: (name: string) => void; busy: boolean }) {
+function RenameDialog({
+  file,
+  isPublic,
+  onClose,
+  onSubmit,
+  busy,
+}: {
+  file: FileRow | null;
+  isPublic: boolean;
+  onClose: () => void;
+  onSubmit: (name: string) => void;
+  busy: boolean;
+}) {
   const [name, setName] = useState("");
   useEffect(() => {
     if (file) setName(file.filename);
@@ -724,7 +757,7 @@ function RenameDialog({ file, onClose, onSubmit, busy }: { file: FileRow | null;
         }}
         className="space-y-3"
       >
-        <Field label="New file name" hint="The public address changes to the new name. The old address stops working.">
+        <Field label="New file name" hint={isPublic ? "The public address changes to the new name. The old address stops working." : undefined}>
           <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus onFocus={(e) => e.target.select()} />
         </Field>
         {extChanged ? <Alert tone="warn">The file extension is changing. Make sure that is intended.</Alert> : null}
@@ -739,6 +772,7 @@ function LinkDialog({
   open,
   domain,
   link,
+  isPublic,
   busy,
   onClose,
   onSubmit,
@@ -746,6 +780,7 @@ function LinkDialog({
   open: boolean;
   domain: Domain | null;
   link: LinkRow | null;
+  isPublic: boolean;
   busy: boolean;
   onClose: () => void;
   onSubmit: (path: string, notes: string) => void;
@@ -797,7 +832,7 @@ function LinkDialog({
             <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="brochures/2025" autoFocus className="font-mono" />
           </div>
         </Field>
-        {domain ? (
+        {domain && isPublic ? (
           <p className="address">
             <span className="host">https://{domain.hostname}</span>
             <span className="dim">/</span>
@@ -810,7 +845,7 @@ function LinkDialog({
             <span className="dim">‹file-name.pdf›</span>
           </p>
         ) : null}
-        {link && cleaned !== link.path ? (
+        {link && cleaned !== link.path && isPublic ? (
           <Alert tone="warn">
             Changing the path moves every file in this link. Addresses under {displayPath(link.path)} stop working.
           </Alert>
@@ -830,6 +865,7 @@ function MoveDialog({
   files,
   links,
   currentLinkId,
+  isPublic,
   busy,
   onClose,
   onSubmit,
@@ -838,6 +874,7 @@ function MoveDialog({
   files: FileRow[];
   links: Array<{ link: LinkRow; domain: Domain }>;
   currentLinkId: string | null;
+  isPublic: boolean;
   busy: boolean;
   onClose: () => void;
   onSubmit: (linkId: string) => void;
@@ -871,7 +908,7 @@ function MoveDialog({
         <Alert tone="info">There is no other link to move these files into. Create one first.</Alert>
       ) : (
         <div className="space-y-3">
-          <Field label="Move to" hint="The file keeps its name. Its public address changes to the new link.">
+          <Field label="Move to" hint={isPublic ? "The file keeps its name. Its public address changes to the new link." : "The file keeps its name."}>
             <Select value={target} onChange={(e) => setTarget(e.target.value)}>
               <option value="">Choose a link…</option>
               {choices.map(({ link, domain }) => (
@@ -883,7 +920,7 @@ function MoveDialog({
             </Select>
           </Field>
 
-          {chosen ? (
+          {chosen && isPublic ? (
             <p className="address">
               <span className="host">https://{chosen.domain.hostname}</span>
               <span className="dim">/</span>
@@ -898,7 +935,7 @@ function MoveDialog({
           ) : null}
 
           <Alert tone="warn">
-            The current address of {files.length === 1 ? "this file" : "these files"} stops working straight away. A file
+            {isPublic ? `The current address of ${files.length === 1 ? "this file" : "these files"} stops working straight away. ` : ""}A file
             whose name is already taken in the chosen link is skipped and stays where it is.
           </Alert>
 
@@ -936,6 +973,7 @@ function UploadDialog({
   open,
   onClose,
   linkId,
+  filesApi,
   baseUrl,
   replaceTarget,
   replaceMany,
@@ -946,7 +984,9 @@ function UploadDialog({
   open: boolean;
   onClose: () => void;
   linkId: string;
-  baseUrl: string;
+  filesApi: string;
+  /** Public address of the link, or null where files have no public address yet. */
+  baseUrl: string | null;
   replaceTarget: FileRow | null;
   /** Bulk replace: the selected files, each waiting for a dropped file with the same name. */
   replaceMany: FileRow[] | null;
@@ -1035,7 +1075,7 @@ function UploadDialog({
   async function uploadOne(item: UploadItem) {
     update(item.id, { status: "uploading", progress: 0, error: undefined });
     const replaceId = item.replaceId ?? replaceTarget?.id;
-    const presign = await api<{ url: string; key: string; content_type: string; filename: string }>("/api/admin/files/presign", {
+    const presign = await api<{ url: string; key: string; content_type: string; filename: string }>(`${filesApi}/presign`, {
       json: {
         link_id: linkId,
         filename: item.file.name,
@@ -1056,7 +1096,7 @@ function UploadDialog({
         form.append("link_id", linkId);
         if (replaceId) form.append("file_id", replaceId);
         update(item.id, { status: "uploading", progress: 0, via: "server" });
-        await postFormWithProgress("/api/admin/files/upload", form, (p) => update(item.id, { progress: p }));
+        await postFormWithProgress(`${filesApi}/upload`, form, (p) => update(item.id, { progress: p }));
         update(item.id, { status: "done", progress: 1 });
         changedRef.current = true;
         return;
@@ -1067,7 +1107,7 @@ function UploadDialog({
       throw e;
     }
     update(item.id, { status: "saving" });
-    await api("/api/admin/files/complete", {
+    await api(`${filesApi}/complete`, {
       json: { link_id: linkId, filename: presign.filename, key: presign.key, content_type: presign.content_type, file_id: replaceId },
     });
     update(item.id, { status: "done", progress: 1 });
@@ -1157,18 +1197,25 @@ function UploadDialog({
     >
       {replaceTarget ? (
         <Alert tone="info" className="mb-3">
-          The file keeps its name and public address <span className="font-mono">{baseUrl}{encodeURIComponent(replaceTarget.filename)}</span>. Only the content changes.
+          {baseUrl !== null ? (
+            <>
+              The file keeps its name and public address <span className="font-mono">{baseUrl}{encodeURIComponent(replaceTarget.filename)}</span>.
+            </>
+          ) : (
+            "The file keeps its name."
+          )}{" "}
+          Only the content changes.
         </Alert>
       ) : replaceMany ? (
         <Alert tone="info" className="mb-3">
-          Drop the new versions here. Each one replaces the selected file with the <strong>same name</strong>, so names and
-          public addresses stay exactly as they are. A dropped file that matches none of the names below is left out.
+          Drop the new versions here. Each one replaces the selected file with the <strong>same name</strong>, so names
+          {baseUrl !== null ? " and public addresses" : ""} stay exactly as they are. A dropped file that matches none of the names below is left out.
         </Alert>
-      ) : (
+      ) : baseUrl !== null ? (
         <p className="text-[13px] text-text-muted mb-3">
           Each file becomes available at <span className="font-mono">{baseUrl}‹file-name›</span> as soon as it finishes.
         </p>
-      )}
+      ) : null}
 
       {replaceMany && items.length === 0 ? (
         <ul className="mb-3 divide-y border rounded-md max-h-40 overflow-auto text-[13px]">
@@ -1260,14 +1307,16 @@ function UploadDialog({
       {doneCount > 0 && pending === 0 && !running ? (
         <p className="mt-3 text-[12.5px] text-ok-600">
           Upload complete.{" "}
-          <button
-            className="underline"
-            onClick={async () => {
-              if (await copyText(baseUrl)) toast("Base URL copied");
-            }}
-          >
-            Copy the base URL
-          </button>
+          {baseUrl !== null ? (
+            <button
+              className="underline"
+              onClick={async () => {
+                if (await copyText(baseUrl)) toast("Base URL copied");
+              }}
+            >
+              Copy the base URL
+            </button>
+          ) : null}
         </p>
       ) : null}
 
@@ -1289,8 +1338,8 @@ function UploadDialog({
       >
         <p className="text-sm">
           {conflicts.length === 1 ? "A file with this name is" : "Files with these names are"} already in this link. Replace{" "}
-          {conflicts.length === 1 ? "it" : "them"} with the new {conflicts.length === 1 ? "file" : "files"}? The public address stays the same — only the
-          content changes.
+          {conflicts.length === 1 ? "it" : "them"} with the new {conflicts.length === 1 ? "file" : "files"}?
+          {baseUrl !== null ? " The public address stays the same — only the content changes." : " The name stays the same — only the content changes."}
         </p>
         <ul className="mt-3 divide-y border rounded-md max-h-48 overflow-auto text-[13px]">
           {conflicts.map((it) => (

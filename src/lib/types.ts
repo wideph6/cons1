@@ -188,6 +188,8 @@ export interface StorageMissing {
   uploaded_at: string;
   hostname: string | null;
   path: string | null;
+  /** Set on a New M file, so the fix opens New M instead of Old M. */
+  new_m?: boolean;
 }
 
 /** A file row whose recorded size does not match the stored object. */

@@ -287,8 +287,8 @@ export function SearchFiles() {
                               </IconButton>
                             ) : null}
                             {f.link ? (
-                              <Link href={`/admin/files?link=${f.link.id}`}>
-                                <IconButton label="Open in file manager">
+                              <Link href={`/admin/old-m?link=${f.link.id}`}>
+                                <IconButton label="Open in Old M">
                                   <FolderOpen className="size-3.5" />
                                 </IconButton>
                               </Link>

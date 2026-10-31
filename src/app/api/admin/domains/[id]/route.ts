@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, must, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
-import { listLinkKeys } from "@/lib/files";
+import { isMissingTable, listLinkKeys, NEW_M } from "@/lib/files";
 import { deleteObjects } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { Domain } from "@/lib/types";
@@ -56,7 +56,14 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
     if (lErr) throw new ApiError(500, lErr.message);
     const linkIds = (links ?? []).map((l) => l.id as string);
     const keys = await listLinkKeys(linkIds);
-    await deleteObjects(keys);
+
+    // New M's links and files cascade with the domain as well. Before supabase/new-m.sql has
+    // run there are none, and that must not stop a domain from being deleted.
+    const { data: mLinks, error: mErr } = await db().from(NEW_M.links).select("id").eq("domain_id", id);
+    if (mErr && !isMissingTable(mErr)) throw new ApiError(500, mErr.message);
+    const mKeys = await listLinkKeys((mLinks ?? []).map((l) => l.id as string), NEW_M);
+
+    await deleteObjects([...keys, ...mKeys]);
 
     const { error } = await db().from("domains").delete().eq("id", id);
     if (error) throw new ApiError(500, error.message);
@@ -68,8 +75,20 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
       user_id: user.id,
       action: "delete_domain",
       domain: { id: null, hostname: domain.hostname },
-      details: { links: linkIds.length, files: keys.length, removed_from_vercel: vercel?.ok ?? false },
+      details: {
+        links: linkIds.length,
+        files: keys.length,
+        new_m_links: mLinks?.length ?? 0,
+        new_m_files: mKeys.length,
+        removed_from_vercel: vercel?.ok ?? false,
+      },
     });
-    return ok({ ok: true, files_deleted: keys.length, links_deleted: linkIds.length, vercel });
+    return ok({
+      ok: true,
+      files_deleted: keys.length,
+      links_deleted: linkIds.length,
+      new_m_files_deleted: mKeys.length,
+      vercel,
+    });
   });
 }

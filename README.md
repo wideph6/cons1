@@ -18,8 +18,9 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | Area | Features |
 | --- | --- |
 | Domains | Add domains/subdomains, enable/disable, notes, attach to the Vercel project through the Vercel API (optional), DNS guidance |
-| Links | Create paths under a domain (`/`, `/brochures`, `/reports/2025`), rename, delete |
-| Files | Upload (direct browser → R2, multi-file, progress), replace, rename, move to another link, delete, preview inside the panel, copy public link, download counts |
+| Old M — links | Create paths under a domain (`/`, `/brochures`, `/reports/2025`), rename, delete |
+| Old M — files | Upload (direct browser → R2, multi-file, progress), replace, rename, move to another link, delete, preview inside the panel, copy public link, download counts |
+| New M | The same file manager over the same domains, with links and files of its own (own tables, own `new-m/` prefix in R2). Its files have no public address yet — how they show on the front end is still to be decided |
 | Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
 | Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
@@ -122,7 +123,9 @@ Super admins can do everything. Admin users get only the boxes ticked for them:
 
 `upload` · `replace` · `rename` · `move` · `delete` · `preview` · `create_link` · `edit_link` · `delete_link` · `create_domain` · `edit_domain` · `delete_domain` · `search` · `view_activity`
 
-`move` is newer than the others, so existing admin users do not have it until the super admin ticks it.
+New M has the same set under its own keys: `new_m_upload` · `new_m_replace` · `new_m_rename` · `new_m_move` · `new_m_delete` · `new_m_preview` · `new_m_create_link` · `new_m_edit_link` · `new_m_delete_link`. The New M tab shows only for users who hold at least one of them.
+
+`move` and the `new_m_*` keys are newer than the others, so existing admin users do not have them until the super admin ticks them.
 
 Permission changes take effect on the user's next request (no re-login needed).
 
@@ -148,9 +151,12 @@ src/app/[...slug]/route.ts      public download endpoint (all domains)
 src/app/admin/*                 admin pages
 src/app/api/admin/*             admin API (domains, links, files, move, storage, users, counters, activity)
 src/app/api/auth/*              login / logout / password
-src/components/admin/*          File manager, Domains, Storage, Search, Activity, Users
+src/app/api/admin/new-m/*    New M's own API (domains tree, links, files)
+src/components/admin/*          File manager (Old M and New M), Domains, Storage, Search, Activity, Users
+src/lib/m.ts                 what differs between the Old M and New M tabs (pages, APIs, permissions)
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions
+supabase/new-m.sql           the New M tables on their own, for adding them to an existing database
 ```
 
 ## Notes on the free tiers

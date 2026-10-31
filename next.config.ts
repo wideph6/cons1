@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   poweredByHeader: false,
+  async redirects() {
+    // The file manager was renamed to Old M; bookmarks to its old address still land on it.
+    return [{ source: "/admin/files", destination: "/admin/old-m", permanent: false }];
+  },
   async headers() {
     return [
       {

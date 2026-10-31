@@ -257,7 +257,7 @@ export function UserDetail({ id }: { id: string }) {
                       <td className="font-medium">{i === 0 ? d.hostname : ""}</td>
                       <td className="font-mono text-[12.5px]">
                         {l.link_id ? (
-                          <Link href={`/admin/files?link=${l.link_id}`} className="hover:text-teal-700">
+                          <Link href={`/admin/old-m?link=${l.link_id}`} className="hover:text-teal-700">
                             {displayPath(l.path)}
                           </Link>
                         ) : (

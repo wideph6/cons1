@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
+import { NEW_M } from "@/lib/files";
 import { db } from "@/lib/supabase";
 import type { Domain, LinkRow } from "@/lib/types";
 import { normalizeHostname } from "@/lib/utils";
@@ -65,6 +66,8 @@ export async function POST(req: NextRequest) {
 
     if (body.create_root_link !== false) {
       await db().from("links").insert({ domain_id: created.id, path: "", created_by: user.id });
+      // New M keeps links of its own, and every domain starts with a root link there too.
+      await db().from(NEW_M.links).insert({ domain_id: created.id, path: "", created_by: user.id });
     }
 
     await logActivity({

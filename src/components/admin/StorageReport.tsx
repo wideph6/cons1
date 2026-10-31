@@ -177,7 +177,7 @@ export function StorageReport() {
             <Card title={`Broken files (${report.missing.length})`} padded={false} className="mb-5">
               <div className="p-4 pb-2 text-[13px] text-text-muted">
                 The panel lists these files but their object is not in the bucket, so the public link fails. Replace each
-                one with a fresh upload, or delete it from the file manager.
+                one with a fresh upload, or delete it from Old M or New M.
               </div>
               <div className="overflow-x-auto">
                 <table className="tbl">
@@ -201,8 +201,11 @@ export function StorageReport() {
                         <td className="tabular-nums whitespace-nowrap">{formatBytes(m.size)}</td>
                         <td className="whitespace-nowrap text-text-muted">{formatDateTime(m.uploaded_at)}</td>
                         <td className="text-right whitespace-nowrap">
-                          <Link href="/admin/files" className="text-[13px] text-teal-700 hover:underline inline-flex items-center gap-1">
-                            <ShieldCheck className="size-3.5" /> Open file manager
+                          <Link
+                            href={m.new_m ? "/admin/new-m" : "/admin/old-m"}
+                            className="text-[13px] text-teal-700 hover:underline inline-flex items-center gap-1"
+                          >
+                            <ShieldCheck className="size-3.5" /> {m.new_m ? "Open New M" : "Open Old M"}
                           </Link>
                         </td>
                       </tr>

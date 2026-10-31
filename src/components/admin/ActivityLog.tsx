@@ -10,7 +10,13 @@ import { ACTION_LABELS, formatDateTime } from "@/lib/utils";
 
 const LIMIT = 50;
 
-export function actionTone(action: string): "neutral" | "ok" | "warn" | "danger" | "info" | "teal" {
+/** New M actions carry a prefix; underneath they are the same actions as Old M's. */
+function baseAction(action: string): string {
+  return action.replace(/^new_m_/, "");
+}
+
+export function actionTone(full: string): "neutral" | "ok" | "warn" | "danger" | "info" | "teal" {
+  const action = baseAction(full);
   if (action === "upload") return "teal";
   if (action === "replace" || action === "rename") return "info";
   if (action === "delete" || action.startsWith("delete_")) return "danger";
@@ -20,7 +26,7 @@ export function actionTone(action: string): "neutral" | "ok" | "warn" | "danger"
 
 export function describeActivity(a: Activity): string {
   const d = a.details ?? {};
-  switch (a.action) {
+  switch (baseAction(a.action)) {
     case "rename":
       return d.from && d.to ? `${d.from} → ${d.to}` : "";
     case "replace":

@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  FolderOpen,
   FolderTree,
   Globe,
   HardDrive,
@@ -18,6 +19,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSession } from "@/components/SessionProvider";
 import { ToastProvider, cx } from "@/components/ui";
+import { NEW_M_TAB } from "@/lib/m";
 
 interface NavItem {
   href: string;
@@ -34,7 +36,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   const nav: NavItem[] = [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard, show: true },
-    { href: "/admin/files", label: "File manager", icon: FolderTree, show: true },
+    { href: "/admin/old-m", label: "Old M", icon: FolderTree, show: true },
+    { href: "/admin/new-m", label: "New M", icon: FolderOpen, show: isSuper || Object.values(NEW_M_TAB.perms).some(can) },
     { href: "/admin/domains", label: "Domains", icon: Globe, show: true },
     { href: "/admin/storage", label: "Storage", icon: HardDrive, show: isSuper },
     { href: "/admin/search", label: "Search by date", icon: Search, show: isSuper || can("search") },

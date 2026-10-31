@@ -48,7 +48,7 @@ export function Dashboard() {
         actions={
           <>
             {can("upload") ? (
-              <Button variant="primary" icon={<Upload className="size-4" />} onClick={() => (window.location.href = "/admin/files")}>
+              <Button variant="primary" icon={<Upload className="size-4" />} onClick={() => (window.location.href = "/admin/old-m")}>
                 Upload a file
               </Button>
             ) : null}
@@ -76,8 +76,8 @@ export function Dashboard() {
           title="Recent uploads"
           padded={false}
           actions={
-            <Link href="/admin/files" className="text-[13px] text-teal-700 hover:underline inline-flex items-center gap-1">
-              <FolderTree className="size-3.5" /> Open file manager
+            <Link href="/admin/old-m" className="text-[13px] text-teal-700 hover:underline inline-flex items-center gap-1">
+              <FolderTree className="size-3.5" /> Open Old M
             </Link>
           }
         >
@@ -114,7 +114,7 @@ export function Dashboard() {
                       </td>
                       <td className="font-mono text-[12.5px] text-text-muted">
                         {f.link ? (
-                          <Link href={`/admin/files?link=${f.link.id}`} className="hover:text-teal-700">
+                          <Link href={`/admin/old-m?link=${f.link.id}`} className="hover:text-teal-700">
                             {f.link.domain.hostname}
                             {displayPath(f.link.path)}
                           </Link>

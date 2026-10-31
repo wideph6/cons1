@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
-import { deleteObjects, listAllObjects } from "@/lib/r2";
+import { isMissingTable, NEW_M, OLD_M, type FileStore } from "@/lib/files";
+import { deleteObjects, listAllObjects, MANAGED_PREFIX, NEW_M_PREFIX } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { StorageMismatch, StorageMissing, StorageOrphan, StorageReport } from "@/lib/types";
 
@@ -21,17 +22,22 @@ interface FileRowLite {
   size: number;
   uploaded_at: string;
   links?: { path: string; domains?: { hostname: string } | null } | null;
+  new_m?: boolean;
 }
 
-async function allFileRows(): Promise<FileRowLite[]> {
+async function allFileRows(store: FileStore): Promise<FileRowLite[]> {
   const out: FileRowLite[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db()
-      .from("files")
-      .select("id,filename,r2_key,size,uploaded_at,links(path,domains(hostname))")
+      .from(store.files)
+      .select(`id,filename,r2_key,size,uploaded_at,${store.linkEmbed}(path,domains(hostname))`)
       .order("id")
       .range(from, from + PAGE - 1);
-    if (error) throw new ApiError(500, error.message);
+    if (error) {
+      // New M's tables arrive with supabase/new-m.sql; until it has run New M has no rows.
+      if (store === NEW_M && isMissingTable(error)) return out;
+      throw new ApiError(500, error.message);
+    }
     const rows = (data ?? []) as unknown as FileRowLite[];
     out.push(...rows);
     if (rows.length < PAGE) return out;
@@ -44,10 +50,21 @@ function place(r: FileRowLite): Pick<StorageMissing, "hostname" | "path"> {
 
 /** Compares what the bucket holds with what the database expects to be there. */
 async function buildReport(): Promise<StorageReport> {
-  const [{ objects, truncated }, rows] = await Promise.all([listAllObjects(), allFileRows()]);
+  const [files, newM, oldRows, mRows] = await Promise.all([
+    listAllObjects(MANAGED_PREFIX),
+    listAllObjects(NEW_M_PREFIX),
+    allFileRows(OLD_M),
+    allFileRows(NEW_M),
+  ]);
+
+  const objects = [...files.objects, ...newM.objects];
+  const truncated = files.truncated || newM.truncated;
+  // Old M and New M rows are checked alike; the flag only sends the fix to the right tab.
+  const rows = [...oldRows, ...mRows.map((r) => ({ ...r, new_m: true }))];
 
   const byKey = new Map(objects.map((o) => [o.key, o]));
   const usedKeys = new Set(rows.map((r) => r.r2_key));
+
   const now = Date.now();
 
   const orphans: StorageOrphan[] = objects
@@ -77,6 +94,7 @@ async function buildReport(): Promise<StorageReport> {
         size: Number(r.size ?? 0),
         uploaded_at: r.uploaded_at,
         ...place(r),
+        ...(r.new_m ? { new_m: true } : {}),
       };
       const o = byKey.get(r.r2_key);
       if (!o) missing.push(base);

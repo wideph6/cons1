@@ -483,7 +483,7 @@ hai, us domain se nahi) lekin public link 404 dega.
 
 # Hissa 8 — Pehli file upload aur test
 
-1. Admin panel → **File manager**.
+1. Admin panel → **Old M**.
 2. Baen taraf apna domain aur us ke neeche `/` (root link) dikhega. Us par click karein.
 3. **Upload files** dabayen → koi PDF drag karein ya browse kar ke chunein → **Upload**.
    Agar isi naam ki file link mein pehle se hai, to file chunte hi popup poochta hai: **Yes — replace** (purani file ki jagah nayi, link wahi rehta hai) ya **No — keep the existing** (nayi file skip). Replace ke liye user ke paas *Replace files* ki permission honi chahiye.
@@ -530,7 +530,7 @@ Naya link (folder) banane ke liye: baen taraf domain ke naam par hover karein au
 2. Naam, email aur password bharein (password ka **New** button khud strong password bana deta hai — copy kar lein, dobara nazar nahi aayega).
 3. **Permissions** mein sirf wohi tick karein jo ye banda kar sake, jaise:
    - Sirf upload karne wala banda: `Upload files`, `Preview and download files`
-   - Poora file manager: upload, replace, rename, delete
+   - Poora Old M: upload, replace, rename, delete
    - Domain add karne ki ijazat nahi deni to `Add domains and subdomains` ka tick na lagayen
 4. **Create user** dabayen aur password us shaks ko mehfooz tareeqe se bhejen.
 
@@ -574,19 +574,60 @@ Sidebar mein **Storage** panel ko R2 bucket aur database ka moqabla dikhata hai.
 
 **Safai:** upar **Clean up N leftovers** dabayen. 6 ghante se nayi cheez ko haath nahi lagaya jata, kyunki mumkin hai koi upload abhi chal raha ho. Delete se pehle list dobara banti hai, is liye jo cheez is dauran asli file ban chuki ho wo mehfooz rehti hai. Kisi public link par koi asar nahi parta.
 
-**Broken files** nazar aayen to file manager mein ja kar us file par **Replace** karein (nayi copy chari ho jayegi) ya usay delete kar dein.
+**Broken files** nazar aayen to Old M (ya New M) mein ja kar us file par **Replace** karein (nayi copy chari ho jayegi) ya usay delete kar dein.
 
 ---
 
 # Hissa 11 — Aik sath bohat si files par kaam
 
-File manager mein files ke aage wale checkbox lagayen, upar teen button aa jayenge:
+Old M mein files ke aage wale checkbox lagayen, upar teen button aa jayenge:
 
 - **Move selected** — chuni hui files kisi doosre link (ya doosre domain ke link) mein bhej dein. Naam wahi rehta hai, sirf address badalta hai — purana address foran band ho jata hai. Jis file ka naam wahan pehle se mojood ho wo chhori ja kar apni jagah reh jati hai, aur aap ko bata diya jata hai.
 - **Replace selected** — nayi copies drag karein. Har nayi file usi purani file ki jagah legi jis ka **naam bilkul wahi** hai; naam aur link kuch nahi badalta. Jo dropped file kisi chuni hui file se match na kare usay chhor diya jata hai (galti se kuch overwrite na ho).
 - **Delete selected** — pehle se mojood tha.
 
 **Move** ki ijazat nayi hai: purane admin users ko ye khud ba khud nahi milti. Super admin **Users** mein ja kar us user ke liye "Move files to another link" par tick lagaye.
+
+---
+
+# Hissa 13 — Old M aur New M
+
+Pehle wala **File manager** ab **Old M** kehlata hai. Us ka sab kaam pehle jaisa hai — wohi links, wohi files, wohi public download addresses.
+Panel ka address `/admin/old-m` ho gaya hai; purana `/admin/files` khud wahin le jata hai.
+
+**New M** bilkul usi tarah ka file manager hai: baen taraf saare domains aur subdomains, un ke neeche links, aur PDF upload / replace / rename / move / delete / preview.
+Fark ye hai ke New M ke links aur files **alag** rakhe jate hain — Old M mein kuch nazar nahi aata aur Old M ka koi link nahi badalta.
+
+## 13.1 Pehle database mein tables banayen
+
+Supabase → **SQL Editor** → **New query** → `supabase/new-m.sql` ka poora content paste karen → **Run**.
+
+Ye har mojooda domain ke liye New M mein root link (`/`) bhi bana deta hai. Naye domain ke saath root link khud ban jata hai.
+
+Ban gaya ya nahi, ye check karen:
+
+```sql
+select table_name from information_schema.tables
+where table_schema = 'public'
+  and table_name in ('new_m_links', 'new_m_files');
+```
+
+**2 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
+
+## 13.2 Permissions
+
+New M ki apni permissions hain — **New M files** aur **New M links** ke group. Super admin ko sab milta hai; baqi users ko **Users** mein tick karni hongi.
+Jis user ke paas New M ki koi permission nahi, us ko sidebar mein New M nazar nahi aata.
+
+## 13.3 Storage aur domain delete
+
+New M ki files bucket mein `new-m/` ke neeche rehti hain. **Storage** page in ko bhi ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo New M mein mojood ho.
+Domain delete karenge to us ke New M links aur files bhi chali jati hain.
+
+## 13.4 Abhi kya nahi bana
+
+New M ki PDF **front end par kaise dikhegi aur us ka page kaisa hoga — ye abhi tay hona hai.** Is liye New M mein public link copy karne ya check karne ke button nahi hain,
+aur domain par kisi address se New M ki file nahi khulti. Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
 
 ---
 
