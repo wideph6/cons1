@@ -47,14 +47,17 @@ export function isManagedKey(key: unknown): key is string {
   return typeof key === "string" && /^files\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/.test(key);
 }
 
-/** New M objects live outside Old M's files/ prefix, so neither manager can claim the other's. */
-export function makeNewMKey(filename: string): string {
+/** New M's documents and officer signatures live under their own prefix, apart from Old M. */
+export type NewMKind = "docs" | "signatures";
+
+export function makeNewMKey(kind: NewMKind, filename: string): string {
   const safe = cleanFilename(filename).replace(/[^A-Za-z0-9._-]/g, "_");
-  return `new-m/${crypto.randomUUID()}/${safe}`;
+  return `new-m/${kind}/${crypto.randomUUID()}/${safe}`;
 }
 
-export function isNewMKey(key: unknown): key is string {
-  return typeof key === "string" && /^new-m\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/.test(key);
+export function isNewMKey(key: unknown, kind?: NewMKind): key is string {
+  const part = kind ?? "(?:docs|signatures)";
+  return typeof key === "string" && new RegExp(`^new-m/${part}/[0-9a-f-]{36}/[A-Za-z0-9._-]+$`).test(key);
 }
 
 export async function presignUpload(key: string, contentType: string, expiresIn = 900): Promise<string> {
@@ -153,7 +156,7 @@ export interface StoredObject {
 
 /** Prefix Old M's keys live under; anything else in the bucket is left alone. */
 export const MANAGED_PREFIX = "files/";
-/** Prefix New M's files live under. */
+/** Prefix New M's documents and officer signatures live under. */
 export const NEW_M_PREFIX = "new-m/";
 
 /**

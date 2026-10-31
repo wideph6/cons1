@@ -1,5 +1,5 @@
 -- ============================================================
---  New M — a second file manager over the same domains
+--  New M — attestation documents with a verification link
 --
 --  This is the New M part of schema.sql on its own, so it can be run
 --  without re-sending the whole file. Safe to re-run.
@@ -8,64 +8,98 @@
 --  Requires public.users and public.domains to exist already (schema.sql).
 -- ============================================================
 
--- ---------- Links (a path under a domain, works like a folder) ----------
--- Kept apart from Old M's links, so the two managers never share a folder and the public
--- download route, which reads only Old M's tables, never serves a New M file.
-create table if not exists public.new_m_links (
+-- The first version of New M was a folder-style file manager. It never held any data and the
+-- panel no longer reads it, so its tables go.
+drop view if exists public.new_m_links_view;
+drop table if exists public.new_m_files;
+drop table if exists public.new_m_links;
+
+-- ---------- Saved values ----------
+-- Every document type, issuing office and issuing authority typed into an upload is kept here, so
+-- the next upload can pick it from a list instead of typing it again.
+create table if not exists public.new_m_options (
   id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('document_type', 'issuing_office', 'issuing_authority')),
+  value text not null,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+-- "Degree" and "degree" are the same choice.
+create unique index if not exists new_m_options_value_idx on public.new_m_options (kind, lower(value));
+
+-- ---------- Approving officers ----------
+-- Name, designation and signature are saved together, so picking one officer fills in all three.
+create table if not exists public.new_m_officers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  designation text not null default '',
+  signature_r2_key text,                  -- new-m/signatures/...
+  signature_content_type text,
+  created_by uuid references public.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+-- ---------- Documents ----------
+create table if not exists public.new_m_records (
+  id uuid primary key default gen_random_uuid(),
+  -- The domain the verification link is built on. Its documents are removed with it.
   domain_id uuid not null references public.domains(id) on delete cascade,
-  path text not null default '',          -- 'reports/2025' ; '' = domain root
-  notes text not null default '',
+  -- Unique across every domain. Always GEN, then three groups of four capital letters.
+  attestation_number text not null unique check (attestation_number ~ '^GEN-[A-Z]{4}-[A-Z]{4}-[A-Z]{4}$'),
+  issue_date date not null,               -- goes into the link as DDMMYYYY
+
+  document_type text not null default '',
+  issuing_office text not null default '',
+  issuing_authority text not null default '',
+
+  -- The officer picked from the saved list, plus a copy of what it said at that moment. The copy is
+  -- what the document shows, so removing the officer from the list leaves this document as it is.
+  officer_id uuid references public.new_m_officers(id) on delete set null,
+  officer_name text not null default '',
+  officer_designation text not null default '',
+  officer_signature_r2_key text,
+  officer_signature_content_type text,
+
+  -- The PDF, stored in R2 under new-m/docs/.
+  doc_filename text not null,
+  doc_r2_key text not null unique,
+  doc_size bigint not null default 0,
+  doc_content_type text not null default 'application/pdf',
+  doc_uploaded_at timestamptz not null default now(),
+  doc_replaced_at timestamptz,
+
   created_by uuid references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
-  unique (domain_id, path)
+  updated_at timestamptz not null default now()
 );
 
--- ---------- Files (stored in Cloudflare R2 under new-m/, referenced by key) ----------
-create table if not exists public.new_m_files (
-  id uuid primary key default gen_random_uuid(),
-  link_id uuid not null references public.new_m_links(id) on delete cascade,
-  filename text not null,
-  r2_key text not null unique,
-  size bigint not null default 0,
-  content_type text not null default 'application/pdf',
-  uploaded_by uuid references public.users(id) on delete set null,
-  uploaded_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),   -- bumps on rename / replace
-  replaced_at timestamptz,
-  renamed_at timestamptz,
-  download_count bigint not null default 0,
-  last_downloaded_at timestamptz,
-  unique (link_id, filename)
-);
+create index if not exists new_m_records_domain_idx on public.new_m_records (domain_id);
+create index if not exists new_m_records_created_idx on public.new_m_records (created_at desc);
+-- A visitor arrives with number + date; this is the lookup that will serve them.
+create index if not exists new_m_records_lookup_idx on public.new_m_records (attestation_number, issue_date);
+-- Asked before a signature image is deleted: does any document still show it?
+create index if not exists new_m_records_signature_idx on public.new_m_records (officer_signature_r2_key);
 
-create index if not exists new_m_files_link_idx on public.new_m_files(link_id);
-create index if not exists new_m_files_uploaded_at_idx on public.new_m_files(uploaded_at desc);
-create index if not exists new_m_links_domain_idx on public.new_m_links(domain_id);
+-- Dropped rather than replaced: the view is select r.*, so a column added to the table later shifts
+-- the positions, and create-or-replace can only append to a view, never reorder.
+drop view if exists public.new_m_view;
 
-create or replace view public.new_m_links_view as
-select
-  l.*,
-  coalesce(f.file_count, 0)::int    as file_count,
-  coalesce(f.total_size, 0)::bigint as total_size,
-  f.last_upload_at
-from public.new_m_links l
-left join (
-  select link_id, count(*) as file_count, sum(size) as total_size, max(uploaded_at) as last_upload_at
-  from public.new_m_files
-  group by link_id
-) f on f.link_id = l.id;
-
--- Every domain starts with a root link, as it does in Old M. Domains added later get theirs
--- when they are created; re-running this brings back a root link that was deleted.
-insert into public.new_m_links (domain_id, path)
-select id, '' from public.domains
-on conflict (domain_id, path) do nothing;
+create view public.new_m_view as
+select r.*,
+       d.hostname  as domain_hostname,
+       d.is_active as domain_is_active,
+       u.name      as uploader_name,
+       u.email     as uploader_email
+from public.new_m_records r
+join public.domains d on d.id = r.domain_id
+left join public.users u on u.id = r.created_by;
 
 -- ---------- Lock down ----------
 -- Only the server (service_role key) talks to the database. Block anon/authenticated keys.
-alter table public.new_m_links enable row level security;
-alter table public.new_m_files enable row level security;
+alter table public.new_m_options  enable row level security;
+alter table public.new_m_officers enable row level security;
+alter table public.new_m_records  enable row level security;
 
 revoke all on all tables    in schema public from anon, authenticated;
 revoke all on all sequences in schema public from anon, authenticated;

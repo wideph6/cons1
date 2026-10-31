@@ -175,14 +175,13 @@ export const ACTION_LABELS: Record<string, string> = {
   edit_counter: "Edited counter",
   change_password: "Changed password",
   cleanup_storage: "Cleaned up storage",
-  new_m_upload: "Uploaded to New M",
-  new_m_replace: "Replaced in New M",
-  new_m_rename: "Renamed in New M",
-  new_m_move: "Moved in New M",
-  new_m_delete: "Deleted from New M",
-  new_m_create_link: "Created New M link",
-  new_m_update_link: "Updated New M link",
-  new_m_delete_link: "Deleted New M link",
+  create_new_m: "Uploaded New M document",
+  update_new_m: "Updated New M document",
+  replace_new_m_doc: "Replaced New M PDF",
+  delete_new_m: "Deleted New M document",
+  create_new_m_officer: "Saved New M officer",
+  delete_new_m_officer: "Removed New M officer",
+  delete_new_m_option: "Removed New M saved value",
 };
 
 export function displayPath(path: string): string {

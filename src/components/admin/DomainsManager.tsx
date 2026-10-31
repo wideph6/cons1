@@ -311,7 +311,7 @@ export function DomainsManager() {
               This removes <strong>{del?.links?.length ?? 0}</strong> link{del?.links?.length === 1 ? "" : "s"} and <strong>{del?.file_count ?? 0}</strong> file
               {del?.file_count === 1 ? "" : "s"} from storage. Every public address on this domain stops working. This cannot be undone.
             </p>
-            <p>Its New M links and files are removed as well.</p>
+            <p>Its New M documents and their PDFs are removed as well.</p>
             {data?.vercel_configured ? (
               <Checkbox label="Also detach the domain from the Vercel project" checked={delVercel} onChange={(e) => setDelVercel(e.target.checked)} />
             ) : null}

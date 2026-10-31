@@ -574,7 +574,7 @@ Sidebar mein **Storage** panel ko R2 bucket aur database ka moqabla dikhata hai.
 
 **Safai:** upar **Clean up N leftovers** dabayen. 6 ghante se nayi cheez ko haath nahi lagaya jata, kyunki mumkin hai koi upload abhi chal raha ho. Delete se pehle list dobara banti hai, is liye jo cheez is dauran asli file ban chuki ho wo mehfooz rehti hai. Kisi public link par koi asar nahi parta.
 
-**Broken files** nazar aayen to Old M (ya New M) mein ja kar us file par **Replace** karein (nayi copy chari ho jayegi) ya usay delete kar dein.
+**Broken files** nazar aayen to Old M mein ja kar us file par **Replace** karein (New M ho to Edit → Replace PDF) (nayi copy chari ho jayegi) ya usay delete kar dein.
 
 ---
 
@@ -595,39 +595,72 @@ Old M mein files ke aage wale checkbox lagayen, upar teen button aa jayenge:
 Pehle wala **File manager** ab **Old M** kehlata hai. Us ka sab kaam pehle jaisa hai — wohi links, wohi files, wohi public download addresses.
 Panel ka address `/admin/old-m` ho gaya hai; purana `/admin/files` khud wahin le jata hai.
 
-**New M** bilkul usi tarah ka file manager hai: baen taraf saare domains aur subdomains, un ke neeche links, aur PDF upload / replace / rename / move / delete / preview.
-Fark ye hai ke New M ke links aur files **alag** rakhe jate hain — Old M mein kuch nazar nahi aata aur Old M ka koi link nahi badalta.
+**New M** attestation documents ke liye hai: har upload = **aik PDF** + us ki tafseelat, aur har document ka apna verification link.
 
 ## 13.1 Pehle database mein tables banayen
 
 Supabase → **SQL Editor** → **New query** → `supabase/new-m.sql` ka poora content paste karen → **Run**.
 
-Ye har mojooda domain ke liye New M mein root link (`/`) bhi bana deta hai. Naye domain ke saath root link khud ban jata hai.
+(Pichle version ki khali `new_m_links` / `new_m_files` tables ye khud hata deta hai. File dobara chalana bhi mehfooz hai.)
 
 Ban gaya ya nahi, ye check karen:
 
 ```sql
 select table_name from information_schema.tables
 where table_schema = 'public'
-  and table_name in ('new_m_links', 'new_m_files');
+  and table_name in ('new_m_records', 'new_m_options', 'new_m_officers');
 ```
 
-**2 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
+**3 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
 
-## 13.2 Permissions
+## 13.2 Document upload karna
 
-New M ki apni permissions hain — **New M files** aur **New M links** ke group. Super admin ko sab milta hai; baqi users ko **Users** mein tick karni hongi.
-Jis user ke paas New M ki koi permission nahi, us ko sidebar mein New M nazar nahi aata.
+Sidebar → **New M** → **Upload document**. Aik waqt mein aik PDF. Sab se naya upload list mein sab se upar aata hai.
 
-## 13.3 Storage aur domain delete
+| Khana | Kya hota hai |
+| --- | --- |
+| PDF | Sirf PDF file |
+| Domain | Link isi domain / subdomain par banta hai |
+| Date of attestation | Khali chhoren to aaj ki tareekh. Link mein `DDMMYYYY` ban kar jati hai (31-10-2026 → `31102026`) |
+| Attestation number | Khali chhoren to khud banta hai. **Generate** dabane se pehle hi nazar aa jata hai. Apna likhna ho to format `GEN-NMPD-SSTI-FBDS` — pehle teen huroof hamesha `GEN`, phir chaar chaar capital English huroof ke teen hisse. Har number poore system mein aik hi dafa use ho sakta hai, chahe domain alag ho |
+| Document type, Issuing office, Issuing authority | List se chunen, ya **+ Add new…** se naya likhen. Naya likha hua save hote hi aage hamesha list mein milega |
+| Approving officer | List se officer chunen to us ka naam, designation aur signature **teeno aik saath** lag jate hain. **+ Add a new officer…** chunen to teeno ke alag khane khulte hain (naam, designation, signature image) aur ye officer aage ke liye save ho jata hai |
 
-New M ki files bucket mein `new-m/` ke neeche rehti hain. **Storage** page in ko bhi ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo New M mein mojood ho.
-Domain delete karenge to us ke New M links aur files bhi chali jati hain.
+Link aisa banta hai:
 
-## 13.4 Abhi kya nahi bana
+```
+https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SSTI-FBDS&issue_date=31102026
+```
 
-New M ki PDF **front end par kaise dikhegi aur us ka page kaisa hoga — ye abhi tay hona hai.** Is liye New M mein public link copy karne ya check karne ke button nahi hain,
-aur domain par kisi address se New M ki file nahi khulti. Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
+## 13.3 Edit, delete aur search
+
+- **Edit** (pencil): har cheez badli ja sakti hai — domain, number, date, sab tafseelat, officer. **Replace PDF** mein nayi file chunen to purani storage se hat jati hai.
+  Number ya date badalne se **link bhi badal jata hai**.
+- **Delete** (dustbin): document aur us ki PDF dono hamesha ke liye chali jati hain.
+- **Search**: upar wala aik hi box saare domains mein dhoondta hai — number, document type, office, authority, officer, domain, file ka naam, aur date (`31102026`, `31-10-2026`, `31/10/26` ya `2026-10-31`). Saath wale dropdown se aik domain tak mehdood bhi kar sakte hain.
+- **Saved values**: wahan saari saved lists aur officers nazar aate hain. Kisi ghalat value ya officer ko wahan se hata sakte hain — jo documents pehle se us ko use kar rahe hain un par koi asar nahi parta.
+
+## 13.4 Permissions
+
+New M ki apni chaar permissions hain (Users → **New M** group):
+
+- `Upload New M documents`
+- `Edit New M documents (number, date, details, PDF)`
+- `Delete New M documents`
+- `Remove saved New M values and officers`
+
+Super admin ko sab milta hai. Jis user ke paas in mein se koi bhi nahi, us ko sidebar mein New M nazar nahi aata.
+
+## 13.5 Storage aur domain delete
+
+New M ki PDFs aur signatures bucket mein `new-m/` ke neeche rehti hain. **Storage** page in ko bhi ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document ya saved officer ki ho.
+Domain delete karenge to us domain ke New M documents aur un ki PDFs bhi chali jati hain.
+
+## 13.6 Abhi kya nahi bana
+
+- **Front end page** (`/verify-general-attestation-by-qr`) abhi nahi bana — us waqt tak link kholne par 404 aata hai.
+- **Sticker** abhi nahi banta. Us ke liye jagah rakhi gayi hai: har document ka saara data (aur signature) document par hi mehfooz hai, is liye sticker jab banega to download ke waqt **hamesha latest data** se banega — edit ke baad bhi.
+- Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
 
 ---
 

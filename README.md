@@ -20,7 +20,7 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | Domains | Add domains/subdomains, enable/disable, notes, attach to the Vercel project through the Vercel API (optional), DNS guidance |
 | Old M — links | Create paths under a domain (`/`, `/brochures`, `/reports/2025`), rename, delete |
 | Old M — files | Upload (direct browser → R2, multi-file, progress), replace, rename, move to another link, delete, preview inside the panel, copy public link, download counts |
-| New M | The same file manager over the same domains, with links and files of its own (own tables, own `new-m/` prefix in R2). Its files have no public address yet — how they show on the front end is still to be decided |
+| New M | Attestation documents, uploaded one PDF at a time against any domain. Each gets a unique attestation number (`GEN-NMPD-SSTI-FBDS`, generated or typed) and a date (today unless changed), which make up its verification link. Document type, issuing office, issuing authority and approving officer (name + designation + signature, picked together) are offered from saved lists that grow with every upload. Everything stays editable, the PDF included; one search box covers every domain. The front-end page and the sticker come later |
 | Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
 | Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
@@ -117,13 +117,33 @@ Renaming a file only changes its public name (the storage object stays). Moving 
 
 If a browser dies between the upload to R2 and the save into the database, the object is left in the bucket with nothing pointing at it. **Storage** in the admin panel lists those leftovers and deletes them; anything younger than 6 hours is left alone in case an upload is still running.
 
+## New M
+
+A document is one PDF plus the details that will later be printed on its sticker. Run [`supabase/new-m.sql`](supabase/new-m.sql) once before using it.
+
+1. Pick a **domain** — the verification link is built on it.
+2. Upload the **PDF** (PDF only). It is stored in R2 under `new-m/docs/`, apart from Old M.
+3. The **attestation number** is `GEN` plus three groups of four capital letters, e.g. `GEN-NMPD-SSTI-FBDS`. Leave it blank to have one generated, press **Generate** to see one first, or type your own. It is unique across every domain.
+4. The **date of attestation** defaults to today and can be changed.
+5. The link is `https://<domain>/verify-general-attestation-by-qr?attestation_number=<number>&issue_date=DDMMYYYY`, e.g. `https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SSTI-FBDS&issue_date=31102026`.
+
+**Saved values** — document type, issuing office and issuing authority each offer every value typed so far; a new value joins its list when the document is saved. **Approving officers** are saved as name + designation + signature, so picking one fills in all three; "Add a new officer" asks for the three separately and saves them for next time. A document keeps its own copy of the officer, so removing an officer from the list (under **Saved values**) leaves documents already uploaded unchanged. A signature image is only deleted from storage once no officer and no document still shows it.
+
+**Editing** — every field can be changed afterwards, and choosing a new PDF removes the old one. Changing the number or the date changes the link.
+
+**Search** — one box over every domain: number, document type, office, authority, officer, domain, file name, and the date written as `31102026`, `31-10-2026`, `31/10/26` or `2026-10-31`.
+
+**Sticker** — not built yet. Everything it will print is stored on the document (and the signature is available as a `data:` URI from `/api/admin/new-m/:id/signature`), so a sticker drawn at download time will always match the document as it reads after any edit.
+
+> The public page at `/verify-general-attestation-by-qr` is not built yet. Until it is, opening a verification link returns 404.
+
 ## Permissions
 
 Super admins can do everything. Admin users get only the boxes ticked for them:
 
 `upload` · `replace` · `rename` · `move` · `delete` · `preview` · `create_link` · `edit_link` · `delete_link` · `create_domain` · `edit_domain` · `delete_domain` · `search` · `view_activity`
 
-New M has the same set under its own keys: `new_m_upload` · `new_m_replace` · `new_m_rename` · `new_m_move` · `new_m_delete` · `new_m_preview` · `new_m_create_link` · `new_m_edit_link` · `new_m_delete_link`. The New M tab shows only for users who hold at least one of them.
+New M has its own: `new_m_create` · `new_m_edit` · `new_m_delete` · `new_m_settings` (remove saved values and officers). The New M tab, and reading its PDFs, needs at least one of them.
 
 `move` and the `new_m_*` keys are newer than the others, so existing admin users do not have them until the super admin ticks them.
 
@@ -151,9 +171,9 @@ src/app/[...slug]/route.ts      public download endpoint (all domains)
 src/app/admin/*                 admin pages
 src/app/api/admin/*             admin API (domains, links, files, move, storage, users, counters, activity)
 src/app/api/auth/*              login / logout / password
-src/app/api/admin/new-m/*    New M's own API (domains tree, links, files)
-src/components/admin/*          File manager (Old M and New M), Domains, Storage, Search, Activity, Users
-src/lib/m.ts                 what differs between the Old M and New M tabs (pages, APIs, permissions)
+src/app/api/admin/new-m/*    New M API (documents, saved values, officers, uploads)
+src/components/admin/*          File manager (Old M), New M, Domains, Storage, Search, Activity, Users
+src/lib/new-m-link.ts        New M verification link and attestation number, shared by server and browser
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions
 supabase/new-m.sql           the New M tables on their own, for adding them to an existing database

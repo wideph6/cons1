@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
-import { isMissingTable, NEW_M, OLD_M, type FileStore } from "@/lib/files";
+import { isMissingTable } from "@/lib/new-m";
 import { deleteObjects, listAllObjects, MANAGED_PREFIX, NEW_M_PREFIX } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { StorageMismatch, StorageMissing, StorageOrphan, StorageReport } from "@/lib/types";
@@ -22,22 +22,17 @@ interface FileRowLite {
   size: number;
   uploaded_at: string;
   links?: { path: string; domains?: { hostname: string } | null } | null;
-  new_m?: boolean;
 }
 
-async function allFileRows(store: FileStore): Promise<FileRowLite[]> {
+async function allFileRows(): Promise<FileRowLite[]> {
   const out: FileRowLite[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db()
-      .from(store.files)
-      .select(`id,filename,r2_key,size,uploaded_at,${store.linkEmbed}(path,domains(hostname))`)
+      .from("files")
+      .select("id,filename,r2_key,size,uploaded_at,links(path,domains(hostname))")
       .order("id")
       .range(from, from + PAGE - 1);
-    if (error) {
-      // New M's tables arrive with supabase/new-m.sql; until it has run New M has no rows.
-      if (store === NEW_M && isMissingTable(error)) return out;
-      throw new ApiError(500, error.message);
-    }
+    if (error) throw new ApiError(500, error.message);
     const rows = (data ?? []) as unknown as FileRowLite[];
     out.push(...rows);
     if (rows.length < PAGE) return out;
@@ -48,22 +43,68 @@ function place(r: FileRowLite): Pick<StorageMissing, "hostname" | "path"> {
   return { hostname: r.links?.domains?.hostname ?? null, path: r.links?.path ?? null };
 }
 
+interface NewMRowLite {
+  id: string;
+  attestation_number: string;
+  doc_filename: string;
+  doc_r2_key: string;
+  doc_size: number | null;
+  officer_signature_r2_key: string | null;
+  created_at: string;
+  domain_hostname: string | null;
+}
+
+/** New M documents carry a PDF and, when an officer was given, a copy of the officer's signature. */
+async function allNewMRows(): Promise<NewMRowLite[]> {
+  const out: NewMRowLite[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db()
+      .from("new_m_view")
+      .select("id,attestation_number,doc_filename,doc_r2_key,doc_size,officer_signature_r2_key,created_at,domain_hostname")
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) {
+      // New M's tables arrive with supabase/new-m.sql; until it has run New M has nothing stored.
+      if (isMissingTable(error)) return out;
+      throw new ApiError(500, error.message);
+    }
+    const rows = (data ?? []) as unknown as NewMRowLite[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
+/** Every saved officer's signature, including ones no document has been given yet. */
+async function newMOfficerKeys(): Promise<string[]> {
+  const { data, error } = await db().from("new_m_officers").select("signature_r2_key");
+  if (error) {
+    if (isMissingTable(error)) return [];
+    throw new ApiError(500, error.message);
+  }
+  return (data ?? []).map((o) => o.signature_r2_key as string | null).filter((k): k is string => Boolean(k));
+}
+
 /** Compares what the bucket holds with what the database expects to be there. */
 async function buildReport(): Promise<StorageReport> {
-  const [files, newM, oldRows, mRows] = await Promise.all([
+  const [files, newM, rows, mRows, mOfficerKeys] = await Promise.all([
     listAllObjects(MANAGED_PREFIX),
     listAllObjects(NEW_M_PREFIX),
-    allFileRows(OLD_M),
-    allFileRows(NEW_M),
+    allFileRows(),
+    allNewMRows(),
+    newMOfficerKeys(),
   ]);
 
   const objects = [...files.objects, ...newM.objects];
   const truncated = files.truncated || newM.truncated;
-  // Old M and New M rows are checked alike; the flag only sends the fix to the right tab.
-  const rows = [...oldRows, ...mRows.map((r) => ({ ...r, new_m: true }))];
 
   const byKey = new Map(objects.map((o) => [o.key, o]));
   const usedKeys = new Set(rows.map((r) => r.r2_key));
+  // New M keys live under new-m/, so they too must be registered or cleanup would call them rubbish.
+  for (const m of mRows) {
+    usedKeys.add(m.doc_r2_key);
+    if (m.officer_signature_r2_key) usedKeys.add(m.officer_signature_r2_key);
+  }
+  for (const k of mOfficerKeys) usedKeys.add(k);
 
   const now = Date.now();
 
@@ -94,20 +135,36 @@ async function buildReport(): Promise<StorageReport> {
         size: Number(r.size ?? 0),
         uploaded_at: r.uploaded_at,
         ...place(r),
-        ...(r.new_m ? { new_m: true } : {}),
       };
       const o = byKey.get(r.r2_key);
+      if (!o) missing.push(base);
+      else if (o.size !== base.size) mismatched.push({ ...base, real_size: o.size });
+    }
+
+    for (const m of mRows) {
+      const base = {
+        id: m.id,
+        filename: m.doc_filename,
+        r2_key: m.doc_r2_key,
+        size: Number(m.doc_size ?? 0),
+        uploaded_at: m.created_at,
+        hostname: m.domain_hostname,
+        path: `new-m ${m.attestation_number}`,
+        new_m: true,
+      };
+      const o = byKey.get(m.doc_r2_key);
       if (!o) missing.push(base);
       else if (o.size !== base.size) mismatched.push({ ...base, real_size: o.size });
     }
   }
 
   const deletable = orphans.filter((o) => o.deletable);
+  const mBytes = mRows.reduce((s, m) => s + Number(m.doc_size ?? 0), 0);
   return {
     bucket_objects: objects.length,
     bucket_bytes: objects.reduce((s, o) => s + o.size, 0),
-    db_files: rows.length,
-    db_bytes: rows.reduce((s, r) => s + Number(r.size ?? 0), 0),
+    db_files: rows.length + mRows.length,
+    db_bytes: rows.reduce((s, r) => s + Number(r.size ?? 0), 0) + mBytes,
     orphans,
     orphan_bytes: orphans.reduce((s, o) => s + o.size, 0),
     deletable_orphans: deletable.length,

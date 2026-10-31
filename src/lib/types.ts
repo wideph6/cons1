@@ -226,3 +226,67 @@ export interface Paged<T> {
   limit: number;
   offset: number;
 }
+
+/* ---------------- New M ---------------- */
+
+/** The lists an upload can pick from, each growing with every new value typed in. */
+export type NewMOptionKind = "document_type" | "issuing_office" | "issuing_authority";
+
+export interface NewMOption {
+  id: string;
+  kind: NewMOptionKind;
+  value: string;
+}
+
+/** A saved approving officer: picking one fills in the name, designation and signature together. */
+export interface NewMOfficer {
+  id: string;
+  name: string;
+  designation: string;
+  signature_r2_key: string | null;
+  signature_content_type: string | null;
+  /** The signature image inline, so it can be shown, and later drawn onto a sticker, without a second request. */
+  signature_data_uri: string | null;
+}
+
+export interface NewMLists {
+  options: Record<NewMOptionKind, NewMOption[]>;
+  officers: NewMOfficer[];
+}
+
+/**
+ * One uploaded attestation document. Everything a sticker will print is on the record itself, so a
+ * sticker drawn at download time always matches the record as it reads now, edits included.
+ */
+export interface NewMRecord {
+  id: string;
+  domain_id: string;
+  attestation_number: string;
+  /** ISO date (YYYY-MM-DD); the link carries it as DDMMYYYY. */
+  issue_date: string;
+  document_type: string;
+  issuing_office: string;
+  issuing_authority: string;
+  /** The saved officer this document was given, or null when none was picked or it was removed from the list. */
+  officer_id: string | null;
+  /** Copied from that officer, so removing them from the list leaves this document unchanged. */
+  officer_name: string;
+  officer_designation: string;
+  officer_signature_r2_key: string | null;
+  officer_signature_content_type: string | null;
+  doc_filename: string;
+  doc_r2_key: string;
+  doc_size: number;
+  doc_content_type: string;
+  doc_uploaded_at: string;
+  doc_replaced_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  domain_hostname: string;
+  domain_is_active: boolean;
+  uploader_name: string | null;
+  uploader_email: string | null;
+  /** Built by the server so every caller shows the same link. */
+  verify_url: string;
+}

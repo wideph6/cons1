@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, must, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
-import { isMissingTable, listLinkKeys, NEW_M } from "@/lib/files";
+import { listLinkKeys } from "@/lib/files";
+import { isMissingTable } from "@/lib/new-m";
 import { deleteObjects } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { Domain } from "@/lib/types";
@@ -57,11 +58,12 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
     const linkIds = (links ?? []).map((l) => l.id as string);
     const keys = await listLinkKeys(linkIds);
 
-    // New M's links and files cascade with the domain as well. Before supabase/new-m.sql has
-    // run there are none, and that must not stop a domain from being deleted.
-    const { data: mLinks, error: mErr } = await db().from(NEW_M.links).select("id").eq("domain_id", id);
+    // New M documents cascade too. Their officer signatures stay: the saved officer and documents on
+    // other domains may still show them. Before supabase/new-m.sql has run there are none, and that
+    // must not stop a domain from being deleted.
+    const { data: newM, error: mErr } = await db().from("new_m_records").select("doc_r2_key").eq("domain_id", id);
     if (mErr && !isMissingTable(mErr)) throw new ApiError(500, mErr.message);
-    const mKeys = await listLinkKeys((mLinks ?? []).map((l) => l.id as string), NEW_M);
+    const mKeys = (newM ?? []).map((m) => m.doc_r2_key as string).filter(Boolean);
 
     await deleteObjects([...keys, ...mKeys]);
 
@@ -78,8 +80,7 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
       details: {
         links: linkIds.length,
         files: keys.length,
-        new_m_links: mLinks?.length ?? 0,
-        new_m_files: mKeys.length,
+        new_m: mKeys.length,
         removed_from_vercel: vercel?.ok ?? false,
       },
     });
@@ -87,7 +88,7 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
       ok: true,
       files_deleted: keys.length,
       links_deleted: linkIds.length,
-      new_m_files_deleted: mKeys.length,
+      new_m_deleted: mKeys.length,
       vercel,
     });
   });
