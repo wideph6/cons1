@@ -53,16 +53,17 @@ export const SIGNATURE_BOX = { x: 548.5, y: 421, width: 260, height: 62 };
 /** The QR code's border: a line round the code, as on the reference (outer edge 693.6–825.6 x 176.3–307.4). */
 const QR_BORDER = { x: 693.6, y: 176.3, width: 132, height: 131.1 };
 /**
- * The code sits inside the border with half a module of white between them. The reference has the
- * border touching the code, but then the corner squares merge with the line and scanners stop
- * recognising them; this gap keeps it readable and looks the same.
+ * No white between the border and the code, as on the reference. The code reaches under the line,
+ * which covers its outermost unit (about a third of a module), so each corner square's outer ring
+ * still reads one module wide. With the line beside the code instead, ring and line read as 1.4
+ * modules and scanners lose the code; under the line it scans better than with a gap.
  */
-const QR_GAP = 1.6;
+const QR_OVERLAP = 1;
 export const QR_BOX = {
-  x: QR_BORDER.x + LINE + QR_GAP,
-  y: QR_BORDER.y + LINE + QR_GAP,
-  width: QR_BORDER.width - 2 * (LINE + QR_GAP),
-  height: QR_BORDER.height - 2 * (LINE + QR_GAP),
+  x: QR_BORDER.x + LINE - QR_OVERLAP,
+  y: QR_BORDER.y + LINE - QR_OVERLAP,
+  width: QR_BORDER.width - 2 * (LINE - QR_OVERLAP),
+  height: QR_BORDER.height - 2 * (LINE - QR_OVERLAP),
 };
 
 /* ---------------- The fixed parts the app draws ---------------- */
@@ -104,6 +105,12 @@ const LABELS: Array<{ text: string; x: number; y: number; bold?: boolean }> = [
   { text: "No.", x: 107, y: 345 },
   { text: "Date:", x: 88, y: 392 },
 ];
+/**
+ * A thin outline on the regular labels. Against the reference they came out lighter than the values
+ * did (by ink and by stroke width), so they get a little more weight; values, "Pakistan" and the
+ * title are left as they are.
+ */
+const LABEL_OUTLINE = 0.2;
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -147,10 +154,19 @@ export function fontFor(slot: TextSlot, size = slot.size): string {
 /** Width of a line of text in the browser, used to shrink a value that would overflow its cell. */
 export type Measure = (text: string, font: string) => number;
 
-function text(x: number, y: number, value: string, size: number, weight: "bold" | "normal", opts: { anchor?: string; fill?: string } = {}): string {
+function text(
+  x: number,
+  y: number,
+  value: string,
+  size: number,
+  weight: "bold" | "normal",
+  opts: { anchor?: string; fill?: string; outline?: number } = {},
+): string {
+  const fill = opts.fill ?? "#000000";
+  const outline = opts.outline ? ` stroke="${fill}" stroke-width="${opts.outline}" stroke-linejoin="round"` : "";
   return (
     `<text x="${x}" y="${y}" font-family="${esc(FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}" ` +
-    `fill="${opts.fill ?? "#000000"}" text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
+    `fill="${fill}"${outline} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
   );
 }
 
@@ -173,7 +189,9 @@ function frameEl(): string {
   );
   for (const [x, y1, y2] of V_LINES) parts.push(`<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="#000000" stroke-width="${LINE}"/>`);
   for (const [y, x1, x2] of H_LINES) parts.push(`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#000000" stroke-width="${LINE}"/>`);
-  for (const l of LABELS) parts.push(text(l.x, l.y, l.text, 19, l.bold ? "bold" : "normal"));
+  for (const l of LABELS) {
+    parts.push(l.bold ? text(l.x, l.y, l.text, 19, "bold") : text(l.x, l.y, l.text, 19, "normal", { outline: LABEL_OUTLINE }));
+  }
   return parts.join("");
 }
 
@@ -200,14 +218,16 @@ function qrEl(savedSvg: string | null, url: string, withBorder: boolean): string
 
   const b = QR_BORDER;
   const half = LINE / 2;
-  // The border's own rectangle doubles as the code's white backing.
-  const backing = withBorder
-    ? `<rect x="${n(b.x + half)}" y="${n(b.y + half)}" width="${n(b.width - LINE)}" height="${n(b.height - LINE)}" fill="#ffffff" stroke="#000000" stroke-width="${LINE}"/>`
-    : `<rect x="${n(b.x + LINE)}" y="${n(b.y + LINE)}" width="${n(b.width - 2 * LINE)}" height="${n(b.height - 2 * LINE)}" fill="#ffffff"/>`;
+  // White inside the border, the code, then the border drawn over the code's outer edge. A background
+  // with its own border shows that border under the code's edge the same way.
+  const border = withBorder
+    ? `<rect x="${n(b.x + half)}" y="${n(b.y + half)}" width="${n(b.width - LINE)}" height="${n(b.height - LINE)}" fill="none" stroke="#000000" stroke-width="${LINE}"/>`
+    : "";
   return (
-    backing +
+    `<rect x="${n(b.x + LINE)}" y="${n(b.y + LINE)}" width="${n(b.width - 2 * LINE)}" height="${n(b.height - 2 * LINE)}" fill="#ffffff"/>` +
     `<svg x="${n(QR_BOX.x)}" y="${n(QR_BOX.y)}" width="${n(QR_BOX.width)}" height="${n(QR_BOX.height)}" viewBox="0 0 ${size} ${size}" ` +
-    `preserveAspectRatio="none" shape-rendering="crispEdges"><path fill="#000000" d="${path}"/></svg>`
+    `preserveAspectRatio="none" shape-rendering="crispEdges"><path fill="#000000" d="${path}"/></svg>` +
+    border
   );
 }
 

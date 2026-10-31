@@ -719,9 +719,11 @@ khud banata hai, isi liye kuch bhi dhundla nahi aata:
 - Upar siyah patti aur us par safed **GENERAL ATTESTATION** (Georgia bold)
 - Table ki saari lines (1.4 px, siyah)
 - Saare labels: "1 Country **Pakistan**", "This Public Document", "2 at", "3 the", "4 by", "5 No.", "Date:" — Georgia 19 px, siyah
-  (sirf "Pakistan" bold, jaise asal mein tha). Labels aur values ab bilkul aik jaisa siyah rang hain.
-- QR code ke gird border (1.4 px). Asal sticker mein border QR ko chhoo rahi thi, magar test mein aisa QR scan hi nahi hua —
-  is liye border aur QR ke darmiyan aadhe module (1.6 px) ka safed faasla hai. Dekhne mein farq taqreeban nazar nahi aata.
+  (sirf "Pakistan" bold, jaise asal mein tha). Labels aur values ab bilkul aik jaisa siyah rang hain. Asal ke muqable mein
+  regular labels values se halke aa rahe the, is liye un par 0.2 px ki patli outline hai (values, "Pakistan" aur title waise hi hain).
+- QR code ke gird border (1.4 px), QR ko chhoti hui — beech mein koi safed faasla nahi, jaise asal mein. Border QR ke bahar wale
+  kinare ke **upar** banti hai (kinare ka 1 px dhanp leti hai). Asal ki tarah border QR ke bilkul *saath* rakhne se kone wale
+  chokor mote ho jate hain aur test mein QR bilkul scan nahi hua; is tareeqe se faasle wale purane tareeqe se bhi behtar scan hota hai.
 
 Koi value apne khane se lambi ho to wo thori chhoti likhi jati hai taake agle khane mein na ghuse.
 PNG 3 guna bari banti hai (print ke liye saaf); background bari image ho to usi ke size par.
