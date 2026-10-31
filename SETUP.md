@@ -613,6 +613,17 @@ where table_schema = 'public'
 
 **3 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
 
+> **Pehle se chala chuke hain?** QR code save karne ke liye is file mein 3 naye columns aaye hain (`qr_url`, `qr_svg`, `qr_updated_at`).
+> File **dobara** chala dein — pehle se upload hue documents mehfooz rehte hain, aur un ke QR agli dafa list khulne par khud ban kar save ho jate hain.
+> Check:
+>
+> ```sql
+> select column_name from information_schema.columns
+> where table_name = 'new_m_records' and column_name like 'qr_%';
+> ```
+>
+> **3 rows** aaney chahiyen.
+
 ## 13.2 Document upload karna
 
 Sidebar → **New M** → **Upload document**. Aik waqt mein aik PDF. Sab se naya upload list mein sab se upar aata hai.
@@ -640,6 +651,18 @@ https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SS
 - **Search**: upar wala aik hi box saare domains mein dhoondta hai — number, document type, office, authority, officer, domain, file ka naam, aur date (`31102026`, `31-10-2026`, `31/10/26` ya `2026-10-31`). Saath wale dropdown se aik domain tak mehdood bhi kar sakte hain.
 - **Saved values**: wahan saari saved lists aur officers nazar aate hain. Kisi ghalat value ya officer ko wahan se hata sakte hain — jo documents pehle se us ko use kar rahe hain un par koi asar nahi parta.
 
+## 13.3a QR code
+
+Har document ke link ka QR code **khud ban jata hai aur document ke saath database mein save hota hai** — koi button dabane ki zaroorat nahi.
+
+- **Upload** karte hi QR ban kar save ho jata hai.
+- **Edit** mein agar wo cheez badli jo link badalti hai — **attestation number, date ya domain** — to naya QR banta hai aur database mein **purane ki jagah** save hota hai. Baqi cheezen (document type, office, officer, PDF) badalne se QR wesa hi rehta hai, kyunki link nahi badalta.
+- Domains page par kisi domain ka naam badla jaye to us ke documents ke QR agli dafa list khulne par khud naye ban kar save ho jate hain.
+- List mein har document ke saamne us ka **saved** QR nazar aata hai. Us par (ya QR wale icon par) click karen to bara QR khulta hai, saath **PNG** aur **SVG** download.
+- Upload / Edit form mein link ke saath QR ka **preview** live dikhta hai; save dabane par wohi QR database mein jata hai.
+- Design aap ke diye hue sample jaisa: saada siyah-safed QR, square dabbe aur square kone, **41 × 41** (version 6), error correction **L**. Link bohat lamba ho (bohat lamba domain) to QR khud aik size bara ho jata hai taake scan hota rahe.
+- Ye QR generator **sirf New M** ka hai. Old M ya kisi aur hisse par is ka koi asar nahi.
+
 ## 13.4 Permissions
 
 New M ki apni chaar permissions hain (Users → **New M** group):
@@ -659,7 +682,7 @@ Domain delete karenge to us domain ke New M documents aur un ki PDFs bhi chali j
 ## 13.6 Abhi kya nahi bana
 
 - **Front end page** (`/verify-general-attestation-by-qr`) abhi nahi bana — us waqt tak link kholne par 404 aata hai.
-- **Sticker** abhi nahi banta. Us ke liye jagah rakhi gayi hai: har document ka saara data (aur signature) document par hi mehfooz hai, is liye sticker jab banega to download ke waqt **hamesha latest data** se banega — edit ke baad bhi.
+- **Sticker** abhi nahi banta. Us ke liye jagah rakhi gayi hai: har document ka saara data, signature aur QR code (13.3a) tayyar hain, is liye sticker jab banega to download ke waqt **hamesha latest data aur latest QR** se banega — edit ke baad bhi.
 - Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
 
 ---

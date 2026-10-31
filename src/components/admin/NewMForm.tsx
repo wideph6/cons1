@@ -2,10 +2,19 @@
 
 import { FileUp, ImageUp, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { LinkQrPreview } from "@/components/admin/NewMQr";
 import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
 import { uploadNewMFile } from "@/lib/new-m-client";
-import { issueDateParam, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, tidyNumber, VERIFY_PATH } from "@/lib/new-m-link";
+import {
+  buildVerifyUrl,
+  issueDateParam,
+  NUMBER_EXAMPLE,
+  NUMBER_RE,
+  randomNumber,
+  tidyNumber,
+  VERIFY_PATH,
+} from "@/lib/new-m-link";
 import type { Domain, NewMLists, NewMOfficer, NewMOption, NewMRecord } from "@/lib/types";
 import { fileExtension, formatBytes } from "@/lib/utils";
 
@@ -144,6 +153,8 @@ export function NewMForm({
   const previewUrl = domain
     ? `https://${domain.hostname}${VERIFY_PATH}?attestation_number=${number || "GEN-••••-••••-••••"}&issue_date=${issueDateParam(draft.issue_date || todayLocalIso())}`
     : "";
+  // The exact link the server will build, once there is a valid number to put in it.
+  const qrUrl = domain && NUMBER_RE.test(number) ? buildVerifyUrl(domain.hostname, number, draft.issue_date || todayLocalIso()) : null;
 
   const pickedOfficer: NewMOfficer | null = officers.find((o) => o.id === draft.officer) ?? null;
   // The document carries an officer who is no longer in the saved list, so the picker must offer to keep them.
@@ -336,9 +347,21 @@ export function NewMForm({
         </Field>
 
         {previewUrl ? (
-          <div className="rounded-md border bg-surface-2 px-3 py-2">
-            <div className="text-[11.5px] text-text-muted mb-0.5">Verification link</div>
-            <div className="font-mono text-[12.5px] break-all">{previewUrl}</div>
+          <div className="rounded-md border bg-surface-2 px-3 py-2 flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[11.5px] text-text-muted mb-0.5">Verification link</div>
+              <div className="font-mono text-[12.5px] break-all">{previewUrl}</div>
+              <div className="text-[11.5px] text-text-muted mt-1.5">
+                {!qrUrl
+                  ? "The QR code appears once the number is set — press Generate, or it is made and saved when the document is uploaded."
+                  : !editing
+                    ? "Preview of the QR code. It is saved with the document when you upload."
+                    : qrUrl !== record?.qr_url
+                      ? "The link has changed: saving replaces the stored QR code with this new one."
+                      : "This is the QR code saved with the document."}
+              </div>
+            </div>
+            {qrUrl ? <LinkQrPreview url={qrUrl} alt="QR code for this link" className="size-24 shrink-0 border rounded" /> : null}
           </div>
         ) : null}
 

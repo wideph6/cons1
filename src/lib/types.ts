@@ -280,6 +280,11 @@ export interface NewMRecord {
   doc_content_type: string;
   doc_uploaded_at: string;
   doc_replaced_at: string | null;
+  /** The link the saved QR code was drawn from. */
+  qr_url: string | null;
+  /** The saved QR code, a standalone SVG. Replaced whenever an edit changes the link. */
+  qr_svg: string | null;
+  qr_updated_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

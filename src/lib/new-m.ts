@@ -1,6 +1,6 @@
 import { issuedToIso, pad2, parseIssuedOn, todayIso } from "./dates";
 import { ApiError } from "./errors";
-import { buildVerifyUrl, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, tidyNumber } from "./new-m-link";
+import { buildVerifyUrl, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, tidyNumber, verifyQrSvg } from "./new-m-link";
 import { can } from "./permissions";
 import { deleteObject, getObjectBytes, headObject, isNewMKey } from "./r2";
 import { db } from "./supabase";
@@ -264,6 +264,30 @@ export async function getRecord(id: string): Promise<NewMRecord> {
   if (error) throw dbError(error);
   if (!data) throw new ApiError(404, "Document not found");
   return mapRecord(data as unknown as RawRecord);
+}
+
+/* ---------------- QR code ---------------- */
+
+/** The QR columns for a link: the code itself, the link it encodes, and when it was drawn. */
+export function qrColumns(url: string): { qr_url: string; qr_svg: string; qr_updated_at: string } {
+  return { qr_url: url, qr_svg: verifyQrSvg(url), qr_updated_at: new Date().toISOString() };
+}
+
+/**
+ * Makes sure each document's saved QR code is the one for its link as it reads now, redrawing and
+ * saving any that is missing or stale. Saves and edits store the code themselves; this catches the
+ * rest, such as a domain renamed under Domains, which changes the link of every document on it.
+ */
+export async function withCurrentQr(records: NewMRecord[]): Promise<NewMRecord[]> {
+  return Promise.all(
+    records.map(async (r) => {
+      if (r.qr_svg && r.qr_url === r.verify_url) return r;
+      const qr = qrColumns(r.verify_url);
+      const { error } = await db().from("new_m_records").update(qr).eq("id", r.id);
+      if (error) throw dbError(error);
+      return { ...r, ...qr };
+    }),
+  );
 }
 
 /** Columns the common search box looks through, on every domain at once. */

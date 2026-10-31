@@ -133,6 +133,8 @@ A document is one PDF plus the details that will later be printed on its sticker
 
 **Search** — one box over every domain: number, document type, office, authority, officer, domain, file name, and the date written as `31102026`, `31-10-2026`, `31/10/26` or `2026-10-31`.
 
+**QR code** — when a document is saved, the server draws the QR code of its link and saves it on the document (`qr_svg`, with `qr_url` holding the link it encodes). An edit that changes the link — the number, the date or the domain — draws a new code and replaces the saved one; any other edit leaves it as it is. If a domain is renamed under Domains, the next time those documents are listed their codes are redrawn and saved too. The list shows the saved code (click it for a large view and PNG / SVG downloads); the upload form shows a live preview before saving. The style copies the reference sample: a plain QR with square modules and square finder eyes, black on white, version 6 (41 × 41 modules) at error-correction level L; a link too long for version 6 moves up to the next size. The generator (`src/lib/new-m-qr.ts`) belongs to New M alone.
+
 **Sticker** — not built yet. Everything it will print is stored on the document (and the signature is available as a `data:` URI from `/api/admin/new-m/:id/signature`), so a sticker drawn at download time will always match the document as it reads after any edit.
 
 > The public page at `/verify-general-attestation-by-qr` is not built yet. Until it is, opening a verification link returns 404.
@@ -173,7 +175,8 @@ src/app/api/admin/*             admin API (domains, links, files, move, storage,
 src/app/api/auth/*              login / logout / password
 src/app/api/admin/new-m/*    New M API (documents, saved values, officers, uploads)
 src/components/admin/*          File manager (Old M), New M, Domains, Storage, Search, Activity, Users
-src/lib/new-m-link.ts        New M verification link and attestation number, shared by server and browser
+src/lib/new-m-link.ts        New M verification link, attestation number and QR settings, shared by server and browser
+src/lib/new-m-qr.ts          New M's QR encoder (ISO/IEC 18004, byte mode)
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions
 supabase/new-m.sql           the New M tables on their own, for adding them to an existing database

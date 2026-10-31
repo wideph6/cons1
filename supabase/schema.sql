@@ -287,10 +287,21 @@ create table if not exists public.new_m_records (
   doc_uploaded_at timestamptz not null default now(),
   doc_replaced_at timestamptz,
 
+  -- The QR code of the verification link, saved with the document as an SVG. qr_url is the link it
+  -- was drawn from; when an edit changes the link, a new code replaces this one.
+  qr_url text,
+  qr_svg text,
+  qr_updated_at timestamptz,
+
   created_by uuid references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Added after the first release, for databases that already have the table.
+alter table public.new_m_records add column if not exists qr_url text;
+alter table public.new_m_records add column if not exists qr_svg text;
+alter table public.new_m_records add column if not exists qr_updated_at timestamptz;
 
 create index if not exists new_m_records_domain_idx on public.new_m_records (domain_id);
 create index if not exists new_m_records_created_idx on public.new_m_records (created_at desc);

@@ -1,8 +1,9 @@
 "use client";
 
-import { Download, Eye, ListChecks, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Download, Eye, ListChecks, Pencil, Plus, QrCode, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NewMForm } from "@/components/admin/NewMForm";
+import { NewMQrDialog, QrSvgImage } from "@/components/admin/NewMQr";
 import { NewMSavedValues } from "@/components/admin/NewMSavedValues";
 import { useSession } from "@/components/SessionProvider";
 import {
@@ -43,6 +44,7 @@ export function NewMManager() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<NewMRecord | null>(null);
   const [savedOpen, setSavedOpen] = useState(false);
+  const [qrFor, setQrFor] = useState<NewMRecord | null>(null);
   const [del, setDel] = useState<NewMRecord | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -235,6 +237,7 @@ export function NewMManager() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="w-14">QR</th>
                   <th>Attestation number</th>
                   <th>Document type</th>
                   <th>Domain</th>
@@ -249,6 +252,23 @@ export function NewMManager() {
               <tbody>
                 {items.map((r) => (
                   <tr key={r.id}>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setQrFor(r)}
+                        title="Show the QR code"
+                        aria-label={`Show the QR code for ${r.attestation_number}`}
+                        className="block rounded border hover:border-teal-600"
+                      >
+                        {r.qr_svg ? (
+                          <QrSvgImage svg={r.qr_svg} className="size-11 rounded" />
+                        ) : (
+                          <span className="flex size-11 items-center justify-center text-text-faint">
+                            <QrCode className="size-5" />
+                          </span>
+                        )}
+                      </button>
+                    </td>
                     <td>
                       <div className="font-mono text-[13px] font-medium whitespace-nowrap">{r.attestation_number}</div>
                       <div className="text-[11.5px] text-text-muted truncate max-w-[22rem]" title={r.verify_url}>
@@ -292,6 +312,9 @@ export function NewMManager() {
                     <td>
                       <div className="flex items-center justify-end gap-0.5">
                         <CopyButton text={r.verify_url} label="Copy link" />
+                        <IconButton label="QR code" onClick={() => setQrFor(r)}>
+                          <QrCode className="size-4" />
+                        </IconButton>
                         <IconButton label="Open PDF" onClick={() => openPdf(r, false)}>
                           <Eye className="size-4" />
                         </IconButton>
@@ -336,6 +359,8 @@ export function NewMManager() {
         }}
         onListsChanged={loadLists}
       />
+
+      <NewMQrDialog record={qrFor} onClose={() => setQrFor(null)} />
 
       <NewMSavedValues
         open={savedOpen}

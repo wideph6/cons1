@@ -13,10 +13,13 @@ import {
   OPTION_KINDS,
   OPTION_LABELS,
   parseIssueDate,
+  qrColumns,
   releaseSignature,
   rememberOptions,
   requireNewMAccess,
+  withCurrentQr,
 } from "@/lib/new-m";
+import { buildVerifyUrl } from "@/lib/new-m-link";
 import { deleteObject } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { NewMOptionKind } from "@/lib/types";
@@ -45,7 +48,8 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     const user = await requireUser();
     requireNewMAccess(user);
     const { id } = await params;
-    return ok({ item: await getRecord(id) });
+    const [item] = await withCurrentQr([await getRecord(id)]);
+    return ok({ item });
   });
 }
 
@@ -60,8 +64,11 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
     const patch: Record<string, unknown> = {};
 
+    let hostname = existing.domain_hostname;
     if (body.domain_id !== undefined && body.domain_id !== existing.domain_id) {
-      patch.domain_id = (await getDomain(body.domain_id)).id;
+      const domain = await getDomain(body.domain_id);
+      patch.domain_id = domain.id;
+      hostname = domain.hostname;
     }
 
     if (body.attestation_number !== undefined) {
@@ -100,6 +107,16 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       replacedDoc = true;
     }
 
+    // The link is made of the domain, the number and the date. When an edit changes any of them, a QR
+    // code is drawn for the new link and replaces the saved one.
+    const nextUrl = buildVerifyUrl(
+      hostname,
+      (patch.attestation_number as string | undefined) ?? existing.attestation_number,
+      (patch.issue_date as string | undefined) ?? existing.issue_date,
+    );
+    const qrReplaced = !existing.qr_svg || nextUrl !== existing.qr_url;
+    if (qrReplaced) Object.assign(patch, qrColumns(nextUrl));
+
     await rememberOptions(user, typed);
 
     if (!Object.keys(patch).length) return ok({ item: existing });
@@ -125,9 +142,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       file: { id: null, filename: item.doc_filename },
       details: {
         attestation_number: item.attestation_number,
-        changed: Object.keys(patch).filter((k) => k !== "updated_at"),
+        changed: Object.keys(patch).filter((k) => k !== "updated_at" && !k.startsWith("qr_")),
         previous_number: existing.attestation_number,
         previous_issue_date: existing.issue_date,
+        qr_replaced: qrReplaced,
       },
     });
     return ok({ item });

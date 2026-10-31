@@ -12,12 +12,15 @@ import {
   numberTaken,
   officerColumns,
   parseIssueDate,
+  qrColumns,
   rememberOptions,
   requireNewMAccess,
   searchDate,
   SEARCH_COLUMNS,
   uniqueNumber,
+  withCurrentQr,
 } from "@/lib/new-m";
+import { buildVerifyUrl } from "@/lib/new-m-link";
 import { db } from "@/lib/supabase";
 import type { NewMRecord, Paged } from "@/lib/types";
 
@@ -62,7 +65,7 @@ export async function GET(req: NextRequest) {
     const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (error) throw dbError(error);
 
-    const items = (data ?? []).map((r) => mapRecord(r as never));
+    const items = await withCurrentQr((data ?? []).map((r) => mapRecord(r as never)));
     const paged: Paged<NewMRecord> = { items, total: count ?? items.length, limit, offset };
     return ok(paged);
   });
@@ -89,13 +92,16 @@ export async function POST(req: NextRequest) {
       issuing_authority: cleanText(body.issuing_authority, "Issuing authority"),
     };
 
+    const issueDate = parseIssueDate(body.issue_date);
     const row: Record<string, unknown> = {
       domain_id: domain.id,
       attestation_number: number,
-      issue_date: parseIssueDate(body.issue_date),
+      issue_date: issueDate,
       ...texts,
       ...(await officerColumns(body.officer_id || null)),
       ...(await docColumns(body.doc_key, body.doc_filename, body.doc_content_type)),
+      // The QR code of the verification link is saved with the document.
+      ...qrColumns(buildVerifyUrl(domain.hostname, number, issueDate)),
       created_by: user.id,
     };
 

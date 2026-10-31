@@ -1,6 +1,8 @@
+import { encodeQr, qrToSvg, type QrMatrix } from "./new-m-qr";
+
 /**
- * The New M verification link and attestation number. No server imports, so the upload form
- * previews exactly the link the server will build.
+ * The New M verification link, its QR code and the attestation number. No server imports, so the
+ * upload form previews exactly the link and QR the server will build.
  */
 
 /** Public path a verification link points at. The query carries the number and the issue date. */
@@ -54,4 +56,33 @@ export function issueDateParam(isoDate: string): string {
 export function buildVerifyUrl(hostname: string, number: string, issueDate: string): string {
   const params = new URLSearchParams({ attestation_number: number, issue_date: issueDateParam(issueDate) });
   return `https://${hostname}${VERIFY_PATH}?${params.toString()}`;
+}
+
+/* ---------------- QR code ---------------- */
+
+/**
+ * Matched to the reference sticker: a plain QR with square modules and square finder eyes, black on
+ * white, version 6 (41 x 41 modules) at error-correction level L. Version 6 is a floor, so a longer
+ * link still fits, and every document's code comes out at the same density.
+ */
+export const QR_ECC = "L";
+export const QR_MIN_VERSION = 6;
+/** Standard white margin around the code, in modules, so a phone camera finds its edges. */
+export const QR_QUIET_ZONE = 4;
+
+/** Pixels per module in the stored code: a version 6 code with its margin comes to 490 px. */
+export const QR_MODULE_PX = 10;
+
+/** The code for a verification link. */
+export function verifyQr(url: string): QrMatrix {
+  return encodeQr(url, QR_ECC, QR_MIN_VERSION);
+}
+
+/**
+ * The code as a standalone SVG, margin included. Sized in whole pixels per module so every module
+ * lands on the pixel grid and stays crisp when rasterised. This is what each document stores.
+ */
+export function verifyQrSvg(url: string, modulePx = QR_MODULE_PX, quietZone = QR_QUIET_ZONE): string {
+  const m = verifyQr(url);
+  return qrToSvg(m, { size: (m.size + quietZone * 2) * modulePx, quietZone, idPrefix: "new-m-qr" });
 }
