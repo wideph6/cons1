@@ -2,7 +2,7 @@
 
 import { Download, FileCode, ImageUp, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Alert, Button, Loading, Modal, errorMessage, useToast } from "@/components/ui";
+import { Alert, Button, Checkbox, Loading, Modal, errorMessage, useToast } from "@/components/ui";
 import { api, downloadSvgAsPng, downloadSvgFile } from "@/lib/client";
 import { NUMBER_EXAMPLE, resolveLink, STANDARD_TEMPLATE } from "@/lib/new-m-link";
 import { buildStickerSvg, STICKER_H, STICKER_W, type Measure } from "@/lib/new-m-sticker";
@@ -43,6 +43,8 @@ interface Background {
   dataUri: string;
   /** Pixel width, so the PNG keeps all of a large background's detail. */
   width: number;
+  /** The image already has the title bar, lines and labels, so the app must not draw them again. */
+  hasFrame: boolean;
 }
 
 /** Fetched once per page and reused for every sticker, until a new background is set. */
@@ -64,8 +66,9 @@ function loadBackground(): Promise<Background> {
       }
       throw new Error(message);
     }
+    const hasFrame = res.headers.get("x-background-has-frame") === "1";
     const dataUri = await blobToDataUri(await res.blob());
-    return { dataUri, width: await imageWidth(dataUri) };
+    return { dataUri, width: await imageWidth(dataUri), hasFrame };
   })().catch((e) => {
     backgroundCache = null;
     throw e;
@@ -89,6 +92,7 @@ export async function renderSticker(record: NewMRecord): Promise<{ svg: string; 
   const svg = buildStickerSvg(
     {
       background: bg.dataUri,
+      drawFrame: !bg.hasFrame,
       documentType: record.document_type,
       issuingOffice: record.issuing_office,
       issueDate: record.issue_date,
@@ -192,17 +196,20 @@ export function NewMStickerDialog({ record, onClose }: { record: NewMRecord | nu
 interface BackgroundInfo {
   custom: boolean;
   filename: string | null;
+  /** The uploaded image already has the title bar, lines and labels on it. */
+  has_frame: boolean;
   updated_at: string | null;
 }
 
 /** Values the background preview is drawn with, so the alignment can be judged before it is saved. */
-function sampleSvg(background: string): string {
+function sampleSvg(background: string, drawFrame: boolean): string {
   const today = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   const iso = `${today.getFullYear()}-${p(today.getMonth() + 1)}-${p(today.getDate())}`;
   return buildStickerSvg(
     {
       background,
+      drawFrame,
       documentType: "Personal Document",
       issuingOffice: "Islamabad",
       issueDate: iso,
@@ -219,19 +226,24 @@ function sampleSvg(background: string): string {
 
 /**
  * The super admin's background picker. Shows the current background with sample values written in,
- * so a new one can be checked for alignment before it replaces the old.
+ * so a new one can be checked for alignment before it replaces the old. The app draws the title bar,
+ * table lines and labels itself; an image that already has them printed is marked so they are not
+ * drawn twice.
  */
 export function NewMBackgroundDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast();
   const [info, setInfo] = useState<BackgroundInfo | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
   const [chosen, setChosen] = useState<{ file: File; dataUri: string; width: number; height: number } | null>(null);
+  /** For the chosen image: it already has the frame printed on it. */
+  const [chosenHasFrame, setChosenHasFrame] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setChosen(null);
+    setChosenHasFrame(false);
     setError(null);
     setCurrent(null);
     api<BackgroundInfo>("/api/admin/new-m/background?info=1")
@@ -256,6 +268,7 @@ export function NewMBackgroundDialog({ open, onClose }: { open: boolean; onClose
     });
     if (!size.width) return setError("That image could not be opened.");
     setChosen({ file, dataUri, ...size });
+    setChosenHasFrame(false);
   }
 
   async function save() {
@@ -264,6 +277,7 @@ export function NewMBackgroundDialog({ open, onClose }: { open: boolean; onClose
     try {
       const form = new FormData();
       form.append("file", chosen.file);
+      form.append("has_frame", chosenHasFrame ? "1" : "0");
       const res = await fetch("/api/admin/new-m/background", { method: "POST", body: form });
       const body = (await res.json().catch(() => ({}))) as BackgroundInfo & { error?: string };
       if (!res.ok) throw new Error(body.error ?? `Saving failed (${res.status})`);
@@ -272,6 +286,18 @@ export function NewMBackgroundDialog({ open, onClose }: { open: boolean; onClose
       setCurrent(chosen.dataUri);
       setChosen(null);
       toast("Background saved — every sticker now uses it");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setCurrentHasFrame(hasFrame: boolean) {
+    setBusy(true);
+    try {
+      setInfo(await api<BackgroundInfo>("/api/admin/new-m/background", { method: "PATCH", json: { has_frame: hasFrame } }));
+      forgetBackground();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -294,6 +320,7 @@ export function NewMBackgroundDialog({ open, onClose }: { open: boolean; onClose
   }
 
   const shown = chosen?.dataUri ?? current;
+  const shownHasFrame = chosen ? chosenHasFrame : Boolean(info?.custom && info.has_frame);
   // The layout is measured on a 958 x 761 sheet; a background of other proportions gets stretched.
   const ratioOff = chosen ? Math.abs(chosen.width / chosen.height / (STICKER_W / STICKER_H) - 1) > 0.015 : false;
 
@@ -336,8 +363,9 @@ export function NewMBackgroundDialog({ open, onClose }: { open: boolean; onClose
     >
       <div className="space-y-3">
         <p className="text-[13px] text-text-muted">
-          Every sticker is drawn on this image. Only the super admin can change it. Keep the same layout as the
-          current one — the values are written at fixed places on it. Shown here with sample values.
+          Every sticker is drawn on this image; only the super admin can change it. The app draws the title bar, table
+          lines, labels and QR border itself so they print sharp — the image only needs the background pattern and the
+          Seal/Stamp cell, at the same layout and proportions. Shown here with sample values.
         </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {chosen ? (
@@ -355,8 +383,29 @@ export function NewMBackgroundDialog({ open, onClose }: { open: boolean; onClose
               : "the built-in background"}
           </p>
         ) : null}
+        {chosen ? (
+          <Checkbox
+            label="This image already has the title bar, table lines and labels printed on it"
+            description="Ticked, the app writes only the values, signature and QR code onto it."
+            checked={chosenHasFrame}
+            disabled={busy}
+            onChange={(e) => setChosenHasFrame(e.target.checked)}
+          />
+        ) : info?.custom ? (
+          <Checkbox
+            label="This image already has the title bar, table lines and labels printed on it"
+            description="Ticked, the app writes only the values, signature and QR code onto it. Saved as soon as it changes."
+            checked={info.has_frame}
+            disabled={busy}
+            onChange={(e) => void setCurrentHasFrame(e.target.checked)}
+          />
+        ) : null}
         {shown ? (
-          <img src={svgDataUri(sampleSvg(shown))} alt="Sticker background with sample values" className="w-full h-auto border rounded bg-white" />
+          <img
+            src={svgDataUri(sampleSvg(shown, !shownHasFrame))}
+            alt="Sticker background with sample values"
+            className="w-full h-auto border rounded bg-white"
+          />
         ) : !error ? (
           <Loading label="Loading the background…" />
         ) : null}

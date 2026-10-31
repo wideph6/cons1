@@ -713,7 +713,16 @@ Values background image par **wohi jagah, wohi font (Georgia), wohi size aur woh
 | Signature wala khana | Officer ki signature, aur us ke neeche designation |
 | QR wala khana | Document ka saved QR code |
 
-"1 Country Pakistan", saare labels aur **Seal/Stamp** wala khana background ka hissa hain — un par kuch nahi likha jata.
+**Saaf (blur ke baghair) chhapai:** background image mein sirf halka lehron wala watermark aur **Seal/Stamp** wala khana hai. Baqi sab app
+khud banata hai, isi liye kuch bhi dhundla nahi aata:
+
+- Upar siyah patti aur us par safed **GENERAL ATTESTATION** (Georgia bold)
+- Table ki saari lines (1.4 px, siyah)
+- Saare labels: "1 Country **Pakistan**", "This Public Document", "2 at", "3 the", "4 by", "5 No.", "Date:" — Georgia 19 px, siyah
+  (sirf "Pakistan" bold, jaise asal mein tha). Labels aur values ab bilkul aik jaisa siyah rang hain.
+- QR code ke gird border (1.4 px). Asal sticker mein border QR ko chhoo rahi thi, magar test mein aisa QR scan hi nahi hua —
+  is liye border aur QR ke darmiyan aadhe module (1.6 px) ka safed faasla hai. Dekhne mein farq taqreeban nazar nahi aata.
+
 Koi value apne khane se lambi ho to wo thori chhoti likhi jati hai taake agle khane mein na ghuse.
 PNG 3 guna bari banti hai (print ke liye saaf); background bari image ho to usi ke size par.
 
@@ -728,10 +737,13 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
 - **Choose a new image** — JPG, PNG ya WebP (4 MB tak). Save se pehle preview mein dekh lein ke sample values sahi khanon mein aa rahi hain, phir **Use this background**.
 - Nayi image ka layout aur tanasub (proportions) wohi hona chahiye — **958 × 761** ya isi tanasub ki bari image (jaise 1916 × 1522). Tanasub alag ho to warning aati hai.
 - **Restore the built-in background** — wapas app wala background.
+- Nayi image mein **title, lines aur labels pehle se chhape** hon to **"This image already has the title bar, table lines and labels
+  printed on it"** par tick karen — phir app un par sirf values, signature aur QR likhta hai (warna sab kuch do dafa nazar aayega).
+  Sirf watermark aur Seal/Stamp wali image ho to tick na karen. Pehle se lagi image par bhi ye tick wahin se badla ja sakta hai.
 
-App wala background aap ke diye hue sticker se banaya gaya hai: us mein se har badalne wali value, signature aur QR mita diye gaye hain,
-baqi sab (labels, Pakistan, lehron wala watermark, Seal/Stamp) wesa hi hai. Ye image public folder mein **nahi** rakhi gayi — sirf login
-kiye hue admin ko panel ke andar milti hai.
+App wala background aap ke diye hue sticker se banaya gaya hai: us mein se title bar, table lines, saare labels, har value, signature
+aur QR mita diye gaye hain — sirf lehron wala watermark aur Seal/Stamp wala khana (us ki likhai samet) wesa hi hai. Ye image public
+folder mein **nahi** rakhi gayi — sirf login kiye hue admin ko panel ke andar milti hai.
 
 ## 13.6 Permissions
 

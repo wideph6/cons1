@@ -44,9 +44,14 @@ export function isMissingTable(error: { code?: string } | null | undefined): boo
   return error?.code === "42P01" || error?.code === "PGRST205";
 }
 
-/** A query error as an ApiError, pointing at the setup step when New M's tables are missing. */
+/** A query error as an ApiError, pointing at the setup step when New M's tables or columns are missing. */
 export function dbError(error: { code?: string; message: string }): ApiError {
-  return new ApiError(500, isMissingTable(error) ? NEW_M_MISSING : error.message);
+  if (isMissingTable(error)) return new ApiError(500, NEW_M_MISSING);
+  // 42703: a column added by a newer new-m.sql than the database has seen.
+  if (error.code === "42703") {
+    return new ApiError(500, "The database needs the latest New M update. Run supabase/new-m.sql in Supabase → SQL Editor again, then retry.");
+  }
+  return new ApiError(500, error.message);
 }
 
 /* ---------------- Numbers ---------------- */
@@ -235,6 +240,8 @@ export interface BackgroundSettings {
   background_r2_key: string | null;
   background_content_type: string | null;
   background_filename: string | null;
+  /** The background already has the title bar, lines and labels printed on it. */
+  background_has_frame: boolean;
   updated_at: string | null;
 }
 
@@ -242,21 +249,29 @@ const NO_BACKGROUND: BackgroundSettings = {
   background_r2_key: null,
   background_content_type: null,
   background_filename: null,
+  background_has_frame: false,
   updated_at: null,
 };
 
+const BACKGROUND_COLUMNS = "background_r2_key,background_content_type,background_filename,updated_at";
+
 /** The background the super admin set, or nothing for the built-in one (also before new-m.sql has run). */
 export async function getBackgroundSettings(): Promise<BackgroundSettings> {
-  const { data, error } = await db()
+  let res = await db()
     .from("new_m_settings")
-    .select("background_r2_key,background_content_type,background_filename,updated_at")
+    .select(`${BACKGROUND_COLUMNS},background_has_frame`)
     .eq("id", true)
     .maybeSingle();
-  if (error) {
-    if (isMissingTable(error)) return NO_BACKGROUND;
-    throw dbError(error);
+  // 42703: the frame column arrives with a later new-m.sql; until then every background is drawn on.
+  if (res.error?.code === "42703") {
+    res = await db().from("new_m_settings").select(BACKGROUND_COLUMNS).eq("id", true).maybeSingle();
   }
-  return (data as BackgroundSettings | null) ?? NO_BACKGROUND;
+  if (res.error) {
+    if (isMissingTable(res.error)) return NO_BACKGROUND;
+    throw dbError(res.error);
+  }
+  const row = res.data as Partial<BackgroundSettings> | null;
+  return row ? { ...NO_BACKGROUND, ...row, background_has_frame: Boolean(row.background_has_frame) } : NO_BACKGROUND;
 }
 
 /* ---------------- Saved lists ---------------- */

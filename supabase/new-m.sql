@@ -73,11 +73,17 @@ create table if not exists public.new_m_settings (
   background_r2_key text,
   background_content_type text,
   background_filename text,
+  -- The app draws the title bar, table lines, labels and QR border itself. True only for a background
+  -- that already has them printed on it, so they are not drawn twice.
+  background_has_frame boolean not null default false,
   updated_by uuid references public.users(id) on delete set null,
   updated_at timestamptz not null default now()
 );
 
 insert into public.new_m_settings (id) values (true) on conflict (id) do nothing;
+
+-- Added after the first release, for databases that already have the table.
+alter table public.new_m_settings add column if not exists background_has_frame boolean not null default false;
 
 -- ---------- Documents ----------
 create table if not exists public.new_m_records (
