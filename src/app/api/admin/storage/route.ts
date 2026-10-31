@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
-import { isMissingTable } from "@/lib/new-m";
+import { getBackgroundSettings, isMissingTable } from "@/lib/new-m";
 import { deleteObjects, listAllObjects, MANAGED_PREFIX, NEW_M_PREFIX } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { StorageMismatch, StorageMissing, StorageOrphan, StorageReport } from "@/lib/types";
@@ -74,14 +74,18 @@ async function allNewMRows(): Promise<NewMRowLite[]> {
   }
 }
 
-/** Every saved officer's signature, including ones no document has been given yet. */
+/**
+ * Every saved officer's signature, including ones no document has been given yet, and the sticker
+ * background the super admin set.
+ */
 async function newMOfficerKeys(): Promise<string[]> {
-  const { data, error } = await db().from("new_m_officers").select("signature_r2_key");
-  if (error) {
-    if (isMissingTable(error)) return [];
-    throw new ApiError(500, error.message);
-  }
-  return (data ?? []).map((o) => o.signature_r2_key as string | null).filter((k): k is string => Boolean(k));
+  const [officers, background] = await Promise.all([
+    db().from("new_m_officers").select("signature_r2_key"),
+    getBackgroundSettings(),
+  ]);
+  if (officers.error && !isMissingTable(officers.error)) throw new ApiError(500, officers.error.message);
+  const keys = (officers.data ?? []).map((o) => o.signature_r2_key as string | null);
+  return [...keys, background.background_r2_key].filter((k): k is string => Boolean(k));
 }
 
 /** Compares what the bucket holds with what the database expects to be there. */

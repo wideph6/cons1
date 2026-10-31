@@ -1,11 +1,26 @@
 "use client";
 
-import { Download, Eye, Globe, ListChecks, Pencil, Plus, QrCode, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import {
+  Download,
+  Eye,
+  Globe,
+  Image as ImageIcon,
+  ListChecks,
+  Pencil,
+  Plus,
+  QrCode,
+  RefreshCw,
+  Search,
+  Stamp,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NewMDomains } from "@/components/admin/NewMDomains";
 import { NewMForm } from "@/components/admin/NewMForm";
 import { NewMQrDialog, QrSvgImage } from "@/components/admin/NewMQr";
 import { NewMSavedValues } from "@/components/admin/NewMSavedValues";
+import { downloadSticker, NewMBackgroundDialog, NewMStickerDialog } from "@/components/admin/NewMSticker";
 import { useSession } from "@/components/SessionProvider";
 import {
   Alert,
@@ -29,7 +44,7 @@ import { formatBytes, formatDateTime, formatIssued } from "@/lib/utils";
 const LIMIT = 25;
 
 export function NewMManager() {
-  const { can } = useSession();
+  const { can, isSuper } = useSession();
   const { toast } = useToast();
 
   const [page, setPage] = useState<Paged<NewMRecord> | null>(null);
@@ -48,6 +63,10 @@ export function NewMManager() {
   const [savedOpen, setSavedOpen] = useState(false);
   const [domainsOpen, setDomainsOpen] = useState(false);
   const [qrFor, setQrFor] = useState<NewMRecord | null>(null);
+  const [stickerFor, setStickerFor] = useState<NewMRecord | null>(null);
+  /** The document whose sticker PNG is being made straight from the list. */
+  const [stickerBusy, setStickerBusy] = useState<string | null>(null);
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [del, setDel] = useState<NewMRecord | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -152,6 +171,17 @@ export function NewMManager() {
     if (listsChanged) void loadLists();
   }
 
+  async function saveSticker(record: NewMRecord) {
+    setStickerBusy(record.id);
+    try {
+      await downloadSticker(record);
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setStickerBusy(null);
+    }
+  }
+
   function openForm(record: NewMRecord | null) {
     setEditing(record);
     setFormOpen(true);
@@ -193,6 +223,11 @@ export function NewMManager() {
           <Button icon={<ListChecks className="size-4" />} disabled={!lists} onClick={() => setSavedOpen(true)}>
             Saved values
           </Button>
+          {isSuper ? (
+            <Button icon={<ImageIcon className="size-4" />} onClick={() => setBackgroundOpen(true)}>
+              Background image
+            </Button>
+          ) : null}
           {canCreate ? (
             <Button variant="primary" icon={<Upload className="size-4" />} disabled={!ready || !lists} onClick={() => openForm(null)}>
               Upload document
@@ -287,6 +322,7 @@ export function NewMManager() {
                 <tr>
                   <th className="w-14">QR</th>
                   <th>Attestation number</th>
+                  <th>Sticker</th>
                   <th>Document type</th>
                   <th>Domain</th>
                   <th>Date</th>
@@ -321,6 +357,22 @@ export function NewMManager() {
                       <div className="font-mono text-[13px] font-medium whitespace-nowrap">{r.attestation_number}</div>
                       <div className="text-[11.5px] text-text-muted truncate max-w-[22rem]" title={r.verify_url}>
                         {r.verify_url}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="flex flex-col gap-1.5 min-w-[9.5rem]">
+                        <Button size="sm" icon={<Stamp className="size-3.5" />} onClick={() => setStickerFor(r)}>
+                          View sticker
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          icon={<Download className="size-3.5" />}
+                          loading={stickerBusy === r.id}
+                          onClick={() => saveSticker(r)}
+                        >
+                          Download PNG
+                        </Button>
                       </div>
                     </td>
                     <td>{r.document_type || <span className="text-text-faint">—</span>}</td>
@@ -416,6 +468,10 @@ export function NewMManager() {
       />
 
       <NewMQrDialog record={qrFor} onClose={() => setQrFor(null)} />
+
+      <NewMStickerDialog record={stickerFor} onClose={() => setStickerFor(null)} />
+
+      {isSuper ? <NewMBackgroundDialog open={backgroundOpen} onClose={() => setBackgroundOpen(false)} /> : null}
 
       <NewMSavedValues
         open={savedOpen}

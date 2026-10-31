@@ -8,3 +8,5 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+# Reference pictures shared over WhatsApp can carry someone's signature and QR data; keep them local.
+/WhatsApp Image *

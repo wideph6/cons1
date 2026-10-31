@@ -229,6 +229,36 @@ export async function releaseSignature(key: string | null | undefined): Promise<
   await deleteObject(key);
 }
 
+/* ---------------- Sticker background ---------------- */
+
+export interface BackgroundSettings {
+  background_r2_key: string | null;
+  background_content_type: string | null;
+  background_filename: string | null;
+  updated_at: string | null;
+}
+
+const NO_BACKGROUND: BackgroundSettings = {
+  background_r2_key: null,
+  background_content_type: null,
+  background_filename: null,
+  updated_at: null,
+};
+
+/** The background the super admin set, or nothing for the built-in one (also before new-m.sql has run). */
+export async function getBackgroundSettings(): Promise<BackgroundSettings> {
+  const { data, error } = await db()
+    .from("new_m_settings")
+    .select("background_r2_key,background_content_type,background_filename,updated_at")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) return NO_BACKGROUND;
+    throw dbError(error);
+  }
+  return (data as BackgroundSettings | null) ?? NO_BACKGROUND;
+}
+
 /* ---------------- Saved lists ---------------- */
 
 export async function getLists(): Promise<NewMLists> {

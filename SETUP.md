@@ -612,10 +612,10 @@ Ban gaya ya nahi, ye check karen:
 select table_name from information_schema.tables
 where table_schema = 'public'
   and table_name in ('new_m_records', 'new_m_options', 'new_m_officers',
-                     'new_m_domains', 'new_m_link_templates');
+                     'new_m_domains', 'new_m_link_templates', 'new_m_settings');
 ```
 
-**5 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
+**6 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
 
 ## 13.2 Domains aur links (pehli dafa)
 
@@ -691,6 +691,48 @@ Har document ke **poore link** (domain/subdomain samet) ka QR code **khud ban ja
 - Design aap ke diye hue sample jaisa: saada siyah-safed QR, square dabbe aur square kone, **41 × 41** (version 6), error correction **L**. Link bohat lamba ho to QR khud aik size bara ho jata hai taake scan hota rahe.
 - Ye QR generator **sirf New M** ka hai. Old M ya kisi aur hisse par is ka koi asar nahi.
 
+## 13.5a Sticker
+
+Har document ka "General Attestation" sticker list se hi bante hain:
+
+- **View sticker** — sticker dikhata hai, wahin se **Download PNG** (aur SVG).
+- **Download PNG** — seedha PNG download (dekhe baghair).
+
+Sticker **har dafa document ke mojooda data** se banta hai, is liye edit ke baad agla sticker khud naya data aur naya QR dikhata hai.
+
+Values background image par **wohi jagah, wohi font (Georgia), wohi size aur wohi siyah rang** mein aati hain jo aap ke diye hue sticker mein thin:
+
+| Background par | Kya likha jata hai |
+| --- | --- |
+| "This Public Document" ke neeche | Document type (bold) |
+| "2 at" ke neeche | Issuing office (bold) |
+| "3 the" ke baad | Date, jaise `15th of October 2026` (bold) |
+| "4 by" ke baad | Issuing authority (bold) |
+| "5 No." ke baad | Attestation number (bold) |
+| "Date:" ke baad | Date, jaise `15 Oct 2026` (bold) |
+| Signature wala khana | Officer ki signature, aur us ke neeche designation |
+| QR wala khana | Document ka saved QR code |
+
+"1 Country Pakistan", saare labels aur **Seal/Stamp** wala khana background ka hissa hain — un par kuch nahi likha jata.
+Koi value apne khane se lambi ho to wo thori chhoti likhi jati hai taake agle khane mein na ghuse.
+PNG 3 guna bari banti hai (print ke liye saaf); background bari image ho to usi ke size par.
+
+**Font:** sticker Georgia font mein banta hai, jo Windows aur Mac mein hota hai. Android phone par font thora mukhtalif dikh sakta hai —
+sticker computer se download karna behtar hai.
+
+## 13.5b Background image (sirf super admin)
+
+New M page par **Background image** button sirf super admin ko nazar aata hai. Wahan:
+
+- Mojooda background **sample values ke saath** dikhta hai, taake jagahen check ho saken.
+- **Choose a new image** — JPG, PNG ya WebP (4 MB tak). Save se pehle preview mein dekh lein ke sample values sahi khanon mein aa rahi hain, phir **Use this background**.
+- Nayi image ka layout aur tanasub (proportions) wohi hona chahiye — **958 × 761** ya isi tanasub ki bari image (jaise 1916 × 1522). Tanasub alag ho to warning aati hai.
+- **Restore the built-in background** — wapas app wala background.
+
+App wala background aap ke diye hue sticker se banaya gaya hai: us mein se har badalne wali value, signature aur QR mita diye gaye hain,
+baqi sab (labels, Pakistan, lehron wala watermark, Seal/Stamp) wesa hi hai. Ye image public folder mein **nahi** rakhi gayi — sirf login
+kiye hue admin ko panel ke andar milti hai.
+
 ## 13.6 Permissions
 
 New M ki apni paanch permissions hain (Users → **New M** group):
@@ -705,12 +747,11 @@ Super admin ko sab milta hai. Jis user ke paas in mein se koi bhi nahi, us ko si
 
 ## 13.7 Storage
 
-New M ki PDFs aur signatures bucket mein `new-m/` ke neeche rehti hain. **Storage** page in ko bhi ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document ya saved officer ki ho.
+New M ki PDFs, signatures aur sticker background bucket mein `new-m/` ke neeche rehti hain. **Storage** page in ko bhi ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document, saved officer ya mojooda background ki ho.
 
 ## 13.8 Abhi kya nahi bana
 
 - **Front end page** abhi nahi bana — link kholne par abhi kuch nahi milta. Jab banega, to New M ke har domain ka DNS bhi is app (Vercel) ki taraf karna hoga, bilkul Hissa 7 ki tarah.
-- **Sticker** abhi nahi banta. Us ke liye jagah rakhi gayi hai: har document ka saara data, signature aur QR code (13.5) tayyar hain, is liye sticker jab banega to download ke waqt **hamesha latest data aur latest QR** se banega — edit ke baad bhi.
 - Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
 
 ---

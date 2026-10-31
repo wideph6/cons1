@@ -47,8 +47,11 @@ export function isManagedKey(key: unknown): key is string {
   return typeof key === "string" && /^files\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/.test(key);
 }
 
-/** New M's documents and officer signatures live under their own prefix, apart from Old M. */
-export type NewMKind = "docs" | "signatures";
+/**
+ * New M's documents, officer signatures and sticker backgrounds live under their own prefix, apart
+ * from Old M.
+ */
+export type NewMKind = "docs" | "signatures" | "backgrounds";
 
 export function makeNewMKey(kind: NewMKind, filename: string): string {
   const safe = cleanFilename(filename).replace(/[^A-Za-z0-9._-]/g, "_");
@@ -56,7 +59,7 @@ export function makeNewMKey(kind: NewMKind, filename: string): string {
 }
 
 export function isNewMKey(key: unknown, kind?: NewMKind): key is string {
-  const part = kind ?? "(?:docs|signatures)";
+  const part = kind ?? "(?:docs|signatures|backgrounds)";
   return typeof key === "string" && new RegExp(`^new-m/${part}/[0-9a-f-]{36}/[A-Za-z0-9._-]+$`).test(key);
 }
 

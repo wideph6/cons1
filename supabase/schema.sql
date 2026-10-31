@@ -300,6 +300,20 @@ create table if not exists public.new_m_officers (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Sticker settings ----------
+-- One row. The sticker's background image as the super admin set it, stored in R2 under
+-- new-m/backgrounds/. Empty means the built-in background that ships with the app.
+create table if not exists public.new_m_settings (
+  id boolean primary key default true check (id),
+  background_r2_key text,
+  background_content_type text,
+  background_filename text,
+  updated_by uuid references public.users(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.new_m_settings (id) values (true) on conflict (id) do nothing;
+
 -- ---------- Documents ----------
 create table if not exists public.new_m_records (
   id uuid primary key default gen_random_uuid(),
@@ -479,6 +493,7 @@ alter table public.new_m_link_templates enable row level security;
 alter table public.new_m_options        enable row level security;
 alter table public.new_m_officers       enable row level security;
 alter table public.new_m_records        enable row level security;
+alter table public.new_m_settings       enable row level security;
 
 revoke all on all tables    in schema public from anon, authenticated;
 revoke all on all sequences in schema public from anon, authenticated;
