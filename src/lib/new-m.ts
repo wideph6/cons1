@@ -1,18 +1,11 @@
 import { issuedToIso, pad2, parseIssuedOn, todayIso } from "./dates";
 import { ApiError } from "./errors";
-import { buildVerifyUrl, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, tidyNumber, verifyQrSvg } from "./new-m-link";
+import { cleanTemplate, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber, verifyQrSvg } from "./new-m-link";
 import { can } from "./permissions";
 import { deleteObject, getObjectBytes, headObject, isNewMKey } from "./r2";
 import { db } from "./supabase";
 import type { NewMLists, NewMOfficer, NewMOption, NewMOptionKind, NewMRecord, User } from "./types";
 import { cleanFilename, fileExtension, guessContentType } from "./utils";
-
-export async function getDomain(domainId: string): Promise<{ id: string; hostname: string }> {
-  const { data, error } = await db().from("domains").select("id,hostname").eq("id", domainId).maybeSingle();
-  if (error) throw new ApiError(500, error.message);
-  if (!data) throw new ApiError(404, "Domain not found");
-  return data as { id: string; hostname: string };
-}
 
 /* ---------------- Access ---------------- */
 
@@ -22,7 +15,8 @@ export function requireNewMAccess(user: User): void {
     can(user, "new_m_create") ||
     can(user, "new_m_edit") ||
     can(user, "new_m_delete") ||
-    can(user, "new_m_settings")
+    can(user, "new_m_settings") ||
+    can(user, "new_m_domains")
   ) {
     return;
   }
@@ -251,12 +245,70 @@ export async function docColumns(key: unknown, filenameHint: unknown, contentTyp
 
 type RawRecord = Omit<NewMRecord, "verify_url">;
 
+/** The link a document is built on: its domain link as it reads now, or the saved copy once that link is gone. */
+function templateOf(row: Pick<NewMRecord, "link_current_template" | "link_template">): string {
+  return row.link_current_template ?? row.link_template;
+}
+
 export function mapRecord(row: RawRecord): NewMRecord {
   return {
     ...row,
     doc_size: Number(row.doc_size ?? 0),
-    verify_url: buildVerifyUrl(row.domain_hostname, row.attestation_number, row.issue_date),
+    verify_url: resolveLink(row.domain_hostname, templateOf(row), row.attestation_number, row.issue_date),
   };
+}
+
+/* ---------------- Domains and links ---------------- */
+
+export interface MDomainRow {
+  id: string;
+  hostname: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface MLinkRow {
+  id: string;
+  domain_id: string;
+  name: string;
+  template: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getMDomain(id: string): Promise<MDomainRow> {
+  const { data, error } = await db().from("new_m_domains").select("id,hostname,notes,created_at").eq("id", id).maybeSingle();
+  if (error) throw dbError(error);
+  if (!data) throw new ApiError(404, "That New M domain was not found");
+  return data as MDomainRow;
+}
+
+export async function getMLink(id: string): Promise<MLinkRow> {
+  const { data, error } = await db()
+    .from("new_m_link_templates")
+    .select("id,domain_id,name,template,created_at,updated_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw dbError(error);
+  if (!data) throw new ApiError(404, "That link was not found");
+  return data as MLinkRow;
+}
+
+/** A link typed in settings, checked and tidied, with the reason as a 400 when it is not usable. */
+export function checkTemplate(input: unknown, hostname: string): string {
+  try {
+    return cleanTemplate(String(input ?? ""), hostname);
+  } catch (e) {
+    throw new ApiError(400, e instanceof Error ? e.message : "That link is not valid");
+  }
+}
+
+/** The link a document asks for, checked to belong to the document's domain. */
+export async function linkFor(domainId: string, linkId: unknown): Promise<MLinkRow> {
+  if (typeof linkId !== "string" || !linkId) throw new ApiError(400, "Pick the link the document should use");
+  const link = await getMLink(linkId);
+  if (link.domain_id !== domainId) throw new ApiError(400, "That link belongs to another domain");
+  return link;
 }
 
 export async function getRecord(id: string): Promise<NewMRecord> {
@@ -274,20 +326,40 @@ export function qrColumns(url: string): { qr_url: string; qr_svg: string; qr_upd
 }
 
 /**
- * Makes sure each document's saved QR code is the one for its link as it reads now, redrawing and
- * saving any that is missing or stale. Saves and edits store the code themselves; this catches the
- * rest, such as a domain renamed under Domains, which changes the link of every document on it.
+ * Makes sure each document's saved QR code is the one for its complete link as it reads now, redrawing
+ * and saving any that is missing or stale, and keeping the document's copy of its link in step.
  */
 export async function withCurrentQr(records: NewMRecord[]): Promise<NewMRecord[]> {
   return Promise.all(
     records.map(async (r) => {
-      if (r.qr_svg && r.qr_url === r.verify_url) return r;
-      const qr = qrColumns(r.verify_url);
-      const { error } = await db().from("new_m_records").update(qr).eq("id", r.id);
+      const template = templateOf(r);
+      if (r.qr_svg && r.qr_url === r.verify_url && r.link_template === template) return r;
+      const patch = { ...qrColumns(r.verify_url), link_template: template };
+      const { error } = await db().from("new_m_records").update(patch).eq("id", r.id);
       if (error) throw dbError(error);
-      return { ...r, ...qr };
+      return { ...r, ...patch };
     }),
   );
+}
+
+/**
+ * Redraws and saves the QR code of every document a settings change touched — a renamed domain or an
+ * edited link — so the database holds the new codes straight away. Returns how many were replaced.
+ */
+export async function refreshQrWhere(column: "domain_id" | "link_id", id: string): Promise<number> {
+  const PAGE = 500;
+  let replaced = 0;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db().from("new_m_view").select("*").eq(column, id).order("id").range(from, from + PAGE - 1);
+    if (error) throw dbError(error);
+    const rows = (data ?? []).map((r) => mapRecord(r as never));
+    for (let i = 0; i < rows.length; i += 25) {
+      const batch = rows.slice(i, i + 25);
+      const fresh = await withCurrentQr(batch);
+      replaced += fresh.filter((r, k) => r.qr_svg !== batch[k].qr_svg).length;
+    }
+    if (rows.length < PAGE) return replaced;
+  }
 }
 
 /** Columns the common search box looks through, on every domain at once. */
@@ -300,4 +372,5 @@ export const SEARCH_COLUMNS = [
   "officer_designation",
   "doc_filename",
   "domain_hostname",
+  "link_name",
 ];

@@ -20,7 +20,7 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | Domains | Add domains/subdomains, enable/disable, notes, attach to the Vercel project through the Vercel API (optional), DNS guidance |
 | Old M — links | Create paths under a domain (`/`, `/brochures`, `/reports/2025`), rename, delete |
 | Old M — files | Upload (direct browser → R2, multi-file, progress), replace, rename, move to another link, delete, preview inside the panel, copy public link, download counts |
-| New M | Attestation documents, uploaded one PDF at a time against any domain. Each gets a unique attestation number (`GEN-NMPD-SSTI-FBDS`, generated or typed) and a date (today unless changed), which make up its verification link. Document type, issuing office, issuing authority and approving officer (name + designation + signature, picked together) are offered from saved lists that grow with every upload. Everything stays editable, the PDF included; one search box covers every domain. The front-end page and the sticker come later |
+| New M | Attestation documents, uploaded one PDF at a time. New M has its own domains, each with custom links that carry `{attestation_number}` and `{issue_date}` formulas. Each document picks a domain and link, gets a unique attestation number (`GEN-NMPD-SSTI-FBDS`, generated or typed) and a date (today unless changed), and its complete link and QR code are saved with it. Document type, issuing office, issuing authority and approving officer (name + designation + signature, picked together) are offered from saved lists that grow with every upload. Everything stays editable, the PDF included; one search box covers every domain. The front-end page and the sticker come later |
 | Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
 | Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
@@ -121,23 +121,34 @@ If a browser dies between the upload to R2 and the save into the database, the o
 
 A document is one PDF plus the details that will later be printed on its sticker. Run [`supabase/new-m.sql`](supabase/new-m.sql) once before using it.
 
-1. Pick a **domain** — the verification link is built on it.
+**Domains & links** — New M has its own domains, set up under **Domains & links** on the New M page; the Domains page is not used. Each domain has as many links as needed. A link is everything after the domain, written freely, with two formulas wherever a document's own values belong:
+
+| Formula | Filled with |
+| --- | --- |
+| `{attestation_number}` | the document's number, e.g. `GEN-NMPD-SSTI-FBDS` |
+| `{issue_date}` | the document's date as DDMMYYYY, e.g. `31102026` |
+
+For example `/verify-general-attestation-by-qr?attestation_number={attestation_number}&issue_date={issue_date}` (the **standard link** button) or `/attest/{issue_date}/{attestation_number}`. A link without `{attestation_number}` is allowed but flagged, since every document on it would share one address. Documents follow their link: renaming a domain or editing a link gives its documents new complete links, and their QR codes are redrawn and saved in the same request (settings say how many documents a change touches). Deleting a link leaves its documents as they were — each keeps a copy of its link — and deleting a domain removes its links and documents with their PDFs.
+
+1. Pick a **domain** and one of its **links**.
 2. Upload the **PDF** (PDF only). It is stored in R2 under `new-m/docs/`, apart from Old M.
 3. The **attestation number** is `GEN` plus three groups of four capital letters, e.g. `GEN-NMPD-SSTI-FBDS`. Leave it blank to have one generated, press **Generate** to see one first, or type your own. It is unique across every domain.
 4. The **date of attestation** defaults to today and can be changed.
-5. The link is `https://<domain>/verify-general-attestation-by-qr?attestation_number=<number>&issue_date=DDMMYYYY`, e.g. `https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SSTI-FBDS&issue_date=31102026`.
+5. The **complete link** is `https://` + the domain + its link with the formulas filled in, e.g. `https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SSTI-FBDS&issue_date=31102026`.
+
+Documents uploaded while New M still used the Domains page are moved by `new-m.sql`: each hostname they used becomes a New M domain with the standard link, so their links and QR codes stay the same.
 
 **Saved values** — document type, issuing office and issuing authority each offer every value typed so far; a new value joins its list when the document is saved. **Approving officers** are saved as name + designation + signature, so picking one fills in all three; "Add a new officer" asks for the three separately and saves them for next time. A document keeps its own copy of the officer, so removing an officer from the list (under **Saved values**) leaves documents already uploaded unchanged. A signature image is only deleted from storage once no officer and no document still shows it.
 
-**Editing** — every field can be changed afterwards, and choosing a new PDF removes the old one. Changing the number or the date changes the link.
+**Editing** — every field can be changed afterwards, and choosing a new PDF removes the old one. Changing the domain, the link, the number or the date changes the complete link.
 
-**Search** — one box over every domain: number, document type, office, authority, officer, domain, file name, and the date written as `31102026`, `31-10-2026`, `31/10/26` or `2026-10-31`.
+**Search** — one box over every domain: number, document type, office, authority, officer, domain, link name, file name, and the date written as `31102026`, `31-10-2026`, `31/10/26` or `2026-10-31`.
 
-**QR code** — when a document is saved, the server draws the QR code of its link and saves it on the document (`qr_svg`, with `qr_url` holding the link it encodes). An edit that changes the link — the number, the date or the domain — draws a new code and replaces the saved one; any other edit leaves it as it is. If a domain is renamed under Domains, the next time those documents are listed their codes are redrawn and saved too. The list shows the saved code (click it for a large view and PNG / SVG downloads); the upload form shows a live preview before saving. The style copies the reference sample: a plain QR with square modules and square finder eyes, black on white, version 6 (41 × 41 modules) at error-correction level L; a link too long for version 6 moves up to the next size. The generator (`src/lib/new-m-qr.ts`) belongs to New M alone.
+**QR code** — when a document is saved, the server draws the QR code of its complete link (domain included) and saves it on the document (`qr_svg`, with `qr_url` holding the link it encodes). An edit that changes the complete link — the domain, the link, the number or the date — draws a new code and replaces the saved one; any other edit leaves it as it is. Renaming a domain or editing a link under Domains & links replaces the codes of every document it touches. The list shows the saved code (click it for a large view and PNG / SVG downloads); the upload form shows a live preview before saving. The style copies the reference sample: a plain QR with square modules and square finder eyes, black on white, version 6 (41 × 41 modules) at error-correction level L; a link too long for version 6 moves up to the next size. The generator (`src/lib/new-m-qr.ts`) belongs to New M alone.
 
 **Sticker** — not built yet. Everything it will print is stored on the document (and the signature is available as a `data:` URI from `/api/admin/new-m/:id/signature`), so a sticker drawn at download time will always match the document as it reads after any edit.
 
-> The public page at `/verify-general-attestation-by-qr` is not built yet. Until it is, opening a verification link returns 404.
+> The public page these links open is not built yet, and a New M domain still has to be pointed at this deployment (DNS, and attached in Vercel) before its links can answer. Until then, opening a link fails.
 
 ## Permissions
 
@@ -145,7 +156,7 @@ Super admins can do everything. Admin users get only the boxes ticked for them:
 
 `upload` · `replace` · `rename` · `move` · `delete` · `preview` · `create_link` · `edit_link` · `delete_link` · `create_domain` · `edit_domain` · `delete_domain` · `search` · `view_activity`
 
-New M has its own: `new_m_create` · `new_m_edit` · `new_m_delete` · `new_m_settings` (remove saved values and officers). The New M tab, and reading its PDFs, needs at least one of them.
+New M has its own: `new_m_create` · `new_m_edit` · `new_m_delete` · `new_m_settings` (remove saved values and officers) · `new_m_domains` (add and edit New M domains and their links). The New M tab, and reading its PDFs, needs at least one of them.
 
 `move` and the `new_m_*` keys are newer than the others, so existing admin users do not have them until the super admin ticks them.
 
@@ -173,9 +184,9 @@ src/app/[...slug]/route.ts      public download endpoint (all domains)
 src/app/admin/*                 admin pages
 src/app/api/admin/*             admin API (domains, links, files, move, storage, users, counters, activity)
 src/app/api/auth/*              login / logout / password
-src/app/api/admin/new-m/*    New M API (documents, saved values, officers, uploads)
+src/app/api/admin/new-m/*    New M API (documents, its own domains and links, saved values, officers, uploads)
 src/components/admin/*          File manager (Old M), New M, Domains, Storage, Search, Activity, Users
-src/lib/new-m-link.ts        New M verification link, attestation number and QR settings, shared by server and browser
+src/lib/new-m-link.ts        New M link formulas, attestation number and QR settings, shared by server and browser
 src/lib/new-m-qr.ts          New M's QR encoder (ISO/IEC 18004, byte mode)
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions

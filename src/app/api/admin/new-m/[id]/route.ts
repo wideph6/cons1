@@ -5,8 +5,9 @@ import {
   cleanText,
   dbError,
   docColumns,
-  getDomain,
+  getMDomain,
   getRecord,
+  linkFor,
   normalizeNumber,
   numberTaken,
   officerColumns,
@@ -19,7 +20,7 @@ import {
   requireNewMAccess,
   withCurrentQr,
 } from "@/lib/new-m";
-import { buildVerifyUrl } from "@/lib/new-m-link";
+import { resolveLink } from "@/lib/new-m-link";
 import { deleteObject } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { NewMOptionKind } from "@/lib/types";
@@ -28,7 +29,9 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /** Every field is optional: whatever is left out stays as it is. */
 interface PatchBody {
+  /** A New M domain. Moving to another domain needs one of its links in link_id too. */
   domain_id?: string;
+  link_id?: string;
   attestation_number?: string;
   issue_date?: string;
   document_type?: string;
@@ -65,10 +68,24 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const patch: Record<string, unknown> = {};
 
     let hostname = existing.domain_hostname;
+    let domainId = existing.domain_id;
     if (body.domain_id !== undefined && body.domain_id !== existing.domain_id) {
-      const domain = await getDomain(body.domain_id);
+      const domain = await getMDomain(body.domain_id);
       patch.domain_id = domain.id;
       hostname = domain.hostname;
+      domainId = domain.id;
+    }
+
+    // The document's link as it reads now, unless another of the domain's links is picked. A new
+    // domain always needs one of its own links.
+    let template = existing.link_current_template ?? existing.link_template;
+    if (body.link_id !== undefined && body.link_id !== existing.link_id) {
+      const link = await linkFor(domainId, body.link_id);
+      patch.link_id = link.id;
+      patch.link_template = link.template;
+      template = link.template;
+    } else if (patch.domain_id) {
+      throw new ApiError(400, "Pick one of the new domain's links");
     }
 
     if (body.attestation_number !== undefined) {
@@ -107,10 +124,11 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       replacedDoc = true;
     }
 
-    // The link is made of the domain, the number and the date. When an edit changes any of them, a QR
-    // code is drawn for the new link and replaces the saved one.
-    const nextUrl = buildVerifyUrl(
+    // The complete link is made of the domain, its link, the number and the date. When an edit changes
+    // any of them, a QR code is drawn for the new link and replaces the saved one.
+    const nextUrl = resolveLink(
       hostname,
+      template,
       (patch.attestation_number as string | undefined) ?? existing.attestation_number,
       (patch.issue_date as string | undefined) ?? existing.issue_date,
     );
@@ -138,7 +156,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     await logActivity({
       user_id: user.id,
       action: replacedDoc ? "replace_new_m_doc" : "update_new_m",
-      domain: { id: item.domain_id, hostname: item.domain_hostname },
+      domain: { id: null, hostname: item.domain_hostname },
       file: { id: null, filename: item.doc_filename },
       details: {
         attestation_number: item.attestation_number,
@@ -171,7 +189,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
     await logActivity({
       user_id: user.id,
       action: "delete_new_m",
-      domain: { id: existing.domain_id, hostname: existing.domain_hostname },
+      domain: { id: null, hostname: existing.domain_hostname },
       file: { id: null, filename: existing.doc_filename },
       details: { attestation_number: existing.attestation_number, issue_date: existing.issue_date },
     });

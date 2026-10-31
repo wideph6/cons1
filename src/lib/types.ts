@@ -229,6 +229,31 @@ export interface Paged<T> {
 
 /* ---------------- New M ---------------- */
 
+/**
+ * One of a New M domain's links: everything after the domain, with {attestation_number} and
+ * {issue_date} where each document's own values go.
+ */
+export interface NewMLink {
+  id: string;
+  domain_id: string;
+  name: string;
+  template: string;
+  created_at: string;
+  updated_at: string;
+  /** Documents built on this link; their links and QR codes follow it. */
+  document_count: number;
+}
+
+/** A domain or subdomain set up for New M alone, apart from the Domains page. */
+export interface NewMDomain {
+  id: string;
+  hostname: string;
+  notes: string;
+  created_at: string;
+  links: NewMLink[];
+  document_count: number;
+}
+
 /** The lists an upload can pick from, each growing with every new value typed in. */
 export type NewMOptionKind = "document_type" | "issuing_office" | "issuing_authority";
 
@@ -260,7 +285,12 @@ export interface NewMLists {
  */
 export interface NewMRecord {
   id: string;
+  /** A New M domain, not one from the Domains page. */
   domain_id: string;
+  /** The domain link the document is built on, or null once that link was removed. */
+  link_id: string | null;
+  /** Copy of the link last used to build the document's address, for when the link is removed. */
+  link_template: string;
   attestation_number: string;
   /** ISO date (YYYY-MM-DD); the link carries it as DDMMYYYY. */
   issue_date: string;
@@ -289,9 +319,11 @@ export interface NewMRecord {
   created_at: string;
   updated_at: string;
   domain_hostname: string;
-  domain_is_active: boolean;
+  /** Name and current wording of the domain link; null once that link was removed. */
+  link_name: string | null;
+  link_current_template: string | null;
   uploader_name: string | null;
   uploader_email: string | null;
-  /** Built by the server so every caller shows the same link. */
+  /** The complete link, built by the server from the domain, its link and the document's values. */
   verify_url: string;
 }

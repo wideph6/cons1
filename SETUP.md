@@ -595,94 +595,121 @@ Old M mein files ke aage wale checkbox lagayen, upar teen button aa jayenge:
 Pehle wala **File manager** ab **Old M** kehlata hai. Us ka sab kaam pehle jaisa hai — wohi links, wohi files, wohi public download addresses.
 Panel ka address `/admin/old-m` ho gaya hai; purana `/admin/files` khud wahin le jata hai.
 
-**New M** attestation documents ke liye hai: har upload = **aik PDF** + us ki tafseelat, aur har document ka apna verification link.
+**New M** attestation documents ke liye hai: har upload = **aik PDF** + us ki tafseelat. New M ke apne domains hain, har domain ke apne custom links, aur har document ka apna poora link aur QR code.
 
 ## 13.1 Pehle database mein tables banayen
 
 Supabase → **SQL Editor** → **New query** → `supabase/new-m.sql` ka poora content paste karen → **Run**.
 
-(Pichle version ki khali `new_m_links` / `new_m_files` tables ye khud hata deta hai. File dobara chalana bhi mehfooz hai.)
+File dobara chalana hamesha mehfooz hai. Pehle chala chuke hain to bhi **dobara chalayen** — har naye version mein kuch naya hota hai
+(abhi: New M ke apne domains aur links). Jo documents pehle upload ho chuke hain wo mehfooz rehte hain: jis domain par wo bane thay
+wo New M ka domain ban jata hai, us ke saath "Standard" link, aur un ka link aur QR bilkul wohi rehta hai.
 
 Ban gaya ya nahi, ye check karen:
 
 ```sql
 select table_name from information_schema.tables
 where table_schema = 'public'
-  and table_name in ('new_m_records', 'new_m_options', 'new_m_officers');
+  and table_name in ('new_m_records', 'new_m_options', 'new_m_officers',
+                     'new_m_domains', 'new_m_link_templates');
 ```
 
-**3 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
+**5 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
 
-> **Pehle se chala chuke hain?** QR code save karne ke liye is file mein 3 naye columns aaye hain (`qr_url`, `qr_svg`, `qr_updated_at`).
-> File **dobara** chala dein — pehle se upload hue documents mehfooz rehte hain, aur un ke QR agli dafa list khulne par khud ban kar save ho jate hain.
-> Check:
->
-> ```sql
-> select column_name from information_schema.columns
-> where table_name = 'new_m_records' and column_name like 'qr_%';
-> ```
->
-> **3 rows** aaney chahiyen.
+## 13.2 Domains aur links (pehli dafa)
 
-## 13.2 Document upload karna
+New M ke domains **alag** hain — Domains page wale domains yahan use nahi hote.
+
+New M page → upar **Domains & links**:
+
+1. **Add domain** → domain ya subdomain likhen, jaise `baxoq.pk` ya `verify.baxoq.pk`. Saath hi pehla link bhi bana sakte hain.
+2. Har domain ke saamne **Add link** se jitne chahen links banayen. Link = domain ke **baad** ka poora hissa, jaise chahen likhen.
+3. Link likhte hue jahan document ka number aana chahiye wahan **+ Attestation number** dabayen, aur jahan date aani chahiye wahan **+ Date (DDMMYYYY)**.
+   Ye formula likh dete hain:
+
+| Formula | Document ki kya value aati hai |
+| --- | --- |
+| `{attestation_number}` | `GEN-NMPD-SSTI-FBDS` |
+| `{issue_date}` | `31102026` (DDMMYYYY) |
+
+Misaalen:
+
+```
+/verify-general-attestation-by-qr?attestation_number={attestation_number}&issue_date={issue_date}
+/attest/{issue_date}/{attestation_number}
+/check?id={attestation_number}&d={issue_date}&src=qr
+```
+
+**Use the standard link** dabane se pehli misaal khud bhar jati hai. Neeche har waqt dikhta hai ke aik document ka **poora link** kaisa banega.
+Link mein `{attestation_number}` na ho to warning aati hai — phir is link ke saare documents ka link aur QR aik jaisa hoga.
+
+**Dehan rahe:** documents apne link ke saath chalte hain. Kisi domain ka naam ya kisi link ki ibarat badlenge to us par bane **saare documents
+ke links badal jayenge** aur un ke naye QR purane ki jagah save ho jayenge (form pehle bata deta hai kitne documents par asar hoga).
+Jo QR pehle chhap chuke hain wo purane link par hi jayenge.
+
+- **Link delete**: us ke documents par koi asar nahi — har document ke paas apne link ki copy hai, link aur QR wohi rehte hain. Bas naye documents is link ko nahi chun sakte.
+- **Domain delete**: us ke saare links **aur documents (PDF samet)** delete ho jate hain.
+
+## 13.3 Document upload karna
 
 Sidebar → **New M** → **Upload document**. Aik waqt mein aik PDF. Sab se naya upload list mein sab se upar aata hai.
 
 | Khana | Kya hota hai |
 | --- | --- |
 | PDF | Sirf PDF file |
-| Domain | Link isi domain / subdomain par banta hai |
-| Date of attestation | Khali chhoren to aaj ki tareekh. Link mein `DDMMYYYY` ban kar jati hai (31-10-2026 → `31102026`) |
+| Domain | New M ke apne domains mein se |
+| Link | Us domain ke links mein se |
+| Date of attestation | Khali chhoren to aaj ki tareekh. Link ke date formula mein `DDMMYYYY` ban kar jati hai (31-10-2026 → `31102026`) |
 | Attestation number | Khali chhoren to khud banta hai. **Generate** dabane se pehle hi nazar aa jata hai. Apna likhna ho to format `GEN-NMPD-SSTI-FBDS` — pehle teen huroof hamesha `GEN`, phir chaar chaar capital English huroof ke teen hisse. Har number poore system mein aik hi dafa use ho sakta hai, chahe domain alag ho |
 | Document type, Issuing office, Issuing authority | List se chunen, ya **+ Add new…** se naya likhen. Naya likha hua save hote hi aage hamesha list mein milega |
 | Approving officer | List se officer chunen to us ka naam, designation aur signature **teeno aik saath** lag jate hain. **+ Add a new officer…** chunen to teeno ke alag khane khulte hain (naam, designation, signature image) aur ye officer aage ke liye save ho jata hai |
 
-Link aisa banta hai:
+Poora link = `https://` + domain + link (formulas mein document ki values). Misaal:
 
 ```
 https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SSTI-FBDS&issue_date=31102026
 ```
 
-## 13.3 Edit, delete aur search
+## 13.4 Edit, delete aur search
 
-- **Edit** (pencil): har cheez badli ja sakti hai — domain, number, date, sab tafseelat, officer. **Replace PDF** mein nayi file chunen to purani storage se hat jati hai.
-  Number ya date badalne se **link bhi badal jata hai**.
+- **Edit** (pencil): har cheez badli ja sakti hai — domain, link, number, date, sab tafseelat, officer. **Replace PDF** mein nayi file chunen to purani storage se hat jati hai.
+  Domain, link, number ya date badalne se **poora link bhi badal jata hai**.
 - **Delete** (dustbin): document aur us ki PDF dono hamesha ke liye chali jati hain.
-- **Search**: upar wala aik hi box saare domains mein dhoondta hai — number, document type, office, authority, officer, domain, file ka naam, aur date (`31102026`, `31-10-2026`, `31/10/26` ya `2026-10-31`). Saath wale dropdown se aik domain tak mehdood bhi kar sakte hain.
+- **Search**: upar wala aik hi box saare domains mein dhoondta hai — number, document type, office, authority, officer, domain, link ka naam, file ka naam, aur date (`31102026`, `31-10-2026`, `31/10/26` ya `2026-10-31`). Saath wale dropdown se aik domain tak mehdood bhi kar sakte hain.
 - **Saved values**: wahan saari saved lists aur officers nazar aate hain. Kisi ghalat value ya officer ko wahan se hata sakte hain — jo documents pehle se us ko use kar rahe hain un par koi asar nahi parta.
 
-## 13.3a QR code
+## 13.5 QR code
 
-Har document ke link ka QR code **khud ban jata hai aur document ke saath database mein save hota hai** — koi button dabane ki zaroorat nahi.
+Har document ke **poore link** (domain/subdomain samet) ka QR code **khud ban jata hai aur document ke saath database mein save hota hai** — koi button dabane ki zaroorat nahi.
 
 - **Upload** karte hi QR ban kar save ho jata hai.
-- **Edit** mein agar wo cheez badli jo link badalti hai — **attestation number, date ya domain** — to naya QR banta hai aur database mein **purane ki jagah** save hota hai. Baqi cheezen (document type, office, officer, PDF) badalne se QR wesa hi rehta hai, kyunki link nahi badalta.
-- Domains page par kisi domain ka naam badla jaye to us ke documents ke QR agli dafa list khulne par khud naye ban kar save ho jate hain.
+- **Edit** mein agar wo cheez badli jo link badalti hai — **domain, link, attestation number ya date** — to naya QR banta hai aur database mein **purane ki jagah** save hota hai. Baqi cheezen (document type, office, officer, PDF) badalne se QR wesa hi rehta hai, kyunki link nahi badalta.
+- **Domains & links** mein domain ka naam ya link ki ibarat badlen to us ke saare documents ke QR usi waqt naye ban kar save ho jate hain.
 - List mein har document ke saamne us ka **saved** QR nazar aata hai. Us par (ya QR wale icon par) click karen to bara QR khulta hai, saath **PNG** aur **SVG** download.
-- Upload / Edit form mein link ke saath QR ka **preview** live dikhta hai; save dabane par wohi QR database mein jata hai.
-- Design aap ke diye hue sample jaisa: saada siyah-safed QR, square dabbe aur square kone, **41 × 41** (version 6), error correction **L**. Link bohat lamba ho (bohat lamba domain) to QR khud aik size bara ho jata hai taake scan hota rahe.
+- Upload / Edit form mein poore link ke saath QR ka **preview** live dikhta hai; save dabane par wohi QR database mein jata hai.
+- Design aap ke diye hue sample jaisa: saada siyah-safed QR, square dabbe aur square kone, **41 × 41** (version 6), error correction **L**. Link bohat lamba ho to QR khud aik size bara ho jata hai taake scan hota rahe.
 - Ye QR generator **sirf New M** ka hai. Old M ya kisi aur hisse par is ka koi asar nahi.
 
-## 13.4 Permissions
+## 13.6 Permissions
 
-New M ki apni chaar permissions hain (Users → **New M** group):
+New M ki apni paanch permissions hain (Users → **New M** group):
 
 - `Upload New M documents`
 - `Edit New M documents (number, date, details, PDF)`
 - `Delete New M documents`
 - `Remove saved New M values and officers`
+- `Add and edit New M domains and their links`
 
 Super admin ko sab milta hai. Jis user ke paas in mein se koi bhi nahi, us ko sidebar mein New M nazar nahi aata.
 
-## 13.5 Storage aur domain delete
+## 13.7 Storage
 
 New M ki PDFs aur signatures bucket mein `new-m/` ke neeche rehti hain. **Storage** page in ko bhi ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document ya saved officer ki ho.
-Domain delete karenge to us domain ke New M documents aur un ki PDFs bhi chali jati hain.
 
-## 13.6 Abhi kya nahi bana
+## 13.8 Abhi kya nahi bana
 
-- **Front end page** (`/verify-general-attestation-by-qr`) abhi nahi bana — us waqt tak link kholne par 404 aata hai.
-- **Sticker** abhi nahi banta. Us ke liye jagah rakhi gayi hai: har document ka saara data, signature aur QR code (13.3a) tayyar hain, is liye sticker jab banega to download ke waqt **hamesha latest data aur latest QR** se banega — edit ke baad bhi.
+- **Front end page** abhi nahi bana — link kholne par abhi kuch nahi milta. Jab banega, to New M ke har domain ka DNS bhi is app (Vercel) ki taraf karna hoga, bilkul Hissa 7 ki tarah.
+- **Sticker** abhi nahi banta. Us ke liye jagah rakhi gayi hai: har document ka saara data, signature aur QR code (13.5) tayyar hain, is liye sticker jab banega to download ke waqt **hamesha latest data aur latest QR** se banega — edit ke baad bhi.
 - Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
 
 ---

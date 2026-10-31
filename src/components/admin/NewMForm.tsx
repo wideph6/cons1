@@ -6,16 +6,8 @@ import { LinkQrPreview } from "@/components/admin/NewMQr";
 import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
 import { uploadNewMFile } from "@/lib/new-m-client";
-import {
-  buildVerifyUrl,
-  issueDateParam,
-  NUMBER_EXAMPLE,
-  NUMBER_RE,
-  randomNumber,
-  tidyNumber,
-  VERIFY_PATH,
-} from "@/lib/new-m-link";
-import type { Domain, NewMLists, NewMOfficer, NewMOption, NewMRecord } from "@/lib/types";
+import { NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber } from "@/lib/new-m-link";
+import type { NewMDomain, NewMLists, NewMOfficer, NewMOption, NewMRecord } from "@/lib/types";
 import { fileExtension, formatBytes } from "@/lib/utils";
 
 function todayLocalIso(): string {
@@ -29,9 +21,13 @@ const NO_OFFICER = "";
 const NEW_OFFICER = "__new";
 /** The officer this document already carries, after it was removed from the saved list. */
 const CURRENT_OFFICER = "__current";
+/** The link this document already carries, after it was removed from its domain's links. */
+const CURRENT_LINK = "__current";
 
 interface Draft {
   domain_id: string;
+  /** One of the domain's links, or CURRENT_LINK. */
+  link: string;
   attestation_number: string;
   issue_date: string;
   document_type: string;
@@ -63,7 +59,8 @@ export function NewMForm({
   onClose: () => void;
   /** null = upload a new document. */
   record: NewMRecord | null;
-  domains: Domain[];
+  /** New M's own domains, each with its links. */
+  domains: NewMDomain[];
   lists: NewMLists | null;
   onSaved: () => Promise<void> | void;
   /** Called once a new officer is saved, so the lists everywhere pick it up. */
@@ -74,6 +71,7 @@ export function NewMForm({
 
   const [draft, setDraft] = useState<Draft>({
     domain_id: "",
+    link: "",
     attestation_number: "",
     issue_date: todayLocalIso(),
     document_type: "",
@@ -105,8 +103,10 @@ export function NewMForm({
     if (record) {
       const saved = record.officer_id && officers.some((o) => o.id === record.officer_id);
       const carries = Boolean(record.officer_name || record.officer_signature_r2_key);
+      const linkStillThere = domains.find((d) => d.id === record.domain_id)?.links.some((l) => l.id === record.link_id);
       setDraft({
         domain_id: record.domain_id,
+        link: linkStillThere ? (record.link_id as string) : CURRENT_LINK,
         attestation_number: record.attestation_number,
         issue_date: record.issue_date.slice(0, 10),
         document_type: record.document_type,
@@ -120,8 +120,11 @@ export function NewMForm({
           .catch(() => setCurrentSignature(null));
       }
     } else {
+      // A domain that already has a link, so the usual case needs no choice at all.
+      const first = domains.find((d) => d.links.length > 0) ?? domains[0];
       setDraft({
-        domain_id: domains[0]?.id ?? "",
+        domain_id: first?.id ?? "",
+        link: first?.links[0]?.id ?? "",
         attestation_number: "",
         issue_date: todayLocalIso(),
         document_type: "",
@@ -146,15 +149,30 @@ export function NewMForm({
   }
 
   const domain = useMemo(() => domains.find((d) => d.id === draft.domain_id), [domains, draft.domain_id]);
+  const links = domain?.links ?? [];
+  const keepsRemovedLink = Boolean(record && draft.domain_id === record.domain_id && !links.some((l) => l.id === record.link_id));
+  // The link the document will be built on: a link of the domain, or the copy it already carries.
+  const template =
+    draft.link === CURRENT_LINK ? (record?.link_template ?? null) : (links.find((l) => l.id === draft.link)?.template ?? null);
+
   const number = tidyNumber(draft.attestation_number);
   const numberError = number && !NUMBER_RE.test(number) ? `Must look like ${NUMBER_EXAMPLE}: GEN, then three groups of four capital English letters.` : null;
+  const issueDate = draft.issue_date || todayLocalIso();
 
-  // Shown unescaped so it reads like the finished link.
-  const previewUrl = domain
-    ? `https://${domain.hostname}${VERIFY_PATH}?attestation_number=${number || "GEN-••••-••••-••••"}&issue_date=${issueDateParam(draft.issue_date || todayLocalIso())}`
-    : "";
-  // The exact link the server will build, once there is a valid number to put in it.
-  const qrUrl = domain && NUMBER_RE.test(number) ? buildVerifyUrl(domain.hostname, number, draft.issue_date || todayLocalIso()) : null;
+  const previewUrl = domain && template !== null ? resolveLink(domain.hostname, template, number || "GEN-••••-••••-••••", issueDate) : "";
+  // The exact complete link the server will build, once there is a valid number to put in it.
+  const qrUrl = domain && template !== null && NUMBER_RE.test(number) ? resolveLink(domain.hostname, template, number, issueDate) : null;
+
+  function pickDomain(id: string) {
+    const next = domains.find((d) => d.id === id);
+    const back = record && id === record.domain_id;
+    setDraft((prev) => ({
+      ...prev,
+      domain_id: id,
+      // Back on the document's own domain, its own link is the natural choice again.
+      link: back && !next?.links.some((l) => l.id === record.link_id) ? CURRENT_LINK : back ? (record.link_id as string) : (next?.links[0]?.id ?? ""),
+    }));
+  }
 
   const pickedOfficer: NewMOfficer | null = officers.find((o) => o.id === draft.officer) ?? null;
   // The document carries an officer who is no longer in the saved list, so the picker must offer to keep them.
@@ -165,6 +183,11 @@ export function NewMForm({
   async function save() {
     setError(null);
     if (!draft.domain_id) return setError("Pick the domain the link should be built on.");
+    if (template === null) {
+      return setError(
+        links.length ? "Pick the link the document should use." : "This domain has no links yet. Add one under Domains & links.",
+      );
+    }
     if (!editing && !doc) return setError("Choose the PDF to upload.");
     if (doc && fileExtension(doc.name) !== "pdf") return setError("Only PDF files can be uploaded.");
     if (numberError) return setError(numberError);
@@ -211,6 +234,8 @@ export function NewMForm({
 
       const payload: Record<string, unknown> = {
         domain_id: draft.domain_id,
+        // Left out to keep the link the document already carries.
+        ...(draft.link === CURRENT_LINK ? {} : { link_id: draft.link }),
         attestation_number: number,
         issue_date: draft.issue_date || todayLocalIso(),
         document_type: draft.document_type,
@@ -261,7 +286,7 @@ export function NewMForm({
       <div className="space-y-4">
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {domains.length === 0 ? (
-          <Alert tone="warn">Add a domain first — the verification link is built on one of your domains.</Alert>
+          <Alert tone="warn">Add a domain first, under Domains &amp; links — the verification link is built on it.</Alert>
         ) : null}
 
         <Field
@@ -301,18 +326,33 @@ export function NewMForm({
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Domain" hint="The verification link is built on this domain or subdomain.">
-            <Select value={draft.domain_id} disabled={busy} onChange={(e) => set("domain_id", e.target.value)}>
+          <Field label="Domain" hint="One of New M's own domains or subdomains.">
+            <Select value={draft.domain_id} disabled={busy} onChange={(e) => pickDomain(e.target.value)}>
               {domains.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.hostname}
-                  {d.is_active ? "" : " (disabled)"}
+                  {d.links.length ? "" : " (no links yet)"}
                 </option>
               ))}
             </Select>
           </Field>
 
-          <Field label="Date of attestation" hint="Left empty, today's date is used. Goes into the link as DDMMYYYY.">
+          <Field
+            label="Link"
+            hint={links.length || keepsRemovedLink ? "The domain's link this document is built on." : "This domain has no links yet. Add one under Domains & links."}
+          >
+            <Select value={draft.link} disabled={busy || (!links.length && !keepsRemovedLink)} onChange={(e) => set("link", e.target.value)}>
+              {!links.length && !keepsRemovedLink ? <option value="">— no links —</option> : null}
+              {keepsRemovedLink ? <option value={CURRENT_LINK}>As saved on this document (link removed)</option> : null}
+              {links.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name || "Untitled link"} — {l.template}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="Date of attestation" hint="Left empty, today's date is used. Fills the date formula as DDMMYYYY.">
             <Input type="date" value={draft.issue_date} disabled={busy} onChange={(e) => set("issue_date", e.target.value)} />
           </Field>
         </div>
@@ -322,7 +362,7 @@ export function NewMForm({
           error={numberError}
           hint={
             editing
-              ? "Changing this changes the verification link."
+              ? "Fills the attestation-number formula, so changing it changes the link."
               : `Left empty, one is generated, e.g. ${NUMBER_EXAMPLE}. Must be unique across all domains.`
           }
         >
@@ -349,7 +389,7 @@ export function NewMForm({
         {previewUrl ? (
           <div className="rounded-md border bg-surface-2 px-3 py-2 flex items-start gap-3">
             <div className="min-w-0 flex-1">
-              <div className="text-[11.5px] text-text-muted mb-0.5">Verification link</div>
+              <div className="text-[11.5px] text-text-muted mb-0.5">Complete link — this is what the QR code holds</div>
               <div className="font-mono text-[12.5px] break-all">{previewUrl}</div>
               <div className="text-[11.5px] text-text-muted mt-1.5">
                 {!qrUrl

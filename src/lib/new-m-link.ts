@@ -2,11 +2,21 @@ import { encodeQr, qrToSvg, type QrMatrix } from "./new-m-qr";
 
 /**
  * The New M verification link, its QR code and the attestation number. No server imports, so the
- * upload form previews exactly the link and QR the server will build.
+ * settings and upload forms check and preview exactly what the server will build.
  */
 
-/** Public path a verification link points at. The query carries the number and the issue date. */
-export const VERIFY_PATH = "/verify-general-attestation-by-qr";
+/**
+ * Formulas a domain's link can carry. Each document fills in its own values: the attestation number
+ * as `GEN-NMPD-SSTI-FBDS` and the issue date as DDMMYYYY.
+ */
+export const LINK_TOKENS = {
+  number: "{attestation_number}",
+  date: "{issue_date}",
+} as const;
+
+/** The link New M used before links were set per domain; offered as a starting point. */
+export const STANDARD_TEMPLATE =
+  "/verify-general-attestation-by-qr?attestation_number={attestation_number}&issue_date={issue_date}";
 
 /** Every attestation number starts with this. */
 export const NUMBER_PREFIX = "GEN";
@@ -53,9 +63,52 @@ export function issueDateParam(isoDate: string): string {
   return m ? `${m[3]}${m[2]}${m[1]}` : "";
 }
 
-export function buildVerifyUrl(hostname: string, number: string, issueDate: string): string {
-  const params = new URLSearchParams({ attestation_number: number, issue_date: issueDateParam(issueDate) });
-  return `https://${hostname}${VERIFY_PATH}?${params.toString()}`;
+/** A document's complete link: https, its domain, then the domain's link with the formulas filled in. */
+export function resolveLink(hostname: string, template: string, number: string, issueDate: string): string {
+  const rest = template.split(LINK_TOKENS.number).join(number).split(LINK_TOKENS.date).join(issueDateParam(issueDate));
+  return `https://${hostname}${rest}`;
+}
+
+/**
+ * Checks a link typed in settings and returns it tidied: everything after the domain, starting with
+ * "/", "?" or "#". A complete address on the same domain is accepted and trimmed back to that. Throws
+ * an Error whose message the settings form can show as it is.
+ */
+export function cleanTemplate(input: string, hostname: string): string {
+  let t = input.trim();
+  if (!t) throw new Error("Enter the link");
+
+  const full = /^https?:\/\/([^/?#]*)(.*)$/i.exec(t);
+  if (full) {
+    if (full[1].toLowerCase() !== hostname.toLowerCase()) {
+      throw new Error(`This link belongs to ${hostname}. Type only what comes after the domain, e.g. /verify?…`);
+    }
+    t = full[2] || "/";
+  }
+  if (!/^[/?#]/.test(t)) t = `/${t}`;
+
+  if (t.length > 500) throw new Error("The link is too long (max 500 characters)");
+  if (/\s/.test(t)) throw new Error("The link cannot contain spaces");
+  if (/[<>"\\^`|]/.test(t)) throw new Error('The link cannot contain < > " \\ ^ ` or |');
+
+  for (const token of t.match(/\{[^{}]*\}/g) ?? []) {
+    if (token !== LINK_TOKENS.number && token !== LINK_TOKENS.date) {
+      throw new Error(`Unknown formula ${token}. Use ${LINK_TOKENS.number} or ${LINK_TOKENS.date}.`);
+    }
+  }
+  if (/[{}]/.test(t.replace(/\{[^{}]*\}/g, ""))) throw new Error("A formula is missing its { or }");
+
+  try {
+    new URL(resolveLink(hostname, t, NUMBER_EXAMPLE, "2026-10-31"));
+  } catch {
+    throw new Error("That does not make a valid address");
+  }
+  return t;
+}
+
+/** Whether a link carries the attestation number. Without it, every document on the link shares one address. */
+export function hasNumberToken(template: string): boolean {
+  return template.includes(LINK_TOKENS.number);
 }
 
 /* ---------------- QR code ---------------- */

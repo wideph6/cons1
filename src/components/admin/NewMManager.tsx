@@ -1,7 +1,8 @@
 "use client";
 
-import { Download, Eye, ListChecks, Pencil, Plus, QrCode, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Download, Eye, Globe, ListChecks, Pencil, Plus, QrCode, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { NewMDomains } from "@/components/admin/NewMDomains";
 import { NewMForm } from "@/components/admin/NewMForm";
 import { NewMQrDialog, QrSvgImage } from "@/components/admin/NewMQr";
 import { NewMSavedValues } from "@/components/admin/NewMSavedValues";
@@ -22,7 +23,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { api, qs } from "@/lib/client";
-import type { Domain, NewMLists, NewMRecord, Paged } from "@/lib/types";
+import type { NewMDomain, NewMLists, NewMRecord, Paged } from "@/lib/types";
 import { formatBytes, formatDateTime, formatIssued } from "@/lib/utils";
 
 const LIMIT = 25;
@@ -33,7 +34,8 @@ export function NewMManager() {
 
   const [page, setPage] = useState<Paged<NewMRecord> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [domains, setDomains] = useState<Domain[]>([]);
+  /** New M's own domains with their links; null until loaded. */
+  const [domains, setDomains] = useState<NewMDomain[] | null>(null);
   const [lists, setLists] = useState<NewMLists | null>(null);
 
   const [domainId, setDomainId] = useState("");
@@ -44,6 +46,7 @@ export function NewMManager() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<NewMRecord | null>(null);
   const [savedOpen, setSavedOpen] = useState(false);
+  const [domainsOpen, setDomainsOpen] = useState(false);
   const [qrFor, setQrFor] = useState<NewMRecord | null>(null);
   const [del, setDel] = useState<NewMRecord | null>(null);
   const [busy, setBusy] = useState(false);
@@ -66,16 +69,23 @@ export function NewMManager() {
     }
   }, []);
 
+  const loadDomains = useCallback(async () => {
+    try {
+      setDomains((await api<{ items: NewMDomain[] }>("/api/admin/new-m/domains")).items);
+    } catch {
+      // As above: the document list carries the error.
+      setDomains([]);
+    }
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    api<{ items: Domain[] }>("/api/admin/domains")
-      .then((r) => setDomains(r.items))
-      .catch(() => setDomains([]));
+    loadDomains();
     loadLists();
-  }, [loadLists]);
+  }, [loadDomains, loadLists]);
 
   // A new search starts from the first page, otherwise an empty page 3 looks like "no results".
   function runSearch() {
@@ -124,6 +134,9 @@ export function NewMManager() {
   const canDelete = can("new_m_delete");
   const filtered = Boolean(search || domainId);
   const items = page?.items ?? [];
+  const domainList = domains ?? [];
+  // Uploading needs a domain that has at least one link to build on.
+  const ready = domainList.some((d) => d.links.length > 0);
 
   return (
     <>
@@ -131,8 +144,8 @@ export function NewMManager() {
         <div>
           <h1 className="text-lg font-semibold leading-tight">New M</h1>
           <p className="text-text-muted text-sm mt-1">
-            Upload attestation documents one at a time. Each gets an attestation number and a verification link on its
-            domain. The newest upload is always at the top.
+            Upload attestation documents one at a time. Each gets an attestation number and a complete link built from
+            its domain&apos;s link, saved with its QR code. The newest upload is always at the top.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -141,15 +154,19 @@ export function NewMManager() {
             onClick={() => {
               load();
               loadLists();
+              loadDomains();
             }}
           >
             Refresh
+          </Button>
+          <Button icon={<Globe className="size-4" />} disabled={!domains} onClick={() => setDomainsOpen(true)}>
+            Domains &amp; links
           </Button>
           <Button icon={<ListChecks className="size-4" />} disabled={!lists} onClick={() => setSavedOpen(true)}>
             Saved values
           </Button>
           {canCreate ? (
-            <Button variant="primary" icon={<Upload className="size-4" />} disabled={domains.length === 0 || !lists} onClick={() => openForm(null)}>
+            <Button variant="primary" icon={<Upload className="size-4" />} disabled={!ready || !lists} onClick={() => openForm(null)}>
               Upload document
             </Button>
           ) : null}
@@ -162,10 +179,13 @@ export function NewMManager() {
         </Alert>
       ) : null}
 
-      {domains.length === 0 ? (
+      {domains && !ready ? (
         <Alert tone="warn" className="mb-4">
-          No domains yet. Add one under <span className="font-medium">Domains</span> first — every verification link is
-          built on a domain.
+          {domainList.length === 0 ? "New M has no domains yet." : "None of New M's domains has a link yet."} Open{" "}
+          <button type="button" className="font-medium underline" onClick={() => setDomainsOpen(true)}>
+            Domains &amp; links
+          </button>{" "}
+          to add a domain and the link documents will be built on.
         </Alert>
       ) : null}
 
@@ -196,7 +216,7 @@ export function NewMManager() {
             }}
           >
             <option value="">All domains</option>
-            {domains.map((d) => (
+            {domainList.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.hostname}
               </option>
@@ -214,10 +234,10 @@ export function NewMManager() {
           description={
             filtered
               ? "Try a different search term or domain."
-              : "Upload the first document: pick a domain, choose the PDF, and the attestation number and link are generated for you."
+              : "Upload the first document: pick a domain and its link, choose the PDF, and the attestation number, complete link and QR code are made for you."
           }
           action={
-            canCreate && domains.length > 0 && !filtered ? (
+            canCreate && ready && !filtered ? (
               <Button variant="primary" icon={<Plus className="size-4" />} disabled={!lists} onClick={() => openForm(null)}>
                 Upload document
               </Button>
@@ -277,12 +297,10 @@ export function NewMManager() {
                     </td>
                     <td>{r.document_type || <span className="text-text-faint">—</span>}</td>
                     <td>
-                      <span className="font-mono text-[12.5px]">{r.domain_hostname}</span>
-                      {r.domain_is_active ? null : (
-                        <Badge tone="warn" className="ml-1.5">
-                          disabled
-                        </Badge>
-                      )}
+                      <div className="font-mono text-[12.5px]">{r.domain_hostname}</div>
+                      <div className="text-[12px] text-text-muted">
+                        {r.link_id ? r.link_name || "Untitled link" : <Badge>link removed — kept as saved</Badge>}
+                      </div>
                     </td>
                     <td className="whitespace-nowrap">{formatIssued(r.issue_date)}</td>
                     <td>
@@ -352,12 +370,23 @@ export function NewMManager() {
         open={formOpen}
         onClose={() => setFormOpen(false)}
         record={editing}
-        domains={domains}
+        domains={domainList}
         lists={lists}
         onSaved={async () => {
-          await Promise.all([load(), loadLists()]);
+          await Promise.all([load(), loadLists(), loadDomains()]);
         }}
         onListsChanged={loadLists}
+      />
+
+      <NewMDomains
+        open={domainsOpen}
+        onClose={() => setDomainsOpen(false)}
+        domains={domainList}
+        canManage={can("new_m_domains")}
+        onChanged={async () => {
+          // A renamed domain or an edited link gives documents new links and QR codes, so the list reloads too.
+          await Promise.all([loadDomains(), load()]);
+        }}
       />
 
       <NewMQrDialog record={qrFor} onClose={() => setQrFor(null)} />

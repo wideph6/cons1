@@ -40,7 +40,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       href: "/admin/new-m",
       label: "New M",
       icon: FolderOpen,
-      show: isSuper || can("new_m_create") || can("new_m_edit") || can("new_m_delete") || can("new_m_settings"),
+      show:
+        isSuper ||
+        can("new_m_create") ||
+        can("new_m_edit") ||
+        can("new_m_delete") ||
+        can("new_m_settings") ||
+        can("new_m_domains"),
     },
     { href: "/admin/domains", label: "Domains", icon: Globe, show: true },
     { href: "/admin/storage", label: "Storage", icon: HardDrive, show: isSuper },

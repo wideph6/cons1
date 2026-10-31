@@ -182,6 +182,12 @@ export const ACTION_LABELS: Record<string, string> = {
   create_new_m_officer: "Saved New M officer",
   delete_new_m_officer: "Removed New M officer",
   delete_new_m_option: "Removed New M saved value",
+  create_new_m_domain: "Added New M domain",
+  update_new_m_domain: "Updated New M domain",
+  delete_new_m_domain: "Deleted New M domain",
+  create_new_m_link: "Added New M link",
+  update_new_m_link: "Updated New M link",
+  delete_new_m_link: "Deleted New M link",
 };
 
 export function displayPath(path: string): string {

@@ -5,8 +5,9 @@ import {
   cleanText,
   dbError,
   docColumns,
-  getDomain,
+  getMDomain,
   getRecord,
+  linkFor,
   mapRecord,
   normalizeNumber,
   numberTaken,
@@ -20,12 +21,15 @@ import {
   uniqueNumber,
   withCurrentQr,
 } from "@/lib/new-m";
-import { buildVerifyUrl } from "@/lib/new-m-link";
+import { resolveLink } from "@/lib/new-m-link";
 import { db } from "@/lib/supabase";
 import type { NewMRecord, Paged } from "@/lib/types";
 
 interface CreateBody {
+  /** A New M domain. */
   domain_id?: string;
+  /** One of that domain's links. */
+  link_id?: string;
   /** Blank means generate one. */
   attestation_number?: string;
   /** `YYYY-MM-DD`. Blank means today. */
@@ -80,7 +84,8 @@ export async function POST(req: NextRequest) {
     if (!body.domain_id) throw new ApiError(400, "Pick the domain the link should be built on");
     if (!body.doc_key) throw new ApiError(400, "Upload the PDF first");
 
-    const domain = await getDomain(body.domain_id);
+    const domain = await getMDomain(body.domain_id);
+    const link = await linkFor(domain.id, body.link_id);
 
     const typed = (body.attestation_number ?? "").trim();
     const number = typed ? normalizeNumber(typed) : await uniqueNumber();
@@ -95,13 +100,15 @@ export async function POST(req: NextRequest) {
     const issueDate = parseIssueDate(body.issue_date);
     const row: Record<string, unknown> = {
       domain_id: domain.id,
+      link_id: link.id,
+      link_template: link.template,
       attestation_number: number,
       issue_date: issueDate,
       ...texts,
       ...(await officerColumns(body.officer_id || null)),
       ...(await docColumns(body.doc_key, body.doc_filename, body.doc_content_type)),
-      // The QR code of the verification link is saved with the document.
-      ...qrColumns(buildVerifyUrl(domain.hostname, number, issueDate)),
+      // The QR code of the complete link — domain, link, number and date — is saved with the document.
+      ...qrColumns(resolveLink(domain.hostname, link.template, number, issueDate)),
       created_by: user.id,
     };
 
@@ -117,7 +124,8 @@ export async function POST(req: NextRequest) {
     await logActivity({
       user_id: user.id,
       action: "create_new_m",
-      domain: { id: domain.id, hostname: domain.hostname },
+      // activity_log.domain_id points at the Domains page's table, so New M domains go by name only.
+      domain: { id: null, hostname: domain.hostname },
       file: { id: null, filename: item.doc_filename },
       details: { attestation_number: item.attestation_number, issue_date: item.issue_date, verify_url: item.verify_url },
     });

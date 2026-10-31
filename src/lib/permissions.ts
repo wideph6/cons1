@@ -14,6 +14,7 @@ export const PERMISSIONS = [
   { key: "new_m_edit", label: "Edit New M documents (number, date, details, PDF)", group: "New M" },
   { key: "new_m_delete", label: "Delete New M documents", group: "New M" },
   { key: "new_m_settings", label: "Remove saved New M values and officers", group: "New M" },
+  { key: "new_m_domains", label: "Add and edit New M domains and their links", group: "New M" },
   { key: "create_domain", label: "Add domains and subdomains", group: "Domains" },
   { key: "edit_domain", label: "Edit, enable or disable domains", group: "Domains" },
   { key: "delete_domain", label: "Delete domains (and everything under them)", group: "Domains" },
