@@ -144,7 +144,9 @@ Documents uploaded while New M still used the Domains page are moved by `new-m.s
 
 **Search** — one box over every domain: number, document type, office, authority, officer, domain, link name, file name, and the date written as `31102026`, `31-10-2026`, `31/10/26` or `2026-10-31`.
 
-**QR code** — when a document is saved, the server draws the QR code of its complete link (domain included) and saves it on the document (`qr_svg`, with `qr_url` holding the link it encodes). An edit that changes the complete link — the domain, the link, the number or the date — draws a new code and replaces the saved one; any other edit leaves it as it is. Renaming a domain or editing a link under Domains & links replaces the codes of every document it touches. The list shows the saved code (click it for a large view and PNG / SVG downloads); the upload form shows a live preview before saving. The style copies the reference sample: a plain QR with square modules and square finder eyes, black on white, version 6 (41 × 41 modules) at error-correction level L; a link too long for version 6 moves up to the next size. The generator (`src/lib/new-m-qr.ts`) belongs to New M alone.
+**QR code** — when a document is saved, the server draws the QR code of its complete link (domain included) and saves it on the document (`qr_svg`, with `qr_url` holding the link it encodes). An edit that changes the complete link — the domain, the link, the number or the date — draws a new code and replaces the saved one; any other edit leaves it as it is. Renaming a domain or editing a link under Domains & links replaces the codes of every document it touches, saved a hundred at a time through the `new_m_set_qr` database function (one update per document until `new-m.sql` has added it).
+
+**Speed** — a save checks everything that needs no database first, then reads the link with its domain, the number, the officer and the stored PDF side by side, writes the document and any new saved values together, and answers with the saved document; the activity log and removing a replaced PDF happen after the reply (`after()` from `next/server`). The PDF starts uploading the moment it is chosen, and the list takes the returned document in place instead of reloading. Officer signatures are listed as short-lived links, not downloaded and inlined. The list shows the saved code (click it for a large view and PNG / SVG downloads); the upload form shows a live preview before saving. The style copies the reference sample: a plain QR with square modules and square finder eyes, black on white, version 6 (41 × 41 modules) at error-correction level L; a link too long for version 6 moves up to the next size. The generator (`src/lib/new-m-qr.ts`) belongs to New M alone.
 
 **Sticker** — not built yet. Everything it will print is stored on the document (and the signature is available as a `data:` URI from `/api/admin/new-m/:id/signature`), so a sticker drawn at download time will always match the document as it reads after any edit.
 
@@ -192,6 +194,10 @@ src/lib/*                       auth, permissions, R2, Supabase, Vercel API help
 supabase/schema.sql             database schema, views, functions
 supabase/new-m.sql           the New M tables on their own, for adding them to an existing database
 ```
+
+## Database functions
+
+The SQL functions the server calls (`increment_download`, `dashboard_stats`, `user_action_counts`, `user_action_breakdown`, `new_m_set_qr`) are revoked from `PUBLIC` as well as from `anon` and `authenticated`, and granted to `service_role` only. Postgres lets everyone (`PUBLIC`) execute a new function until that is taken away, so revoking from `anon` alone would leave them callable with the anon key. Re-run `schema.sql` on an existing database to apply this (see SETUP, Hissa 14).
 
 ## Notes on the free tiers
 

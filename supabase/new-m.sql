@@ -205,6 +205,38 @@ select t.*,
        (select count(*) from public.new_m_records r where r.link_id = t.id)::int as document_count
 from public.new_m_link_templates t;
 
+-- ---------- Saving many QR codes at once ----------
+-- A renamed domain or an edited link gives many documents new links. Their new QR codes arrive as one
+-- list and are saved in a single statement, instead of one request per document.
+-- items: [{ "id": "...", "qr_url": "...", "qr_svg": "...", "link_template": "..." }]
+create or replace function public.new_m_set_qr(items jsonb)
+returns integer
+language sql
+set search_path = public
+as $$
+  with changed as (
+    update public.new_m_records r
+       set qr_url = i.qr_url,
+           qr_svg = i.qr_svg,
+           link_template = i.link_template,
+           qr_updated_at = now()
+      from jsonb_to_recordset(items) as i(id uuid, qr_url text, qr_svg text, link_template text)
+     where r.id = i.id
+    returning 1
+  )
+  select count(*)::int from changed;
+$$;
+
+-- A new function can be called by everyone (PUBLIC) until that is taken away, and revoking from anon
+-- alone does not do it. Only the server's service_role may call this one.
+revoke all on function public.new_m_set_qr(jsonb) from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.new_m_set_qr(jsonb) to service_role;
+  end if;
+end $$;
+
 -- ---------- Lock down ----------
 -- Only the server (service_role key) talks to the database. Block anon/authenticated keys.
 alter table public.new_m_domains        enable row level security;

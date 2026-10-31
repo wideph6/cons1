@@ -1,11 +1,11 @@
 "use client";
 
 import { FileUp, ImageUp, RefreshCw, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LinkQrPreview } from "@/components/admin/NewMQr";
 import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
-import { uploadNewMFile } from "@/lib/new-m-client";
+import { uploadNewMFile, type UploadedObject } from "@/lib/new-m-client";
 import { NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber } from "@/lib/new-m-link";
 import type { NewMDomain, NewMLists, NewMOfficer, NewMOption, NewMRecord } from "@/lib/types";
 import { fileExtension, formatBytes } from "@/lib/utils";
@@ -46,6 +46,15 @@ interface OfficerDraft {
 
 const EMPTY_OFFICER: OfficerDraft = { name: "", designation: "", signature: null, preview: null };
 
+/** The chosen PDF, uploading in the background from the moment it was picked. */
+interface DocUpload {
+  file: File;
+  progress: number;
+  promise: Promise<UploadedObject>;
+  done: UploadedObject | null;
+  error: string | null;
+}
+
 export function NewMForm({
   open,
   onClose,
@@ -62,7 +71,11 @@ export function NewMForm({
   /** New M's own domains, each with its links. */
   domains: NewMDomain[];
   lists: NewMLists | null;
-  onSaved: () => Promise<void> | void;
+  /**
+   * The saved document, as the server returned it, so the list can show it without reloading.
+   * `listsChanged` says a value new to the saved lists was typed.
+   */
+  onSaved: (item: NewMRecord, created: boolean, listsChanged: boolean) => void;
   /** Called once a new officer is saved, so the lists everywhere pick it up. */
   onListsChanged: () => Promise<void> | void;
 }) {
@@ -80,7 +93,9 @@ export function NewMForm({
     officer: NO_OFFICER,
   });
   const [officer, setOfficer] = useState<OfficerDraft>(EMPTY_OFFICER);
-  const [doc, setDoc] = useState<File | null>(null);
+  const [doc, setDoc] = useState<DocUpload | null>(null);
+  /** Bumped whenever the chosen PDF changes, so a superseded upload can no longer touch the form. */
+  const docSeq = useRef(0);
   /** The signature a document already carries, shown when its officer is no longer in the saved list. */
   const [currentSignature, setCurrentSignature] = useState<string | null>(null);
   /** Bumped on every open so the pickers start fresh rather than keeping the last document's state. */
@@ -94,6 +109,7 @@ export function NewMForm({
   useEffect(() => {
     if (!open) return;
     setSession((s) => s + 1);
+    docSeq.current++;
     setDoc(null);
     setOfficer(EMPTY_OFFICER);
     setCurrentSignature(null);
@@ -148,6 +164,35 @@ export function NewMForm({
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
+  /**
+   * Starts uploading the PDF the moment it is chosen, so the bytes are usually in storage before Save
+   * is pressed. A file chosen and then dropped stays behind in storage until the Storage page's
+   * cleanup takes it, like any upload that was never attached.
+   */
+  function chooseDoc(file: File | null): Promise<UploadedObject> | null {
+    const seq = ++docSeq.current;
+    if (!file) {
+      setDoc(null);
+      return null;
+    }
+    if (fileExtension(file.name) !== "pdf") {
+      setDoc(null);
+      setError("Only PDF files can be uploaded.");
+      return null;
+    }
+    const mine = (patch: Partial<DocUpload>) => {
+      if (docSeq.current === seq) setDoc((d) => (d && d.file === file ? { ...d, ...patch } : d));
+    };
+    const promise = uploadNewMFile(file, "docs", (v) => mine({ progress: v }));
+    promise.then(
+      (done) => mine({ done, progress: 1, error: null }),
+      (e) => mine({ error: errorMessage(e) }),
+    );
+    setError(null);
+    setDoc({ file, progress: 0, promise, done: null, error: null });
+    return promise;
+  }
+
   const domain = useMemo(() => domains.find((d) => d.id === draft.domain_id), [domains, draft.domain_id]);
   const links = domain?.links ?? [];
   const keepsRemovedLink = Boolean(record && draft.domain_id === record.domain_id && !links.some((l) => l.id === record.link_id));
@@ -189,7 +234,6 @@ export function NewMForm({
       );
     }
     if (!editing && !doc) return setError("Choose the PDF to upload.");
-    if (doc && fileExtension(doc.name) !== "pdf") return setError("Only PDF files can be uploaded.");
     if (numberError) return setError(numberError);
     if (editing && !number) return setError("Enter the attestation number, or press Generate for a new one.");
     if (draft.officer === NEW_OFFICER && !officer.name.trim()) return setError("Enter the approving officer's name.");
@@ -216,7 +260,8 @@ export function NewMForm({
           },
         });
         officerId = r.item.id;
-        await onListsChanged();
+        // The lists refresh in the background; the document save does not wait for them.
+        void onListsChanged();
         set("officer", r.item.id);
         setOfficer(EMPTY_OFFICER);
       } else if (draft.officer === CURRENT_OFFICER) {
@@ -225,11 +270,11 @@ export function NewMForm({
         officerId = draft.officer || null;
       }
 
-      let upload: { key: string; filename: string; content_type: string } | null = null;
+      // The PDF has been uploading since it was chosen; this only waits for whatever is left. One that
+      // failed is tried once more here.
+      let upload: UploadedObject | null = null;
       if (doc) {
-        setProgress({ what: doc.name, value: 0 });
-        upload = await uploadNewMFile(doc, "docs", (v) => setProgress({ what: doc.name, value: v }));
-        setProgress(null);
+        upload = doc.done ?? (await (doc.error ? chooseDoc(doc.file) : doc.promise));
       }
 
       const payload: Record<string, unknown> = {
@@ -249,14 +294,18 @@ export function NewMForm({
         payload.doc_content_type = upload.content_type;
       }
 
-      if (editing && record) {
-        const r = await api<{ item: NewMRecord }>(`/api/admin/new-m/${record.id}`, { method: "PATCH", json: payload });
-        toast(`${r.item.attestation_number} updated`);
-      } else {
-        const r = await api<{ item: NewMRecord }>("/api/admin/new-m", { json: payload });
-        toast(`${r.item.attestation_number} uploaded`);
-      }
-      await onSaved();
+      // A value typed in that no saved list has yet: the lists need a refresh to offer it next time.
+      const listsChanged = (["document_type", "issuing_office", "issuing_authority"] as const).some((kind) => {
+        const value = draft[kind].trim().toLowerCase();
+        return value !== "" && !(lists?.options[kind] ?? []).some((o) => o.value.toLowerCase() === value);
+      });
+
+      const r = editing && record
+        ? await api<{ item: NewMRecord }>(`/api/admin/new-m/${record.id}`, { method: "PATCH", json: payload })
+        : await api<{ item: NewMRecord }>("/api/admin/new-m", { json: payload });
+      toast(`${r.item.attestation_number} ${editing ? "updated" : "uploaded"}`);
+      // The list takes the saved document as returned, so the form closes without waiting for a reload.
+      onSaved(r.item, !editing, listsChanged);
       onClose();
     } catch (e) {
       setError(errorMessage(e));
@@ -294,7 +343,7 @@ export function NewMForm({
           hint={
             editing
               ? `Currently ${record?.doc_filename} (${formatBytes(record?.doc_size)}). Choosing a file removes it and puts the new one in its place.`
-              : "One document per upload."
+              : "One document per upload. It starts uploading as soon as it is chosen, while you fill in the rest."
           }
         >
           <div className="flex flex-wrap items-center gap-2">
@@ -305,7 +354,7 @@ export function NewMForm({
                 className="sr-only"
                 disabled={busy}
                 onChange={(e) => {
-                  setDoc(e.target.files?.[0] ?? null);
+                  chooseDoc(e.target.files?.[0] ?? null);
                   e.target.value = "";
                 }}
               />
@@ -316,13 +365,26 @@ export function NewMForm({
             </label>
             {doc ? (
               <span className="text-[13px] text-text-muted inline-flex items-center gap-1.5">
-                {doc.name} · {formatBytes(doc.size)}
-                <button type="button" onClick={() => setDoc(null)} disabled={busy} aria-label="Clear chosen PDF">
+                {doc.file.name} · {formatBytes(doc.file.size)}
+                {doc.done ? (
+                  <span className="text-ok-600">· uploaded</span>
+                ) : doc.error ? null : (
+                  <span className="tabular-nums">· uploading {Math.round(doc.progress * 100)}%</span>
+                )}
+                <button type="button" onClick={() => chooseDoc(null)} disabled={busy} aria-label="Clear chosen PDF">
                   <X className="size-3.5" />
                 </button>
               </span>
             ) : null}
           </div>
+          {doc && !doc.done && !doc.error ? (
+            <div className="h-1 rounded bg-surface-2 overflow-hidden mt-1.5">
+              <div className="h-full bg-teal-600 transition-all" style={{ width: `${Math.round(doc.progress * 100)}%` }} />
+            </div>
+          ) : null}
+          {doc?.error ? (
+            <p className="text-[12.5px] text-danger-600 mt-1">{doc.error} — it is tried again when you save.</p>
+          ) : null}
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -457,7 +519,7 @@ export function NewMForm({
           </Field>
 
           {pickedOfficer ? (
-            <OfficerSummary name={pickedOfficer.name} designation={pickedOfficer.designation} signature={pickedOfficer.signature_data_uri} />
+            <OfficerSummary name={pickedOfficer.name} designation={pickedOfficer.designation} signature={pickedOfficer.signature_url} />
           ) : null}
           {draft.officer === CURRENT_OFFICER && record ? (
             <OfficerSummary

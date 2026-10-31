@@ -1,13 +1,13 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
 import {
   cleanText,
   dbError,
+  checkLinkDomain,
   docColumns,
-  getMDomain,
+  getLinkWithHost,
   getRecord,
-  linkFor,
   normalizeNumber,
   numberTaken,
   officerColumns,
@@ -15,6 +15,7 @@ import {
   OPTION_LABELS,
   parseIssueDate,
   qrColumns,
+  recordFromRow,
   releaseSignature,
   rememberOptions,
   requireNewMAccess,
@@ -63,69 +64,71 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     requirePermission(user, "new_m_edit");
     const { id } = await params;
     const body = await readBody<PatchBody>(req);
-    const existing = await getRecord(id);
 
-    const patch: Record<string, unknown> = {};
-
-    let hostname = existing.domain_hostname;
-    let domainId = existing.domain_id;
-    if (body.domain_id !== undefined && body.domain_id !== existing.domain_id) {
-      const domain = await getMDomain(body.domain_id);
-      patch.domain_id = domain.id;
-      hostname = domain.hostname;
-      domainId = domain.id;
-    }
-
-    // The document's link as it reads now, unless another of the domain's links is picked. A new
-    // domain always needs one of its own links.
-    let template = existing.link_current_template ?? existing.link_template;
-    if (body.link_id !== undefined && body.link_id !== existing.link_id) {
-      const link = await linkFor(domainId, body.link_id);
-      patch.link_id = link.id;
-      patch.link_template = link.template;
-      template = link.template;
-    } else if (patch.domain_id) {
-      throw new ApiError(400, "Pick one of the new domain's links");
-    }
-
-    if (body.attestation_number !== undefined) {
-      const next = normalizeNumber(body.attestation_number);
-      if (next !== existing.attestation_number) {
-        if (await numberTaken(next, id)) throw new ApiError(409, `${next} is already used by another document`);
-        patch.attestation_number = next;
-      }
-    }
-
-    if (body.issue_date !== undefined) {
-      const next = parseIssueDate(body.issue_date);
-      if (next !== existing.issue_date) patch.issue_date = next;
-    }
-
+    // Everything that needs no database is checked first, so a typing mistake costs no round trip.
+    const nextNumber = body.attestation_number !== undefined ? normalizeNumber(body.attestation_number) : undefined;
+    const nextDate = body.issue_date !== undefined ? parseIssueDate(body.issue_date) : undefined;
     const typed: Partial<Record<NewMOptionKind, string>> = {};
     for (const kind of OPTION_KINDS) {
-      if (body[kind] === undefined) continue;
-      const next = cleanText(body[kind], OPTION_LABELS[kind]);
-      typed[kind] = next;
-      if (next !== existing[kind]) patch[kind] = next;
+      if (body[kind] !== undefined) typed[kind] = cleanText(body[kind], OPTION_LABELS[kind]);
     }
 
+    const officerId = body.officer_id === undefined ? undefined : body.officer_id || null;
+
+    // The document and everything the edit might need are read side by side, in one round. A lookup
+    // that fails only matters if the edit really changes that part, so failures are held until then.
+    const held = <T,>(p: Promise<T>) => p.catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
+    const [existing, linkRead, numberRead, officerRead, docRead] = await Promise.all([
+      getRecord(id),
+      body.link_id !== undefined ? held(getLinkWithHost(body.link_id)) : null,
+      nextNumber !== undefined ? held(numberTaken(nextNumber, id)) : null,
+      officerId ? held(officerColumns(officerId)) : null,
+      body.doc_key !== undefined ? held(docColumns(body.doc_key, body.doc_filename, body.doc_content_type)) : null,
+    ]);
+    const use = <T,>(read: T | Error | null): T | null => {
+      if (read instanceof Error) throw read;
+      return read;
+    };
+
+    const domainChanged = body.domain_id !== undefined && body.domain_id !== existing.domain_id;
+    const domainId = domainChanged ? (body.domain_id as string) : existing.domain_id;
+    const linkChanged = body.link_id !== undefined && body.link_id !== existing.link_id;
+    // A new domain always needs one of its own links.
+    if (domainChanged && !linkChanged) throw new ApiError(400, "Pick one of the new domain's links");
+    const numberChanged = nextNumber !== undefined && nextNumber !== existing.attestation_number;
     // An officer removed from the saved list leaves officer_id empty but the copy in place, so taking
     // the officer off has to look at the copy as well as the id.
-    const officerId = body.officer_id === undefined ? undefined : body.officer_id || null;
     const hasOfficer = Boolean(existing.officer_id || existing.officer_name || existing.officer_signature_r2_key);
-    if (officerId !== undefined && (officerId ? officerId !== existing.officer_id : hasOfficer)) {
-      Object.assign(patch, await officerColumns(officerId));
-    }
+    const officerChanged = officerId !== undefined && (officerId ? officerId !== existing.officer_id : hasOfficer);
+    const docChanged = body.doc_key !== undefined && body.doc_key !== existing.doc_r2_key;
 
-    let replacedDoc = false;
-    if (body.doc_key !== undefined && body.doc_key !== existing.doc_r2_key) {
-      Object.assign(patch, await docColumns(body.doc_key, body.doc_filename, body.doc_content_type));
+    const linkFound = linkChanged ? use(linkRead) : null;
+    const link = linkFound ? checkLinkDomain(linkFound, domainId) : null;
+    if (numberChanged && use(numberRead)) throw new ApiError(409, `${nextNumber} is already used by another document`);
+    const officer = officerChanged ? (officerId ? use(officerRead) : await officerColumns(null)) : null;
+    const doc = docChanged ? use(docRead) : null;
+
+    const patch: Record<string, unknown> = {};
+    if (domainChanged) patch.domain_id = domainId;
+    if (link) {
+      patch.link_id = link.id;
+      patch.link_template = link.template;
+    }
+    if (numberChanged) patch.attestation_number = nextNumber;
+    if (nextDate !== undefined && nextDate !== existing.issue_date) patch.issue_date = nextDate;
+    for (const kind of OPTION_KINDS) {
+      if (typed[kind] !== undefined && typed[kind] !== existing[kind]) patch[kind] = typed[kind];
+    }
+    if (officer) Object.assign(patch, officer);
+    if (doc) {
+      Object.assign(patch, doc);
       patch.doc_replaced_at = new Date().toISOString();
-      replacedDoc = true;
     }
 
     // The complete link is made of the domain, its link, the number and the date. When an edit changes
     // any of them, a QR code is drawn for the new link and replaces the saved one.
+    const hostname = link?.hostname ?? existing.domain_hostname;
+    const template = link?.template ?? existing.link_current_template ?? existing.link_template;
     const nextUrl = resolveLink(
       hostname,
       template,
@@ -133,38 +136,56 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       (patch.issue_date as string | undefined) ?? existing.issue_date,
     );
     const qrReplaced = !existing.qr_svg || nextUrl !== existing.qr_url;
-    if (qrReplaced) Object.assign(patch, qrColumns(nextUrl));
-
-    await rememberOptions(user, typed);
+    if (qrReplaced) Object.assign(patch, qrColumns(nextUrl), { link_template: template });
 
     if (!Object.keys(patch).length) return ok({ item: existing });
     patch.updated_at = new Date().toISOString();
 
-    const { error } = await db().from("new_m_records").update(patch).eq("id", id);
+    // Only values this edit changed join the saved lists, so one removed from a list on purpose is not
+    // brought back by editing a document that still carries it. Written alongside the document.
+    const changedTexts: Partial<Record<NewMOptionKind, string>> = {};
+    for (const kind of OPTION_KINDS) if (kind in patch) changedTexts[kind] = patch[kind] as string;
+
+    const [{ data, error }] = await Promise.all([
+      db().from("new_m_records").update(patch).eq("id", id).select("*").single(),
+      rememberOptions(user, changedTexts).catch((e) => console.error("[new-m] saving list values failed", e)),
+    ]);
     if (error) {
       if (error.code === "23505") throw new ApiError(409, "That attestation number is already used by another document");
+      // No row came back: the document was deleted while this edit was open.
+      if (error.code === "PGRST116") throw new ApiError(404, "Document not found");
       throw dbError(error);
     }
 
-    // Only once the row points at the new ones: the old PDF goes, and the old signature too if nothing else shows it.
-    if (replacedDoc) await deleteObject(existing.doc_r2_key);
-    if ("officer_signature_r2_key" in patch && patch.officer_signature_r2_key !== existing.officer_signature_r2_key) {
-      await releaseSignature(existing.officer_signature_r2_key);
-    }
+    const item = recordFromRow(data, {
+      domain_hostname: hostname,
+      link_name: link ? link.name : existing.link_name,
+      link_current_template: link ? link.template : existing.link_current_template,
+      uploader_name: existing.uploader_name,
+      uploader_email: existing.uploader_email,
+    });
 
-    const item = await getRecord(id);
-    await logActivity({
-      user_id: user.id,
-      action: replacedDoc ? "replace_new_m_doc" : "update_new_m",
-      domain: { id: null, hostname: item.domain_hostname },
-      file: { id: null, filename: item.doc_filename },
-      details: {
-        attestation_number: item.attestation_number,
-        changed: Object.keys(patch).filter((k) => k !== "updated_at" && !k.startsWith("qr_")),
-        previous_number: existing.attestation_number,
-        previous_issue_date: existing.issue_date,
-        qr_replaced: qrReplaced,
-      },
+    // Tidying up and the log wait until the reply is on its way. The row already points at the new
+    // PDF and signature, so the old ones can go: the PDF always, the signature only once nothing else
+    // shows it.
+    after(async () => {
+      if (doc) await deleteObject(existing.doc_r2_key);
+      if (officer && officer.officer_signature_r2_key !== existing.officer_signature_r2_key) {
+        await releaseSignature(existing.officer_signature_r2_key);
+      }
+      await logActivity({
+        user_id: user.id,
+        action: doc ? "replace_new_m_doc" : "update_new_m",
+        domain: { id: null, hostname: item.domain_hostname },
+        file: { id: null, filename: item.doc_filename },
+        details: {
+          attestation_number: item.attestation_number,
+          changed: Object.keys(patch).filter((k) => k !== "updated_at" && !k.startsWith("qr_")),
+          previous_number: existing.attestation_number,
+          previous_issue_date: existing.issue_date,
+          qr_replaced: qrReplaced,
+        },
+      });
     });
     return ok({ item });
   });
@@ -176,22 +197,37 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
     const user = await requireUser();
     requirePermission(user, "new_m_delete");
     const { id } = await params;
-    const existing = await getRecord(id);
 
-    const { error } = await db().from("new_m_records").delete().eq("id", id);
+    // One call removes the row and hands back what has to be tidied after it.
+    const { data, error } = await db()
+      .from("new_m_records")
+      .delete()
+      .eq("id", id)
+      .select("attestation_number,issue_date,doc_filename,doc_r2_key,officer_signature_r2_key,new_m_domains(hostname)")
+      .maybeSingle();
     if (error) throw dbError(error);
+    if (!data) throw new ApiError(404, "Document not found");
+    const gone = data as unknown as {
+      attestation_number: string;
+      issue_date: string;
+      doc_filename: string;
+      doc_r2_key: string;
+      officer_signature_r2_key: string | null;
+      new_m_domains: { hostname: string } | null;
+    };
 
-    await deleteObject(existing.doc_r2_key);
-    // The signature belongs to the saved officer and other documents may show it, so it only goes
-    // when nothing does any more.
-    await releaseSignature(existing.officer_signature_r2_key);
-
-    await logActivity({
-      user_id: user.id,
-      action: "delete_new_m",
-      domain: { id: null, hostname: existing.domain_hostname },
-      file: { id: null, filename: existing.doc_filename },
-      details: { attestation_number: existing.attestation_number, issue_date: existing.issue_date },
+    after(async () => {
+      await deleteObject(gone.doc_r2_key);
+      // The signature belongs to the saved officer and other documents may show it, so it only goes
+      // when nothing does any more.
+      await releaseSignature(gone.officer_signature_r2_key);
+      await logActivity({
+        user_id: user.id,
+        action: "delete_new_m",
+        domain: { id: null, hostname: gone.new_m_domains?.hostname ?? null },
+        file: { id: null, filename: gone.doc_filename },
+        details: { attestation_number: gone.attestation_number, issue_date: gone.issue_date },
+      });
     });
     return ok({ ok: true });
   });

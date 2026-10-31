@@ -270,8 +270,8 @@ export interface NewMOfficer {
   designation: string;
   signature_r2_key: string | null;
   signature_content_type: string | null;
-  /** The signature image inline, so it can be shown, and later drawn onto a sticker, without a second request. */
-  signature_data_uri: string | null;
+  /** Short-lived link to the signature image, for showing it in the panel. */
+  signature_url: string | null;
 }
 
 export interface NewMLists {

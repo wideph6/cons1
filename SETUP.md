@@ -602,7 +602,8 @@ Panel ka address `/admin/old-m` ho gaya hai; purana `/admin/files` khud wahin le
 Supabase → **SQL Editor** → **New query** → `supabase/new-m.sql` ka poora content paste karen → **Run**.
 
 File dobara chalana hamesha mehfooz hai. Pehle chala chuke hain to bhi **dobara chalayen** — har naye version mein kuch naya hota hai
-(abhi: New M ke apne domains aur links). Jo documents pehle upload ho chuke hain wo mehfooz rehte hain: jis domain par wo bane thay
+(abhi: New M ke apne domains aur links, aur `new_m_set_qr` function jo domain ya link badalne par saare documents ke naye QR
+**aik hi database call** mein save karta hai — is ke baghair bhi kaam chalta hai, bas zyada documents par dheema). Jo documents pehle upload ho chuke hain wo mehfooz rehte hain: jis domain par wo bane thay
 wo New M ka domain ban jata hai, us ke saath "Standard" link, aur un ka link aur QR bilkul wohi rehta hai.
 
 Ban gaya ya nahi, ye check karen:
@@ -711,6 +712,41 @@ New M ki PDFs aur signatures bucket mein `new-m/` ke neeche rehti hain. **Storag
 - **Front end page** abhi nahi bana — link kholne par abhi kuch nahi milta. Jab banega, to New M ke har domain ka DNS bhi is app (Vercel) ki taraf karna hoga, bilkul Hissa 7 ki tarah.
 - **Sticker** abhi nahi banta. Us ke liye jagah rakhi gayi hai: har document ka saara data, signature aur QR code (13.5) tayyar hain, is liye sticker jab banega to download ke waqt **hamesha latest data aur latest QR** se banega — edit ke baad bhi.
 - Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
+
+---
+
+# Hissa 14 — Database functions sirf server ke liye
+
+Postgres har naye function ko **har kisi (PUBLIC)** ke liye khula rakhta hai, jab tak us se hataya na jaye. Pehle ki SQL sirf `anon` aur
+`authenticated` se hatati thi, is liye Supabase ki anon key se ye functions chal sakte thay: `increment_download`,
+`dashboard_stats`, `user_action_counts`, `user_action_breakdown` (aur New M ka `new_m_set_qr`).
+Ab SQL files inhen PUBLIC se bhi hata deti hain aur sirf `service_role` (jo app ka server use karta hai) ko ijazat deti hain. App ka
+koi kaam nahi badalta.
+
+**Pehle se bana database:** Supabase → SQL Editor mein `supabase/schema.sql` ka poora content **dobara** chalayen (mehfooz hai).
+Ya sirf ye chalayen:
+
+```sql
+revoke all on function public.increment_download(uuid)          from public, anon, authenticated;
+revoke all on function public.dashboard_stats()                 from public, anon, authenticated;
+revoke all on function public.user_action_counts(uuid)          from public, anon, authenticated;
+revoke all on function public.user_action_breakdown(uuid)       from public, anon, authenticated;
+grant execute on function public.increment_download(uuid),
+                          public.dashboard_stats(),
+                          public.user_action_counts(uuid),
+                          public.user_action_breakdown(uuid)
+   to service_role;
+```
+
+Check — `anon` ke saamne har jagah `false` aana chahiye:
+
+```sql
+select p.proname, has_function_privilege('anon', p.oid, 'execute') as anon
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in ('increment_download', 'dashboard_stats',
+                    'user_action_counts', 'user_action_breakdown', 'new_m_set_qr');
+```
 
 ---
 

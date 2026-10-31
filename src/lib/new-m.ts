@@ -2,7 +2,7 @@ import { issuedToIso, pad2, parseIssuedOn, todayIso } from "./dates";
 import { ApiError } from "./errors";
 import { cleanTemplate, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber, verifyQrSvg } from "./new-m-link";
 import { can } from "./permissions";
-import { deleteObject, getObjectBytes, headObject, isNewMKey } from "./r2";
+import { deleteObject, getObjectBytes, headObject, isNewMKey, presignDownload } from "./r2";
 import { db } from "./supabase";
 import type { NewMLists, NewMOfficer, NewMOption, NewMOptionKind, NewMRecord, User } from "./types";
 import { cleanFilename, fileExtension, guessContentType } from "./utils";
@@ -133,12 +133,17 @@ export function cleanText(input: unknown, label: string): string {
   return s;
 }
 
-/** Adds each value to its saved list, so every later upload can pick it. A value already saved is left alone. */
+/**
+ * Adds each value to its saved list, so every later upload can pick it. A value already saved is left
+ * alone. The lists are written side by side rather than one after another.
+ */
 export async function rememberOptions(user: User, values: Partial<Record<NewMOptionKind, string>>): Promise<void> {
-  for (const kind of OPTION_KINDS) {
-    const value = values[kind];
-    if (!value) continue;
-    const { error } = await db().from("new_m_options").insert({ kind, value, created_by: user.id });
+  const results = await Promise.all(
+    OPTION_KINDS.filter((kind) => values[kind]).map((kind) =>
+      db().from("new_m_options").insert({ kind, value: values[kind], created_by: user.id }),
+    ),
+  );
+  for (const { error } of results) {
     // 23505: already saved, in whatever letter case.
     if (error && error.code !== "23505") throw dbError(error);
   }
@@ -163,8 +168,22 @@ export async function signatureDataUri(key: string | null): Promise<string | nul
   return obj ? `data:${obj.contentType};base64,${Buffer.from(obj.bytes).toString("base64")}` : null;
 }
 
+/**
+ * An officer with a short-lived link to their signature, for showing it in the panel. Signing the link
+ * happens locally, so listing officers never downloads their images; the sticker, which needs the
+ * bytes, reads them through signatureDataUri instead.
+ */
 export async function withSignature(row: OfficerRow): Promise<NewMOfficer> {
-  return { ...row, signature_data_uri: await signatureDataUri(row.signature_r2_key) };
+  const url = row.signature_r2_key
+    ? await presignDownload(
+        row.signature_r2_key,
+        row.signature_r2_key.split("/").pop() ?? "signature",
+        "inline",
+        row.signature_content_type ?? "image/png",
+        3600,
+      )
+    : null;
+  return { ...row, signature_url: url };
 }
 
 export async function getOfficer(id: string): Promise<OfficerRow> {
@@ -303,12 +322,36 @@ export function checkTemplate(input: unknown, hostname: string): string {
   }
 }
 
-/** The link a document asks for, checked to belong to the document's domain. */
-export async function linkFor(domainId: string, linkId: unknown): Promise<MLinkRow> {
+export interface LinkWithHost extends MLinkRow {
+  hostname: string;
+}
+
+/** A link together with its domain's hostname, in one query. */
+export async function getLinkWithHost(linkId: unknown): Promise<LinkWithHost> {
   if (typeof linkId !== "string" || !linkId) throw new ApiError(400, "Pick the link the document should use");
-  const link = await getMLink(linkId);
+  const { data, error } = await db()
+    .from("new_m_link_templates")
+    .select("id,domain_id,name,template,created_at,updated_at,new_m_domains(hostname)")
+    .eq("id", linkId)
+    .maybeSingle();
+  if (error) throw dbError(error);
+  if (!data) throw new ApiError(404, "That link was not found");
+  const { new_m_domains: domain, ...link } = data as unknown as MLinkRow & {
+    new_m_domains: { hostname: string } | null;
+  };
+  if (!domain) throw new ApiError(404, "That link's domain was not found");
+  return { ...link, hostname: domain.hostname };
+}
+
+/** Throws unless the link is one of the domain's own. */
+export function checkLinkDomain(link: LinkWithHost, domainId: string): LinkWithHost {
   if (link.domain_id !== domainId) throw new ApiError(400, "That link belongs to another domain");
   return link;
+}
+
+/** The link a document asks for, with its domain's hostname, checked to belong to the document's domain. */
+export async function linkFor(domainId: string, linkId: unknown): Promise<LinkWithHost> {
+  return checkLinkDomain(await getLinkWithHost(linkId), domainId);
 }
 
 export async function getRecord(id: string): Promise<NewMRecord> {
@@ -318,6 +361,20 @@ export async function getRecord(id: string): Promise<NewMRecord> {
   return mapRecord(data as unknown as RawRecord);
 }
 
+/** The columns new_m_view adds to a document row. */
+export type ViewFields = Pick<
+  NewMRecord,
+  "domain_hostname" | "link_name" | "link_current_template" | "uploader_name" | "uploader_email"
+>;
+
+/**
+ * A document as the view returns it, built from the row a write hands back plus what the route
+ * already knows, so a save needs no second read.
+ */
+export function recordFromRow(row: Record<string, unknown>, view: ViewFields): NewMRecord {
+  return mapRecord({ ...(row as unknown as RawRecord), ...view });
+}
+
 /* ---------------- QR code ---------------- */
 
 /** The QR columns for a link: the code itself, the link it encodes, and when it was drawn. */
@@ -325,39 +382,81 @@ export function qrColumns(url: string): { qr_url: string; qr_svg: string; qr_upd
   return { qr_url: url, qr_svg: verifyQrSvg(url), qr_updated_at: new Date().toISOString() };
 }
 
+interface QrItem {
+  id: string;
+  qr_url: string;
+  qr_svg: string;
+  link_template: string;
+}
+
+/**
+ * Saves the QR codes of many documents in one database call per hundred (new_m_set_qr in
+ * new-m.sql). Until that function exists, falls back to one update per document.
+ */
+async function saveQr(items: QrItem[]): Promise<void> {
+  for (let i = 0; i < items.length; i += 100) {
+    const chunk = items.slice(i, i + 100);
+    const { error } = await db().rpc("new_m_set_qr", { items: chunk });
+    if (!error) continue;
+    // PGRST202 / 42883: the function is not in the database yet.
+    if (error.code !== "PGRST202" && error.code !== "42883") throw dbError(error);
+    const results = await Promise.all(
+      chunk.map(({ id, ...cols }) =>
+        db()
+          .from("new_m_records")
+          .update({ ...cols, qr_updated_at: new Date().toISOString() })
+          .eq("id", id),
+      ),
+    );
+    for (const r of results) if (r.error) throw dbError(r.error);
+  }
+}
+
 /**
  * Makes sure each document's saved QR code is the one for its complete link as it reads now, redrawing
- * and saving any that is missing or stale, and keeping the document's copy of its link in step.
+ * any that is missing or stale, saving them all in one go, and keeping each copy of its link in step.
  */
 export async function withCurrentQr(records: NewMRecord[]): Promise<NewMRecord[]> {
-  return Promise.all(
-    records.map(async (r) => {
-      const template = templateOf(r);
-      if (r.qr_svg && r.qr_url === r.verify_url && r.link_template === template) return r;
-      const patch = { ...qrColumns(r.verify_url), link_template: template };
-      const { error } = await db().from("new_m_records").update(patch).eq("id", r.id);
-      if (error) throw dbError(error);
-      return { ...r, ...patch };
-    }),
-  );
+  const stale: QrItem[] = [];
+  const out = records.map((r) => {
+    const template = templateOf(r);
+    if (r.qr_svg && r.qr_url === r.verify_url && r.link_template === template) return r;
+    const qr = qrColumns(r.verify_url);
+    stale.push({ id: r.id, qr_url: qr.qr_url, qr_svg: qr.qr_svg, link_template: template });
+    return { ...r, ...qr, link_template: template };
+  });
+  if (stale.length) await saveQr(stale);
+  return out;
 }
 
 /**
  * Redraws and saves the QR code of every document a settings change touched — a renamed domain or an
- * edited link — so the database holds the new codes straight away. Returns how many were replaced.
+ * edited link — so the database holds the new codes straight away. Reads only what builds the link,
+ * not the stored codes, and saves each page in batches. Returns how many were replaced.
  */
 export async function refreshQrWhere(column: "domain_id" | "link_id", id: string): Promise<number> {
   const PAGE = 500;
   let replaced = 0;
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await db().from("new_m_view").select("*").eq(column, id).order("id").range(from, from + PAGE - 1);
+    const { data, error } = await db()
+      .from("new_m_view")
+      .select("id,domain_hostname,link_template,link_current_template,attestation_number,issue_date,qr_url")
+      .eq(column, id)
+      .order("id")
+      .range(from, from + PAGE - 1);
     if (error) throw dbError(error);
-    const rows = (data ?? []).map((r) => mapRecord(r as never));
-    for (let i = 0; i < rows.length; i += 25) {
-      const batch = rows.slice(i, i + 25);
-      const fresh = await withCurrentQr(batch);
-      replaced += fresh.filter((r, k) => r.qr_svg !== batch[k].qr_svg).length;
+    const rows = (data ?? []) as Array<
+      Pick<NewMRecord, "id" | "domain_hostname" | "link_template" | "link_current_template" | "attestation_number" | "issue_date" | "qr_url">
+    >;
+    const stale: QrItem[] = [];
+    for (const r of rows) {
+      const template = templateOf(r);
+      const url = resolveLink(r.domain_hostname, template, r.attestation_number, r.issue_date);
+      if (r.qr_url === url && r.link_template === template) continue;
+      stale.push({ id: r.id, qr_url: url, qr_svg: verifyQrSvg(url), link_template: template });
     }
+    await saveQr(stale);
+    replaced += stale.length;
     if (rows.length < PAGE) return replaced;
   }
 }

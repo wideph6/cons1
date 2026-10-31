@@ -111,8 +111,8 @@ export function NewMSavedValues({
                       <div className="font-medium break-words">{o.name}</div>
                       <div className="text-text-muted break-words">{o.designation || "No designation"}</div>
                     </div>
-                    {o.signature_data_uri ? (
-                      <img src={o.signature_data_uri} alt={`Signature of ${o.name}`} className="h-10 max-w-40 object-contain border rounded bg-white p-1" />
+                    {o.signature_url ? (
+                      <img src={o.signature_url} alt={`Signature of ${o.name}`} className="h-10 max-w-40 object-contain border rounded bg-white p-1" />
                     ) : (
                       <span className="text-[12px] text-text-faint">No signature</span>
                     )}

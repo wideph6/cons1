@@ -115,13 +115,41 @@ export function NewMManager() {
     try {
       await api(`/api/admin/new-m/${del.id}`, { method: "DELETE" });
       toast(`${del.attestation_number} deleted`);
+      const goneId = del.id;
       setDel(null);
-      await load();
+      // Taken out of the page in place; a page left empty is reloaded so the next one moves up.
+      if (page && page.items.length > 1) {
+        setPage({ ...page, items: page.items.filter((r) => r.id !== goneId), total: page.total - 1 });
+      } else {
+        void load();
+      }
+      void loadDomains();
     } catch (e) {
       toast(errorMessage(e), "danger");
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Puts a saved document straight into the list as the server returned it, instead of reloading the
+   * page. A new one goes to the top when the first, unfiltered page is showing; anywhere else the page
+   * is reloaded so it lands where the search and paging say. Lists and domain counts refresh behind it.
+   */
+  function showSaved(item: NewMRecord, created: boolean, listsChanged: boolean) {
+    if (created) {
+      if (page && offset === 0 && !filtered) {
+        setPage({ ...page, items: [item, ...page.items].slice(0, page.limit), total: page.total + 1 });
+      } else {
+        void load();
+      }
+      void loadDomains();
+    } else if (page) {
+      setPage({ ...page, items: page.items.map((r) => (r.id === item.id ? item : r)) });
+      // A move to another domain or link changes the counts shown under Domains & links.
+      if (editing && (editing.domain_id !== item.domain_id || editing.link_id !== item.link_id)) void loadDomains();
+    }
+    if (listsChanged) void loadLists();
   }
 
   function openForm(record: NewMRecord | null) {
@@ -372,9 +400,7 @@ export function NewMManager() {
         record={editing}
         domains={domainList}
         lists={lists}
-        onSaved={async () => {
-          await Promise.all([load(), loadLists(), loadDomains()]);
-        }}
+        onSaved={showSaved}
         onListsChanged={loadLists}
       />
 
