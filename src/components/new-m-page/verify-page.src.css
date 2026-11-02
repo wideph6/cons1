@@ -275,29 +275,30 @@
   line-height: U(17.75);
   text-align: center;
   white-space: pre-line;
-  transition: color 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 .nmp-navitem.is-auto {
   padding-left: U(22);
   padding-right: U(22);
 }
+/* Hovered, the whole tab turns a lighter green with a pale bar along its foot, resting on the nav's own line. */
 .nmp-navitem::after {
   content: "";
   position: absolute;
-  left: 50%;
-  bottom: U(9);
-  width: U(26);
-  height: U(2);
-  margin-left: U(-13);
-  border-radius: U(2);
-  background: #b3c787;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: U(3.4);
+  background: #d4e7a2;
   transform: scaleX(0);
   transition: transform 0.25s ease;
 }
-.nmp-navitem:hover {
-  color: #e4f3c8;
+.nmp-navitem:hover,
+.nmp-navitem:focus-visible {
+  background: #21633e;
 }
-.nmp-navitem:hover::after {
+.nmp-navitem:hover::after,
+.nmp-navitem:focus-visible::after {
   transform: scaleX(1);
 }
 .nmp-navitem .nmp-ico-shield {
