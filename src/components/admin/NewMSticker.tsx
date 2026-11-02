@@ -1,6 +1,6 @@
 "use client";
 
-import { Crop, Download, FileCode, ImageUp, RotateCcw } from "lucide-react";
+import { Crop, Download, FileCode, ImageUp, Move, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Checkbox, Loading, Modal, errorMessage, useToast } from "@/components/ui";
 import { api, downloadSvgAsPng, downloadSvgFile } from "@/lib/client";
@@ -8,6 +8,7 @@ import { NUMBER_EXAMPLE, resolveLink, STANDARD_TEMPLATE } from "@/lib/new-m-link
 import {
   buildStickerOverlaySvg,
   buildStickerSvg,
+  clampOffset,
   clampPlacement,
   cleanPlacement,
   fitPlacement,
@@ -15,12 +16,18 @@ import {
   MIN_KEEP,
   NO_CROP,
   STICKER_H,
+  STICKER_SETS,
   STICKER_W,
+  stickerSetBoxes,
   visibleRect,
   withCrop,
+  withLayout,
   type BackgroundCrop,
   type BackgroundPlacement,
   type Measure,
+  type SetOffset,
+  type StickerLayout,
+  type StickerSetId,
   type StickerValues,
 } from "@/lib/new-m-sticker";
 import type { NewMRecord } from "@/lib/types";
@@ -141,6 +148,7 @@ export async function renderSticker(record: NewMRecord): Promise<{ svg: string; 
       background: bg.dataUri,
       placement: bg.placement,
       drawFrame: !bg.hasFrame,
+      layout: bg.placement?.layout,
       ...recordValues(record, signature),
     },
     measure,
@@ -288,9 +296,20 @@ function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean 
     close(a.y, b.y, 0.01) &&
     close(a.width, b.width, 0.01) &&
     close(a.height, b.height, 0.01) &&
-    (["top", "right", "bottom", "left"] as const).every((s) => close(ca[s], cb[s], 0.0001))
+    (["top", "right", "bottom", "left"] as const).every((s) => close(ca[s], cb[s], 0.0001)) &&
+    STICKER_SETS.every(({ id }) => {
+      const oa = a.layout?.[id] ?? STILL;
+      const ob = b.layout?.[id] ?? STILL;
+      return close(oa.dx, ob.dx, 0.01) && close(oa.dy, ob.dy, 0.01);
+    })
   );
 }
+
+const STILL: SetOffset = { dx: 0, dy: 0 };
+/** Breathing room round a set's box in the editor, in sticker units. */
+const SET_PAD = 3;
+
+const SET_NAMES = Object.fromEntries(STICKER_SETS.map((s) => [s.id, s.name])) as Record<StickerSetId, string>;
 
 /** A placement as CSS on the editor's image, in percentages of the sticker. */
 function boxStyle(p: BackgroundPlacement) {
@@ -307,8 +326,9 @@ const pct = (share: number) => `${Math.round(share * 100)}%`;
 /**
  * The super admin's background picker. Shows the image under one document's real values, signature
  * and QR code, exactly where every sticker writes them. The image is dragged in any direction and
- * zoomed until its cells sit under them, then cropped in place to cut off what is not wanted; that
- * position and crop are saved for every sticker, on screen and downloaded.
+ * zoomed until its cells sit under them, then cropped in place to cut off what is not wanted. The
+ * values with their labels, the QR code with its border, the signature and the designation can be
+ * moved too, set by set. All of it is saved for every sticker, on screen and downloaded.
  */
 export function NewMBackgroundDialog({
   open,
@@ -329,6 +349,11 @@ export function NewMBackgroundDialog({
   const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
   /** Showing the crop handles and the cut-off parts. */
   const [cropping, setCropping] = useState(false);
+  /** The sets moved off their measured places. */
+  const [layout, setLayout] = useState<StickerLayout>({});
+  /** Moving the values and QR code instead of the image. */
+  const [arranging, setArranging] = useState(false);
+  const [selected, setSelected] = useState<StickerSetId | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -337,10 +362,12 @@ export function NewMBackgroundDialog({
   const frameRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; x: number; y: number; from: BackgroundPlacement } | null>(null);
   const cropDrag = useRef<{ id: number; side: Side } | null>(null);
+  const setDrag = useRef<{ id: number; set: StickerSetId; x: number; y: number; from: SetOffset } | null>(null);
 
   function showSaved(p: BackgroundPlacement | null) {
     setPlacement(box(p ?? FULL_PLACEMENT));
     setCrop(p?.crop ?? NO_CROP);
+    setLayout(p?.layout ?? {});
   }
 
   useEffect(() => {
@@ -349,6 +376,8 @@ export function NewMBackgroundDialog({
     setSaved(null);
     setImage(null);
     setCropping(false);
+    setArranging(false);
+    setSelected(null);
     setError(null);
     setLoading(true);
     let cancelled = false;
@@ -391,13 +420,20 @@ export function NewMBackgroundDialog({
     };
   }, [open, sample]);
 
-  // Everything but the background, redrawn only when the values or the frame setting change; dragging
-  // moves the image underneath it.
+  const values = useMemo(() => (sample ? recordValues(sample, signature) : sampleValues()), [sample, signature]);
+
+  // Everything but the background, redrawn when the values, the frame setting or a moved set change;
+  // dragging the image only moves it underneath.
   const overlay = useMemo(() => {
     if (!open) return null;
-    const values = sample ? recordValues(sample, signature) : sampleValues();
-    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, ...values }, measure));
-  }, [open, sample, signature, hasFrame]);
+    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, ...values }, measure));
+  }, [open, values, hasFrame, layout]);
+
+  /** Where each set is drawn before it is moved, for grabbing it. */
+  const setBoxes = useMemo(
+    () => (open ? stickerSetBoxes({ drawFrame: !hasFrame, ...values }, measure) : {}),
+    [open, values, hasFrame],
+  );
 
   async function choose(file: File | null) {
     setError(null);
@@ -420,13 +456,15 @@ export function NewMBackgroundDialog({
     setHasFrame(info?.has_frame ?? false);
     showSaved(info?.placement ?? null);
     setCropping(false);
+    setArranging(false);
+    setSelected(null);
   }
 
   async function save() {
     if (!image) return;
     setBusy(true);
     try {
-      const sent = withCrop(placement, crop);
+      const sent = withLayout(withCrop(placement, crop), layout);
       let next: BackgroundInfo;
       if (image.file) {
         const form = new FormData();
@@ -450,7 +488,9 @@ export function NewMBackgroundDialog({
       setImage(current);
       showSaved(next.placement);
       setCropping(false);
-      toast(image.file ? "Background saved — every sticker now uses it" : "Position saved — every sticker now uses it");
+      setArranging(false);
+      setSelected(null);
+      toast(image.file ? "Background saved — every sticker now uses it" : "Saved — every sticker now uses it");
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -480,6 +520,8 @@ export function NewMBackgroundDialog({
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (!image || busy) return;
+    // While the values are being moved, the image stays put; a click beside every set lets go of the chosen one.
+    if (arranging) return setSelected(null);
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, from: placement };
   }
@@ -507,8 +549,44 @@ export function NewMBackgroundDialog({
     const move = moves[e.key];
     if (!move || !image || busy) return;
     e.preventDefault();
+    if (arranging) {
+      if (selected) moveSet(selected, (o) => ({ dx: o.dx + move[0], dy: o.dy + move[1] }));
+      return;
+    }
     setPlacement((p) => kept({ ...p, x: p.x + move[0], y: p.y + move[1] }));
   }
+
+  /* ----- Moving the values, labels and QR code ----- */
+
+  /** Moves one set, never off the sticker. */
+  function moveSet(set: StickerSetId, to: (from: SetOffset) => SetOffset) {
+    const b = setBoxes[set];
+    if (!b) return;
+    setLayout((l) => ({ ...l, [set]: clampOffset(b, to(l[set] ?? STILL)) }));
+  }
+
+  function onSetDown(set: StickerSetId, e: PointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    if (busy) return;
+    setSelected(set);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag.current = { id: e.pointerId, set, x: e.clientX, y: e.clientY, from: layout[set] ?? STILL };
+  }
+
+  function onSetMove(e: PointerEvent<HTMLDivElement>) {
+    const d = setDrag.current;
+    const frame = frameRef.current;
+    if (!d || d.id !== e.pointerId || !frame) return;
+    const unit = STICKER_W / frame.clientWidth;
+    moveSet(d.set, () => ({ dx: d.from.dx + (e.clientX - d.x) * unit, dy: d.from.dy + (e.clientY - d.y) * unit }));
+  }
+
+  function onSetUp(e: PointerEvent<HTMLDivElement>) {
+    if (setDrag.current?.id === e.pointerId) setDrag.current = null;
+  }
+
+  const movedAny = Object.values(layout).some((o) => o && (o.dx !== 0 || o.dy !== 0));
+  const selectedOffset = selected ? (layout[selected] ?? STILL) : null;
 
   /* ----- Cropping ----- */
 
@@ -560,7 +638,7 @@ export function NewMBackgroundDialog({
     image &&
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
-        !samePlacement(withCrop(placement, crop), info?.placement ?? FULL_PLACEMENT)),
+        !samePlacement(withLayout(withCrop(placement, crop), layout), info?.placement ?? FULL_PLACEMENT)),
   );
   // The layout is measured on a 958 x 761 sheet; an image of other proportions needs moving and cropping to fit.
   const ratioOff = image ? Math.abs(image.width / image.height / (STICKER_W / STICKER_H) - 1) > 0.015 : false;
@@ -607,8 +685,9 @@ export function NewMBackgroundDialog({
         <p className="text-[13px] text-text-muted">
           Every sticker is drawn on this image; only the super admin can change it, and it is kept in storage, not in the
           app&apos;s code. The values, signature and QR code always sit where they are shown here: drag the image and zoom
-          until its cells line up under them, then crop off what is not wanted, and save. Every sticker, on screen and
-          downloaded, uses that position and crop.
+          until its cells line up under them, then crop off what is not wanted. With Move text &amp; QR, each value with its
+          label, the QR code with its border, the signature and the designation can be moved too. Save, and every sticker,
+          on screen and downloaded, is made exactly so.
         </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {image?.file ? (
@@ -706,6 +785,42 @@ export function NewMBackgroundDialog({
                   })}
                 </>
               ) : null}
+              {arranging
+                ? STICKER_SETS.map(({ id }) => {
+                    const b = setBoxes[id];
+                    if (!b) return null;
+                    const o = layout[id] ?? STILL;
+                    const on = selected === id;
+                    return (
+                      <div
+                        key={id}
+                        role="button"
+                        aria-label={`Move ${SET_NAMES[id]}`}
+                        aria-pressed={on}
+                        title={SET_NAMES[id]}
+                        className={`absolute rounded-sm touch-none cursor-move ${
+                          on ? "border-2 border-teal-600 bg-teal-600/10" : "border border-dashed border-teal-600 bg-teal-600/5 hover:bg-teal-600/15"
+                        }`}
+                        style={{
+                          left: `${((b.x + o.dx - SET_PAD) / STICKER_W) * 100}%`,
+                          top: `${((b.y + o.dy - SET_PAD) / STICKER_H) * 100}%`,
+                          width: `${((b.width + 2 * SET_PAD) / STICKER_W) * 100}%`,
+                          height: `${((b.height + 2 * SET_PAD) / STICKER_H) * 100}%`,
+                        }}
+                        onPointerDown={(e) => onSetDown(id, e)}
+                        onPointerMove={onSetMove}
+                        onPointerUp={onSetUp}
+                        onPointerCancel={onSetUp}
+                      >
+                        {on ? (
+                          <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-teal-600 px-1.5 text-[11px] leading-4 text-white">
+                            {SET_NAMES[id]}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                : null}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[12.5px] text-text-muted">
               <label className="inline-flex items-center gap-2">
@@ -740,7 +855,11 @@ export function NewMBackgroundDialog({
                 variant={cropping ? "primary" : undefined}
                 icon={<Crop className="size-3.5" />}
                 disabled={busy}
-                onClick={() => setCropping((c) => !c)}
+                onClick={() => {
+                  setCropping((c) => !c);
+                  setArranging(false);
+                  setSelected(null);
+                }}
               >
                 {cropping ? "Done cropping" : "Crop"}
               </Button>
@@ -749,11 +868,48 @@ export function NewMBackgroundDialog({
                   Remove crop
                 </Button>
               ) : null}
+              <Button
+                size="sm"
+                variant={arranging ? "primary" : undefined}
+                icon={<Move className="size-3.5" />}
+                disabled={busy}
+                onClick={() => {
+                  setArranging((a) => !a);
+                  setCropping(false);
+                  setSelected(null);
+                }}
+              >
+                {arranging ? "Done moving" : "Move text & QR"}
+              </Button>
+              {arranging && selected && selectedOffset && (selectedOffset.dx !== 0 || selectedOffset.dy !== 0) ? (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() =>
+                    setLayout((l) => {
+                      const next = { ...l };
+                      delete next[selected];
+                      return next;
+                    })
+                  }
+                >
+                  Put this one back
+                </Button>
+              ) : null}
+              {movedAny ? (
+                <Button size="sm" disabled={busy} onClick={() => setLayout({})}>
+                  Put all text & QR back
+                </Button>
+              ) : null}
             </div>
             <p className="text-[12.5px] text-text-muted">
-              {cropping
-                ? `Drag the white handles on the image's edges to cut off what is not wanted; the faded part is cut off. Cut: top ${pct(crop.top)}, right ${pct(crop.right)}, bottom ${pct(crop.bottom)}, left ${pct(crop.left)}.`
-                : `Drag the image to move it in any direction · arrow keys nudge by 1, with Shift by 10 · left ${Math.round(placement.x)}, top ${Math.round(placement.y)}.`}{" "}
+              {arranging
+                ? selected && selectedOffset
+                  ? `${SET_NAMES[selected]}: moved ${Math.round(selectedOffset.dx)} across, ${Math.round(selectedOffset.dy)} down · drag it, or nudge it with the arrow keys by 1, with Shift by 10.`
+                  : "Click a value with its label, the QR code, the signature or the designation, and drag it where it belongs. The signature and the designation move on their own."
+                : cropping
+                  ? `Drag the white handles on the image's edges to cut off what is not wanted; the faded part is cut off. Cut: top ${pct(crop.top)}, right ${pct(crop.right)}, bottom ${pct(crop.bottom)}, left ${pct(crop.left)}.`
+                  : `Drag the image to move it in any direction · arrow keys nudge by 1, with Shift by 10 · left ${Math.round(placement.x)}, top ${Math.round(placement.y)}.`}{" "}
               {sample
                 ? `Shown with the values of ${sample.attestation_number}, the first document in the list.`
                 : "Shown with sample values — there are no documents yet."}

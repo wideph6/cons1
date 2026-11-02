@@ -745,7 +745,12 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
   (**958 × 761**) se alag ho to **Stretch to fit** se poori image khench kar bhi lag sakti hai.
 - Jagah set karne ke baad **Crop** dabayen: image ke kinaron par safed handles aate hain. Inhein ghaseet kar image ka **izafi hissa
   kaat** dein — kata hua hissa halka (faded) dikhta hai. **Done cropping** se wapas, **Remove crop** se crop khatam.
-- Sab theek ho to **Use this background** (nayi image) ya **Save position** (sirf jagah/crop badla ho).
+- **Move text & QR** dabayen to har cheez ke gird dashed dabba aa jata hai. Kisi bhi dabbe ko ghaseet kar us ki jagah badlen
+  (chuni hui cheez arrow keys se bhi 1, Shift ke saath 10 qadam hilti hai). Har value apne label ke saath aik set hai (jaise
+  "4 by" + issuing authority), QR code apni border ke saath, aur "1 Country Pakistan" alag set. **Signature** aur **designation**
+  alag alag hilte hain. **Put this one back** sirf chuni hui cheez, **Put all text & QR back** sab ko wapas asal jagah le aata hai.
+  **Done moving** se wapas image hilane par.
+- Sab theek ho to **Use this background** (nayi image) ya **Save position** (sirf jagah/crop/text ki jagah badli ho).
   Wohi jagah aur crop save hote hain aur har sticker — screen par bhi aur download mein bhi — bilkul waisa hi banta hai.
 - Nayi image purani ki jagah le leti hai; purani file storage se mita di jati hai.
 - Nayi image mein **labels aur QR ki border pehle se chhape** hon to **"This image already has the labels and the QR border printed

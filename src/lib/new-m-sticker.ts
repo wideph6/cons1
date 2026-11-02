@@ -68,21 +68,50 @@ export const QR_BOX = {
 
 /* ---------------- The fixed parts the app draws ---------------- */
 
+/**
+ * The parts of the sticker the super admin can move over the background: each value together with
+ * its own label, the QR code together with its border, and the signature and the designation each on
+ * their own.
+ */
+export const STICKER_SETS = [
+  { id: "country", name: "1 Country Pakistan" },
+  { id: "documentType", name: "Document type" },
+  { id: "issuingOffice", name: "Issuing office (2 at)" },
+  { id: "dateLong", name: "Date (3 the)" },
+  { id: "issuingAuthority", name: "Issuing authority (4 by)" },
+  { id: "number", name: "Number (5 No.)" },
+  { id: "dateShort", name: "Date (Date:)" },
+  { id: "signature", name: "Signature" },
+  { id: "designation", name: "Designation" },
+  { id: "qr", name: "QR code" },
+] as const;
+
+export type StickerSetId = (typeof STICKER_SETS)[number]["id"];
+
+/** How far a set was moved from its measured place, in sticker units. */
+export interface SetOffset {
+  dx: number;
+  dy: number;
+}
+
+/** Only the sets that were moved. */
+export type StickerLayout = Partial<Record<StickerSetId, SetOffset>>;
+
 /** Labels in Georgia regular 19 px, black; "Pakistan" is bold, as on the reference. Baselines as measured. */
-const LABELS: Array<{ text: string; x: number; y: number; bold?: boolean }> = [
-  { text: "1", x: 88, y: 121 },
-  { text: "Country", x: 105, y: 121 },
-  { text: "Pakistan", x: 179, y: 121, bold: true },
-  { text: "This Public Document", x: 293, y: 121 },
-  { text: "2", x: 594, y: 121 },
-  { text: "at", x: 609, y: 121 },
-  { text: "3", x: 87, y: 202 },
-  { text: "the", x: 109, y: 202 },
-  { text: "4", x: 86, y: 273 },
-  { text: "by", x: 108, y: 273 },
-  { text: "5", x: 86, y: 345 },
-  { text: "No.", x: 107, y: 345 },
-  { text: "Date:", x: 88, y: 392 },
+const LABELS: Array<{ text: string; x: number; y: number; bold?: boolean; set: StickerSetId }> = [
+  { text: "1", x: 88, y: 121, set: "country" },
+  { text: "Country", x: 105, y: 121, set: "country" },
+  { text: "Pakistan", x: 179, y: 121, bold: true, set: "country" },
+  { text: "This Public Document", x: 293, y: 121, set: "documentType" },
+  { text: "2", x: 594, y: 121, set: "issuingOffice" },
+  { text: "at", x: 609, y: 121, set: "issuingOffice" },
+  { text: "3", x: 87, y: 202, set: "dateLong" },
+  { text: "the", x: 109, y: 202, set: "dateLong" },
+  { text: "4", x: 86, y: 273, set: "issuingAuthority" },
+  { text: "by", x: 108, y: 273, set: "issuingAuthority" },
+  { text: "5", x: 86, y: 345, set: "number" },
+  { text: "No.", x: 107, y: 345, set: "number" },
+  { text: "Date:", x: 88, y: 392, set: "dateShort" },
 ];
 /**
  * A thin outline on the regular labels. Against the reference they came out lighter than the values
@@ -157,11 +186,16 @@ function valueEl(slot: TextSlot, value: string, measure: Measure): string {
   return text(slot.x, slot.y, t, size, slot.weight, { anchor: slot.anchor });
 }
 
+/** Wraps a set's drawing in its move, when it was moved. */
+type Mover = (set: StickerSetId, svg: string) => string;
+
 /** The labels. The title bar and table lines come with the background image; the app does not draw them. */
-function frameEl(): string {
+function frameEl(moved: Mover): string {
   const parts: string[] = [];
   for (const l of LABELS) {
-    parts.push(l.bold ? text(l.x, l.y, l.text, 19, "bold") : text(l.x, l.y, l.text, 19, "normal", { outline: LABEL_OUTLINE }));
+    parts.push(
+      moved(l.set, l.bold ? text(l.x, l.y, l.text, 19, "bold") : text(l.x, l.y, l.text, 19, "normal", { outline: LABEL_OUTLINE })),
+    );
   }
   return parts.join("");
 }
@@ -227,6 +261,8 @@ export interface BackgroundPlacement {
   height: number;
   /** Left out when nothing is cropped. */
   crop?: BackgroundCrop;
+  /** The values, labels and QR code the super admin moved to line up with this image; left out when none were. */
+  layout?: StickerLayout;
 }
 
 /** No position saved: the image is stretched over the whole sticker. */
@@ -245,11 +281,35 @@ export function fitPlacement(imageWidth: number, imageHeight: number): Backgroun
   return { x: (STICKER_W - width) / 2, y: (STICKER_H - height) / 2, width, height };
 }
 
-/** The placement with this crop, or with none when nothing is cut off. */
+/** The placement with this crop, or with none when nothing is cut off. Any layout is left out. */
 export function withCrop(p: BackgroundPlacement, crop: BackgroundCrop): BackgroundPlacement {
   const { x, y, width, height } = p;
   const cut = crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0;
   return cut ? { x, y, width, height, crop: { ...crop } } : { x, y, width, height };
+}
+
+/** The placement with only the sets that were really moved, or with no layout when none were. */
+export function withLayout(p: BackgroundPlacement, layout: StickerLayout): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.layout;
+  const moved = Object.fromEntries(Object.entries(layout).filter(([, o]) => o && (o.dx !== 0 || o.dy !== 0)));
+  return Object.keys(moved).length ? { ...rest, layout: moved } : rest;
+}
+
+const SET_IDS: ReadonlySet<string> = new Set(STICKER_SETS.map((s) => s.id));
+
+/** Known sets, each moved by numbers no larger than the sticker itself, or null when it is not that. */
+function cleanLayout(v: unknown): StickerLayout | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: StickerLayout = {};
+  for (const [set, o] of Object.entries(v as Record<string, unknown>)) {
+    if (!SET_IDS.has(set) || !o || typeof o !== "object") return null;
+    const { dx, dy } = o as Record<string, unknown>;
+    if (typeof dx !== "number" || typeof dy !== "number" || !Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+    if (Math.abs(dx) > STICKER_W || Math.abs(dy) > STICKER_H) return null;
+    out[set as StickerSetId] = { dx: n(dx), dy: n(dy) };
+  }
+  return out;
 }
 
 /** The part of the sticker the cropped image covers (it may reach past the sticker's edges). */
@@ -285,7 +345,7 @@ function cleanCrop(v: unknown): BackgroundCrop | null {
 
 /**
  * A saved or sent placement, or null when it is not one: numbers, a sane size, a crop that leaves
- * something, and some of the image on the sticker.
+ * something, some of the image on the sticker, and moves only of known sets.
  */
 export function cleanPlacement(v: unknown): BackgroundPlacement | null {
   if (!v || typeof v !== "object") return null;
@@ -301,7 +361,13 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     if (!c) return null;
     crop = c;
   }
-  const placed = withCrop(p, crop);
+  let layout: StickerLayout = {};
+  if (raw.layout !== undefined && raw.layout !== null) {
+    const l = cleanLayout(raw.layout);
+    if (!l) return null;
+    layout = l;
+  }
+  const placed = withLayout(withCrop(p, crop), layout);
   const s = visibleRect(placed);
   const onSticker = s.x < STICKER_W && s.y < STICKER_H && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;
@@ -340,6 +406,8 @@ export interface StickerValues {
 export interface StickerContent extends StickerValues {
   /** Draw the labels and the QR border. Off only for a background that already has them printed on it. */
   drawFrame: boolean;
+  /** The sets the super admin moved; the rest stay at their measured places. */
+  layout?: StickerLayout;
 }
 
 export interface StickerInput extends StickerContent {
@@ -366,26 +434,103 @@ export function buildStickerOverlaySvg(input: StickerContent, measure: Measure):
   return wrap(contentEl(input, measure));
 }
 
-/** The frame, values, signature and QR code, drawn over the background. */
+/** The frame, values, signature and QR code, drawn over the background, each set where it was moved to. */
 function contentEl(input: StickerContent, measure: Measure): string {
+  const moved: Mover = (set, svg) => {
+    const o = input.layout?.[set];
+    return svg && o && (o.dx || o.dy) ? `<g transform="translate(${n(o.dx)} ${n(o.dy)})">${svg}</g>` : svg;
+  };
   const parts: string[] = [];
-  if (input.drawFrame) parts.push(frameEl());
+  if (input.drawFrame) parts.push(frameEl(moved));
 
-  parts.push(valueEl(SLOTS.documentType, input.documentType, measure));
-  parts.push(valueEl(SLOTS.issuingOffice, input.issuingOffice, measure));
-  parts.push(valueEl(SLOTS.dateLong, longDate(input.issueDate), measure));
-  parts.push(valueEl(SLOTS.issuingAuthority, input.issuingAuthority, measure));
-  parts.push(valueEl(SLOTS.number, input.attestationNumber, measure));
-  parts.push(valueEl(SLOTS.dateShort, shortDate(input.issueDate), measure));
+  for (const [set, value] of valueTexts(input)) {
+    if (set !== "designation") parts.push(moved(set, valueEl(SLOTS[set], value, measure)));
+  }
 
   if (input.signature) {
     const b = SIGNATURE_BOX;
     parts.push(
-      `<image href="${input.signature}" xlink:href="${input.signature}" x="${b.x}" y="${b.y}" width="${b.width}" ` +
-        `height="${b.height}" preserveAspectRatio="xMidYMid meet"/>`,
+      moved(
+        "signature",
+        `<image href="${input.signature}" xlink:href="${input.signature}" x="${b.x}" y="${b.y}" width="${b.width}" ` +
+          `height="${b.height}" preserveAspectRatio="xMidYMid meet"/>`,
+      ),
     );
   }
-  parts.push(valueEl(SLOTS.designation, input.designation, measure));
-  parts.push(qrEl(input.qrSvg, input.qrUrl, input.drawFrame));
+  parts.push(moved("designation", valueEl(SLOTS.designation, input.designation, measure)));
+  parts.push(moved("qr", qrEl(input.qrSvg, input.qrUrl, input.drawFrame)));
   return parts.join("");
+}
+
+/** Each value slot with the text it shows, in drawing order. */
+function valueTexts(input: StickerValues): Array<[keyof typeof SLOTS, string]> {
+  return [
+    ["documentType", input.documentType],
+    ["issuingOffice", input.issuingOffice],
+    ["dateLong", longDate(input.issueDate)],
+    ["issuingAuthority", input.issuingAuthority],
+    ["number", input.attestationNumber],
+    ["dateShort", shortDate(input.issueDate)],
+    ["designation", input.designation],
+  ];
+}
+
+/* ---------------- The movable sets ---------------- */
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Room given to a value with nothing written in it, so its set can still be grabbed. */
+const EMPTY_VALUE_WIDTH = 120;
+
+/**
+ * Each set's box where it is drawn before any move: the area the editor lets the super admin grab.
+ * A set with nothing drawn (the labels of a background that has them printed) has no box.
+ */
+export function stickerSetBoxes(input: StickerContent, measure: Measure): Partial<Record<StickerSetId, Rect>> {
+  const parts: Partial<Record<StickerSetId, Rect[]>> = {};
+  const add = (set: StickerSetId, r: Rect) => (parts[set] ??= []).push(r);
+  // From a little above the capitals to a little below the baseline.
+  const textBox = (x: number, y: number, size: number, width: number, anchor: "start" | "middle"): Rect => ({
+    x: anchor === "middle" ? x - width / 2 : x,
+    y: y - size * 0.85,
+    width,
+    height: size * 1.1,
+  });
+
+  if (input.drawFrame) {
+    for (const l of LABELS) add(l.set, textBox(l.x, l.y, 19, measure(l.text, `${l.bold ? "bold" : "normal"} 19px ${FONT_FAMILY}`), "start"));
+  }
+  for (const [set, value] of valueTexts(input)) {
+    const slot: TextSlot = SLOTS[set];
+    const t = value.trim();
+    // A value too wide for its cell is set smaller, so it never reaches past maxWidth.
+    const width = t ? Math.min(measure(t, fontFor(slot)), slot.maxWidth) : 0;
+    if (width) add(set, textBox(slot.x, slot.y, slot.size, width, slot.anchor));
+    else if (!parts[set]) add(set, textBox(slot.x, slot.y, slot.size, Math.min(EMPTY_VALUE_WIDTH, slot.maxWidth), slot.anchor));
+  }
+  add("signature", SIGNATURE_BOX);
+  add("qr", QR_BORDER);
+
+  const boxes: Partial<Record<StickerSetId, Rect>> = {};
+  for (const [set, rects] of Object.entries(parts) as Array<[StickerSetId, Rect[]]>) {
+    const x1 = Math.min(...rects.map((r) => r.x));
+    const y1 = Math.min(...rects.map((r) => r.y));
+    const x2 = Math.max(...rects.map((r) => r.x + r.width));
+    const y2 = Math.max(...rects.map((r) => r.y + r.height));
+    boxes[set] = { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+  }
+  return boxes;
+}
+
+/** A move that keeps the set's box on the sticker. */
+export function clampOffset(box: Rect, o: SetOffset): SetOffset {
+  return {
+    dx: Math.min(Math.max(o.dx, -box.x), STICKER_W - box.x - box.width),
+    dy: Math.min(Math.max(o.dy, -box.y), STICKER_H - box.y - box.height),
+  };
 }
