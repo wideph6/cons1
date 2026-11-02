@@ -88,6 +88,12 @@ async function newMOfficerKeys(): Promise<string[]> {
   return [...keys, background.background_r2_key].filter((k): k is string => Boolean(k));
 }
 
+/** The top folder of a storage key: "new-m/" for "new-m/docs/<id>/a.pdf". */
+function topFolder(key: string): string {
+  const i = key.indexOf("/");
+  return i > 0 ? key.slice(0, i + 1) : "";
+}
+
 /** Compares what the bucket holds with what the database expects to be there. */
 async function buildReport(): Promise<StorageReport> {
   const [files, newM, rows, mRows, mOfficerKeys] = await Promise.all([
@@ -98,8 +104,17 @@ async function buildReport(): Promise<StorageReport> {
     newMOfficerKeys(),
   ]);
 
-  const objects = [...files.objects, ...newM.objects];
-  const truncated = files.truncated || newM.truncated;
+  // New M saves under new-m/, but a file stays in the folder it was uploaded to when that folder's name
+  // changes later, so every other folder a stored key points into is listed too.
+  const listed = new Set([MANAGED_PREFIX, NEW_M_PREFIX]);
+  const storedKeys = [...mRows.flatMap((m) => [m.doc_r2_key, m.officer_signature_r2_key]), ...mOfficerKeys];
+  const earlierFolders = [...new Set(storedKeys.filter((k): k is string => Boolean(k)).map(topFolder))].filter(
+    (f) => f && !listed.has(f),
+  );
+  const earlier = await Promise.all(earlierFolders.map((f) => listAllObjects(f)));
+
+  const objects = [...files.objects, ...newM.objects, ...earlier.flatMap((e) => e.objects)];
+  const truncated = files.truncated || newM.truncated || earlier.some((e) => e.truncated);
 
   const byKey = new Map(objects.map((o) => [o.key, o]));
   const usedKeys = new Set(rows.map((r) => r.r2_key));

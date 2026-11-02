@@ -769,7 +769,8 @@ Super admin ko sab milta hai. Jis user ke paas in mein se koi bhi nahi, us ko si
 
 ## 13.7 Storage
 
-New M ki PDFs, signatures aur sticker background bucket mein `new-m/` ke neeche rehti hain. **Storage** page in ko bhi ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document, saved officer ya mojooda background ki ho.
+New M ki PDFs, signatures aur sticker background bucket mein `new-m/` ke neeche rehti hain (folder ka naam badalne se pehle upload
+hui files apne purane folder mein hi rehti hain aur waise hi chalti hain). **Storage** page in sab ko ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document, saved officer ya mojooda background ki ho.
 
 ## 13.8 Abhi kya nahi bana
 
