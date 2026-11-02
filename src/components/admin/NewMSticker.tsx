@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileCode, ImageUp, RotateCcw } from "lucide-react";
+import { Crop, Download, FileCode, ImageUp, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Checkbox, Loading, Modal, errorMessage, useToast } from "@/components/ui";
 import { api, downloadSvgAsPng, downloadSvgFile } from "@/lib/client";
@@ -10,10 +10,15 @@ import {
   buildStickerSvg,
   clampPlacement,
   cleanPlacement,
-  coverPlacement,
+  fitPlacement,
   FULL_PLACEMENT,
+  MIN_KEEP,
+  NO_CROP,
   STICKER_H,
   STICKER_W,
+  visibleRect,
+  withCrop,
+  type BackgroundCrop,
   type BackgroundPlacement,
   type Measure,
   type StickerValues,
@@ -231,7 +236,7 @@ export function NewMStickerDialog({ record, onClose }: { record: NewMRecord | nu
 interface BackgroundInfo {
   uploaded: boolean;
   filename: string | null;
-  /** The uploaded image already has the title bar, lines and labels on it. */
+  /** The uploaded image already has the labels and the QR border on it. */
   has_frame: boolean;
   placement: BackgroundPlacement | null;
   updated_at: string | null;
@@ -244,6 +249,8 @@ interface EditorImage {
   height: number;
   file: File | null;
 }
+
+type Side = keyof BackgroundCrop;
 
 /** Shown when there are no documents yet to take real values from. */
 function sampleValues(): StickerValues {
@@ -263,22 +270,45 @@ function sampleValues(): StickerValues {
   };
 }
 
+/** Zoom is the image's width against the sticker's: 1 is as wide as the sticker. */
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 4;
 
+/** Position and size only; the crop is kept apart while editing. */
+function box(p: BackgroundPlacement): BackgroundPlacement {
+  return { x: p.x, y: p.y, width: p.width, height: p.height };
+}
+
 function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean {
+  const ca = a.crop ?? NO_CROP;
+  const cb = b.crop ?? NO_CROP;
+  const close = (u: number, v: number, by: number) => Math.abs(u - v) < by;
   return (
-    Math.abs(a.x - b.x) < 0.01 &&
-    Math.abs(a.y - b.y) < 0.01 &&
-    Math.abs(a.width - b.width) < 0.01 &&
-    Math.abs(a.height - b.height) < 0.01
+    close(a.x, b.x, 0.01) &&
+    close(a.y, b.y, 0.01) &&
+    close(a.width, b.width, 0.01) &&
+    close(a.height, b.height, 0.01) &&
+    (["top", "right", "bottom", "left"] as const).every((s) => close(ca[s], cb[s], 0.0001))
   );
 }
 
+/** A placement as CSS on the editor's image, in percentages of the sticker. */
+function boxStyle(p: BackgroundPlacement) {
+  return {
+    left: `${(p.x / STICKER_W) * 100}%`,
+    top: `${(p.y / STICKER_H) * 100}%`,
+    width: `${(p.width / STICKER_W) * 100}%`,
+    height: `${(p.height / STICKER_H) * 100}%`,
+  };
+}
+
+const pct = (share: number) => `${Math.round(share * 100)}%`;
+
 /**
  * The super admin's background picker. Shows the image under one document's real values, signature
- * and QR code, exactly where every sticker writes them; the image is dragged and zoomed until its
- * cells sit under them, and that position is saved for every sticker, on screen and downloaded. The
- * image always covers the whole sticker: zooming in crops it.
+ * and QR code, exactly where every sticker writes them. The image is dragged in any direction and
+ * zoomed until its cells sit under them, then cropped in place to cut off what is not wanted; that
+ * position and crop are saved for every sticker, on screen and downloaded.
  */
 export function NewMBackgroundDialog({
   open,
@@ -296,18 +326,29 @@ export function NewMBackgroundDialog({
   const [saved, setSaved] = useState<EditorImage | null>(null);
   const [image, setImage] = useState<EditorImage | null>(null);
   const [placement, setPlacement] = useState<BackgroundPlacement>(FULL_PLACEMENT);
+  const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
+  /** Showing the crop handles and the cut-off parts. */
+  const [cropping, setCropping] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; x: number; y: number; from: BackgroundPlacement } | null>(null);
+  const cropDrag = useRef<{ id: number; side: Side } | null>(null);
+
+  function showSaved(p: BackgroundPlacement | null) {
+    setPlacement(box(p ?? FULL_PLACEMENT));
+    setCrop(p?.crop ?? NO_CROP);
+  }
 
   useEffect(() => {
     if (!open) return;
     setInfo(null);
     setSaved(null);
     setImage(null);
+    setCropping(false);
     setError(null);
     setLoading(true);
     let cancelled = false;
@@ -316,7 +357,7 @@ export function NewMBackgroundDialog({
       if (cancelled) return;
       setInfo(i);
       setHasFrame(i.has_frame);
-      setPlacement(i.placement ?? FULL_PLACEMENT);
+      showSaved(i.placement);
       if (!i.uploaded) return;
       forgetBackground();
       const bg = await loadBackground();
@@ -367,7 +408,9 @@ export function NewMBackgroundDialog({
     const size = await imageSize(dataUri);
     if (!size.width || !size.height) return setError("That image could not be opened.");
     setImage({ dataUri, ...size, file });
-    setPlacement(coverPlacement(size.width, size.height));
+    setPlacement(fitPlacement(size.width, size.height));
+    setCrop(NO_CROP);
+    setCropping(false);
     setHasFrame(false);
   }
 
@@ -375,19 +418,21 @@ export function NewMBackgroundDialog({
     setError(null);
     setImage(saved);
     setHasFrame(info?.has_frame ?? false);
-    setPlacement(info?.placement ?? FULL_PLACEMENT);
+    showSaved(info?.placement ?? null);
+    setCropping(false);
   }
 
   async function save() {
     if (!image) return;
     setBusy(true);
     try {
+      const sent = withCrop(placement, crop);
       let next: BackgroundInfo;
       if (image.file) {
         const form = new FormData();
         form.append("file", image.file);
         form.append("has_frame", hasFrame ? "1" : "0");
-        form.append("placement", JSON.stringify(placement));
+        form.append("placement", JSON.stringify(sent));
         const res = await fetch("/api/admin/new-m/background", { method: "POST", body: form });
         const body = (await res.json().catch(() => ({}))) as BackgroundInfo & { error?: string };
         if (!res.ok) throw new Error(body.error ?? `Saving failed (${res.status})`);
@@ -395,7 +440,7 @@ export function NewMBackgroundDialog({
       } else {
         next = await api<BackgroundInfo>("/api/admin/new-m/background", {
           method: "PATCH",
-          json: { has_frame: hasFrame, placement },
+          json: { has_frame: hasFrame, placement: sent },
         });
       }
       forgetBackground();
@@ -403,7 +448,8 @@ export function NewMBackgroundDialog({
       setInfo(next);
       setSaved(current);
       setImage(current);
-      setPlacement(next.placement ?? FULL_PLACEMENT);
+      showSaved(next.placement);
+      setCropping(false);
       toast(image.file ? "Background saved — every sticker now uses it" : "Position saved — every sticker now uses it");
     } catch (e) {
       setError(errorMessage(e));
@@ -414,17 +460,22 @@ export function NewMBackgroundDialog({
 
   /* ----- Moving and zooming ----- */
 
-  const cover = image ? coverPlacement(image.width, image.height) : FULL_PLACEMENT;
-  const zoom = Math.max(1, placement.width / cover.width);
+  /** Keeps some of the cropped image on the sticker. */
+  function kept(p: BackgroundPlacement, c: BackgroundCrop = crop): BackgroundPlacement {
+    return box(clampPlacement(withCrop(p, c)));
+  }
+
+  const zoom = placement.width / STICKER_W;
 
   function zoomTo(z: number) {
-    const next = Math.min(MAX_ZOOM, Math.max(1, z));
+    if (!image) return;
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
     // The point at the sticker's centre stays where it is.
     const fx = (STICKER_W / 2 - placement.x) / placement.width;
     const fy = (STICKER_H / 2 - placement.y) / placement.height;
-    const width = cover.width * next;
-    const height = cover.height * next;
-    setPlacement(clampPlacement({ x: STICKER_W / 2 - fx * width, y: STICKER_H / 2 - fy * height, width, height }));
+    const width = STICKER_W * next;
+    const height = (width * image.height) / image.width;
+    setPlacement(kept({ x: STICKER_W / 2 - fx * width, y: STICKER_H / 2 - fy * height, width, height }));
   }
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -438,7 +489,7 @@ export function NewMBackgroundDialog({
     if (!d || d.id !== e.pointerId) return;
     // Screen pixels to sticker units; the preview keeps the sticker's proportions, so one factor serves both.
     const unit = STICKER_W / e.currentTarget.clientWidth;
-    setPlacement(clampPlacement({ ...d.from, x: d.from.x + (e.clientX - d.x) * unit, y: d.from.y + (e.clientY - d.y) * unit }));
+    setPlacement(kept({ ...d.from, x: d.from.x + (e.clientX - d.x) * unit, y: d.from.y + (e.clientY - d.y) * unit }));
   }
 
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
@@ -456,16 +507,62 @@ export function NewMBackgroundDialog({
     const move = moves[e.key];
     if (!move || !image || busy) return;
     e.preventDefault();
-    setPlacement((p) => clampPlacement({ ...p, x: p.x + move[0], y: p.y + move[1] }));
+    setPlacement((p) => kept({ ...p, x: p.x + move[0], y: p.y + move[1] }));
   }
+
+  /* ----- Cropping ----- */
+
+  function onHandleDown(side: Side, e: PointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    if (busy) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    cropDrag.current = { id: e.pointerId, side };
+  }
+
+  /** The dragged edge of the crop follows the pointer, never past the opposite edge. */
+  function onHandleMove(e: PointerEvent<HTMLDivElement>) {
+    const d = cropDrag.current;
+    const frame = frameRef.current;
+    if (!d || d.id !== e.pointerId || !frame) return;
+    const r = frame.getBoundingClientRect();
+    // Where the pointer is across and down the image, as a share of it.
+    const fx = (((e.clientX - r.left) * STICKER_W) / r.width - placement.x) / placement.width;
+    const fy = (((e.clientY - r.top) * STICKER_H) / r.height - placement.y) / placement.height;
+    const within = (v: number, max: number) => Math.min(Math.max(v, 0), max);
+    setCrop((c) => {
+      if (d.side === "left") return { ...c, left: within(fx, 1 - c.right - MIN_KEEP) };
+      if (d.side === "right") return { ...c, right: within(1 - fx, 1 - c.left - MIN_KEEP) };
+      if (d.side === "top") return { ...c, top: within(fy, 1 - c.bottom - MIN_KEEP) };
+      return { ...c, bottom: within(1 - fy, 1 - c.top - MIN_KEEP) };
+    });
+  }
+
+  function onHandleUp(e: PointerEvent<HTMLDivElement>) {
+    if (cropDrag.current?.id === e.pointerId) cropDrag.current = null;
+  }
+
+  // The crop's outline and handles, kept to the part of it that is on the sticker.
+  const shown = visibleRect(withCrop(placement, crop));
+  const onX = (v: number) => Math.min(Math.max(v, 0), STICKER_W);
+  const onY = (v: number) => Math.min(Math.max(v, 0), STICKER_H);
+  const outline = { x1: onX(shown.x), x2: onX(shown.x + shown.width), y1: onY(shown.y), y2: onY(shown.y + shown.height) };
+  const midX = (outline.x1 + outline.x2) / 2;
+  const midY = (outline.y1 + outline.y2) / 2;
+  const handles: Array<{ side: Side; x: number; y: number }> = [
+    { side: "left", x: outline.x1, y: midY },
+    { side: "right", x: outline.x2, y: midY },
+    { side: "top", x: midX, y: outline.y1 },
+    { side: "bottom", x: midX, y: outline.y2 },
+  ];
+  const cut = crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0;
 
   const dirty = Boolean(
     image &&
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
-        !samePlacement(placement, info?.placement ?? FULL_PLACEMENT)),
+        !samePlacement(withCrop(placement, crop), info?.placement ?? FULL_PLACEMENT)),
   );
-  // The layout is measured on a 958 x 761 sheet; an image of other proportions is cropped to it.
+  // The layout is measured on a 958 x 761 sheet; an image of other proportions needs moving and cropping to fit.
   const ratioOff = image ? Math.abs(image.width / image.height / (STICKER_W / STICKER_H) - 1) > 0.015 : false;
   const stretched = samePlacement(placement, FULL_PLACEMENT);
 
@@ -510,20 +607,19 @@ export function NewMBackgroundDialog({
         <p className="text-[13px] text-text-muted">
           Every sticker is drawn on this image; only the super admin can change it, and it is kept in storage, not in the
           app&apos;s code. The values, signature and QR code always sit where they are shown here: drag the image and zoom
-          until its cells line up under them, then save. Every sticker, on screen and downloaded, uses that position.
+          until its cells line up under them, then crop off what is not wanted, and save. Every sticker, on screen and
+          downloaded, uses that position and crop.
         </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {image?.file ? (
           <Alert tone={ratioOff ? "warn" : "info"}>
             New image: {image.file.name} ({image.width} × {image.height}).{" "}
             {ratioOff
-              ? `Its proportions differ from the sticker (${STICKER_W} × ${STICKER_H}), so part of it is cropped — drag and zoom to choose what shows.`
+              ? `Its proportions differ from the sticker (${STICKER_W} × ${STICKER_H}) — move, zoom and crop it to fit.`
               : "Line it up below, then press Use this background. It takes the current image's place."}
           </Alert>
         ) : info && !info.uploaded && !loading ? (
-          <Alert tone="warn">
-            No background image yet, so no sticker can be made. Upload one to start.
-          </Alert>
+          <Alert tone="warn">No background image yet, so no sticker can be made. Upload one to start.</Alert>
         ) : info?.uploaded ? (
           <p className="text-[12.5px] text-text-muted">
             In use: {info.filename ?? "uploaded image"}
@@ -534,13 +630,14 @@ export function NewMBackgroundDialog({
         {image ? (
           <>
             <Checkbox
-              label="This image already has the title bar, table lines and labels printed on it"
+              label="This image already has the labels and the QR border printed on it"
               description="Ticked, the app writes only the values, signature and QR code onto it."
               checked={hasFrame}
               disabled={busy}
               onChange={(e) => setHasFrame(e.target.checked)}
             />
             <div
+              ref={frameRef}
               tabIndex={0}
               role="group"
               aria-label="Background position: drag to move, arrow keys to nudge"
@@ -552,20 +649,62 @@ export function NewMBackgroundDialog({
               onPointerCancel={onPointerUp}
               onKeyDown={onKeyDown}
             >
+              {cropping ? (
+                <img
+                  src={image.dataUri}
+                  alt=""
+                  draggable={false}
+                  className="absolute max-w-none pointer-events-none opacity-30"
+                  style={boxStyle(placement)}
+                />
+              ) : null}
               <img
                 src={image.dataUri}
                 alt=""
                 draggable={false}
                 className="absolute max-w-none pointer-events-none"
                 style={{
-                  left: `${(placement.x / STICKER_W) * 100}%`,
-                  top: `${(placement.y / STICKER_H) * 100}%`,
-                  width: `${(placement.width / STICKER_W) * 100}%`,
-                  height: `${(placement.height / STICKER_H) * 100}%`,
+                  ...boxStyle(placement),
+                  clipPath: `inset(${crop.top * 100}% ${crop.right * 100}% ${crop.bottom * 100}% ${crop.left * 100}%)`,
                 }}
               />
               {overlay ? (
                 <img src={overlay} alt="Sticker values over the background" className="absolute inset-0 size-full pointer-events-none" />
+              ) : null}
+              {cropping ? (
+                <>
+                  <div
+                    className="absolute border-2 border-dashed border-teal-600 pointer-events-none"
+                    style={{
+                      left: `${(outline.x1 / STICKER_W) * 100}%`,
+                      top: `${(outline.y1 / STICKER_H) * 100}%`,
+                      width: `${((outline.x2 - outline.x1) / STICKER_W) * 100}%`,
+                      height: `${((outline.y2 - outline.y1) / STICKER_H) * 100}%`,
+                    }}
+                  />
+                  {handles.map((h) => {
+                    const across = h.side === "left" || h.side === "right";
+                    return (
+                      <div
+                        key={h.side}
+                        aria-label={`Crop ${h.side} edge`}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-teal-600 bg-white shadow touch-none"
+                        style={{
+                          // Kept a few pixels inside the preview, so an edge at the sticker's border can still be grabbed.
+                          left: `clamp(7px, ${(h.x / STICKER_W) * 100}%, calc(100% - 7px))`,
+                          top: `clamp(7px, ${(h.y / STICKER_H) * 100}%, calc(100% - 7px))`,
+                          width: across ? 12 : 40,
+                          height: across ? 40 : 12,
+                          cursor: across ? "ew-resize" : "ns-resize",
+                        }}
+                        onPointerDown={(e) => onHandleDown(h.side, e)}
+                        onPointerMove={onHandleMove}
+                        onPointerUp={onHandleUp}
+                        onPointerCancel={onHandleUp}
+                      />
+                    );
+                  })}
+                </>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[12.5px] text-text-muted">
@@ -573,7 +712,7 @@ export function NewMBackgroundDialog({
                 Zoom
                 <input
                   type="range"
-                  min={1}
+                  min={MIN_ZOOM}
                   max={MAX_ZOOM}
                   step={0.01}
                   value={zoom}
@@ -587,21 +726,34 @@ export function NewMBackgroundDialog({
                 size="sm"
                 icon={<RotateCcw className="size-3.5" />}
                 disabled={busy}
-                onClick={() => setPlacement(coverPlacement(image.width, image.height))}
+                onClick={() => setPlacement(kept(fitPlacement(image.width, image.height)))}
               >
-                Reset
+                Reset position
               </Button>
               {ratioOff ? (
-                <Button size="sm" disabled={busy || stretched} onClick={() => setPlacement(FULL_PLACEMENT)}>
+                <Button size="sm" disabled={busy || stretched} onClick={() => setPlacement(kept(FULL_PLACEMENT))}>
                   Stretch to fit
                 </Button>
               ) : null}
-              <span className="ml-auto">
-                Drag to move · arrow keys nudge by 1, with Shift by 10 · left {Math.round(placement.x)}, top{" "}
-                {Math.round(placement.y)}
-              </span>
+              <Button
+                size="sm"
+                variant={cropping ? "primary" : undefined}
+                icon={<Crop className="size-3.5" />}
+                disabled={busy}
+                onClick={() => setCropping((c) => !c)}
+              >
+                {cropping ? "Done cropping" : "Crop"}
+              </Button>
+              {cut ? (
+                <Button size="sm" disabled={busy} onClick={() => setCrop(NO_CROP)}>
+                  Remove crop
+                </Button>
+              ) : null}
             </div>
             <p className="text-[12.5px] text-text-muted">
+              {cropping
+                ? `Drag the white handles on the image's edges to cut off what is not wanted; the faded part is cut off. Cut: top ${pct(crop.top)}, right ${pct(crop.right)}, bottom ${pct(crop.bottom)}, left ${pct(crop.left)}.`
+                : `Drag the image to move it in any direction · arrow keys nudge by 1, with Shift by 10 · left ${Math.round(placement.x)}, top ${Math.round(placement.y)}.`}{" "}
               {sample
                 ? `Shown with the values of ${sample.attestation_number}, the first document in the list.`
                 : "Shown with sample values — there are no documents yet."}

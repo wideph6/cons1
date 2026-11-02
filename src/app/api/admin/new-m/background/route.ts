@@ -49,7 +49,7 @@ function flag(v: unknown): boolean {
   return v === true || v === "1" || v === "true" || v === "on";
 }
 
-/** A placement from the request, or a 400; absent means stretched over the whole sticker. */
+/** A placement (with its crop) from the request, or a 400; absent means stretched over the whole sticker. */
 function placementFrom(v: unknown): BackgroundPlacement | null {
   if (v === undefined || v === null || v === "") return null;
   let parsed: unknown = v;
@@ -61,7 +61,7 @@ function placementFrom(v: unknown): BackgroundPlacement | null {
     }
   }
   const p = cleanPlacement(parsed);
-  if (!p) throw new ApiError(400, "Invalid position for the background image: it must cover the whole sticker");
+  if (!p) throw new ApiError(400, "Invalid position or crop for the background image");
   return p;
 }
 
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/admin/new-m/background (multipart: file, has_frame, placement) — super admin only; the new
  * image takes the old one's place. has_frame says the image already has the title bar, lines and
- * labels on it; placement (JSON) is where it sits on the sticker.
+ * labels on it; placement (JSON) is where it sits on the sticker and what is cropped off it.
  */
 export async function POST(req: NextRequest) {
   return run(async () => {

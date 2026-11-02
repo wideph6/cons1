@@ -73,11 +73,13 @@ create table if not exists public.new_m_settings (
   background_r2_key text,
   background_content_type text,
   background_filename text,
-  -- The app draws the title bar, table lines, labels and QR border itself. True only for a background
-  -- that already has them printed on it, so they are not drawn twice.
+  -- The app draws the labels and the QR border itself; the title bar and table lines come with the image.
+  -- True only for a background that already has the labels and QR border printed on it, so they are not
+  -- drawn twice.
   background_has_frame boolean not null default false,
-  -- Where the super admin placed the image on the 958 x 761 sticker: {x, y, width, height}, always covering
-  -- the whole sticker, the rest cropped. Null stretches it over the whole sticker.
+  -- Where the super admin placed the image on the 958 x 761 sticker and what is cropped off it:
+  -- {x, y, width, height, crop?: {top, right, bottom, left}} (crop as shares of the image). Anything past
+  -- the sticker is cut off too. Null stretches it over the whole sticker.
   background_placement jsonb,
   updated_by uuid references public.users(id) on delete set null,
   updated_at timestamptz not null default now()

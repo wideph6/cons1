@@ -713,14 +713,12 @@ Values background image par **wohi jagah, wohi font (Georgia), wohi size aur woh
 | Signature wala khana | Officer ki signature, aur us ke neeche designation |
 | QR wala khana | Document ka saved QR code |
 
-**Saaf (blur ke baghair) chhapai:** background image mein sirf halka lehron wala watermark aur **Seal/Stamp** wala khana hai. Baqi sab app
-khud banata hai, isi liye kuch bhi dhundla nahi aata:
+**Background image aur app ka hissa:** upar wali **GENERAL ATTESTATION** patti aur table ki saari lines background image mein
+honi chahiyein — app inhein nahi banata. App sirf ye khud banata hai (saaf, blur ke baghair):
 
-- Upar siyah patti aur us par safed **GENERAL ATTESTATION** (Georgia bold)
-- Table ki saari lines (1.4 px, siyah)
 - Saare labels: "1 Country **Pakistan**", "This Public Document", "2 at", "3 the", "4 by", "5 No.", "Date:" — Georgia 19 px, siyah
   (sirf "Pakistan" bold, jaise asal mein tha). Labels aur values ab bilkul aik jaisa siyah rang hain. Asal ke muqable mein
-  regular labels values se halke aa rahe the, is liye un par 0.2 px ki patli outline hai (values, "Pakistan" aur title waise hi hain).
+  regular labels values se halke aa rahe the, is liye un par 0.2 px ki patli outline hai (values aur "Pakistan" waise hi hain).
 - QR code ke gird border (1.4 px), QR ko chhoti hui — beech mein koi safed faasla nahi, jaise asal mein. Border QR ke bahar wale
   kinare ke **upar** banti hai (kinare ka 1 px dhanp leti hai). Asal ki tarah border QR ke bilkul *saath* rakhne se kone wale
   chokor mote ho jate hain aur test mein QR bilkul scan nahi hua; is tareeqe se faasle wale purane tareeqe se bhi behtar scan hota hai.
@@ -742,15 +740,16 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
 - **Upload an image / Choose a new image** — JPG, PNG ya WebP (4 MB tak).
 - Preview mein image ke upar list ke **pehle document ka asal data** (values, signature, QR) usi jagah dikhta hai jahan har sticker
   par aata hai. Koi document na ho to sample values.
-- Image ko **mouse se ghaseet kar** hilayen, **arrow keys** se 1 (Shift ke saath 10) qadam, aur **Zoom** se bara karen — image hamesha
-  poore sticker ko dhanpti hai, zoom karne se kinare kat (crop) jate hain. **Reset** wapas shuru wali jagah. Image ka tanasub sticker
+- Image ko **mouse se ghaseet kar** kisi bhi taraf (upar, neeche, daen, baen) hilayen, **arrow keys** se 1 (Shift ke saath 10) qadam,
+  aur **Zoom** se chhota/bara karen. **Reset position** wapas shuru wali jagah (poori image sticker mein). Image ka tanasub sticker
   (**958 × 761**) se alag ho to **Stretch to fit** se poori image khench kar bhi lag sakti hai.
-- Khane values ke neeche theek aa jayen to **Use this background** (nayi image) ya **Save position** (sirf jagah badli ho).
-  Wohi jagah save hoti hai aur har sticker — screen par bhi aur download mein bhi — usi jagah banta hai.
+- Jagah set karne ke baad **Crop** dabayen: image ke kinaron par safed handles aate hain. Inhein ghaseet kar image ka **izafi hissa
+  kaat** dein — kata hua hissa halka (faded) dikhta hai. **Done cropping** se wapas, **Remove crop** se crop khatam.
+- Sab theek ho to **Use this background** (nayi image) ya **Save position** (sirf jagah/crop badla ho).
+  Wohi jagah aur crop save hote hain aur har sticker — screen par bhi aur download mein bhi — bilkul waisa hi banta hai.
 - Nayi image purani ki jagah le leti hai; purani file storage se mita di jati hai.
-- Nayi image mein **title, lines aur labels pehle se chhape** hon to **"This image already has the title bar, table lines and labels
-  printed on it"** par tick karen — phir app un par sirf values, signature aur QR likhta hai (warna sab kuch do dafa nazar aayega).
-  Sirf watermark aur Seal/Stamp wali image ho to tick na karen.
+- Nayi image mein **labels aur QR ki border pehle se chhape** hon to **"This image already has the labels and the QR border printed
+  on it"** par tick karen — phir app un par sirf values, signature aur QR likhta hai (warna labels do dafa nazar aayenge).
 
 Image sirf R2 bucket mein (`new-m/backgrounds/`) rehti hai, code mein **nahi** — code parhne wala use nahi dekh sakta. Sirf login
 kiye hue admin ko panel ke andar milti hai.

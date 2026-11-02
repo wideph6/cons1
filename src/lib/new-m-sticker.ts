@@ -3,13 +3,12 @@ import { verifyQr } from "./new-m-link";
 
 /**
  * The New M attestation sticker. Every position, size and weight below was measured off the
- * reference sticker (958 x 761 px). The background image carries only the faint pattern and the
- * Seal/Stamp cell; the app draws the rest itself so it prints sharp at any size: the title bar, the
- * table lines, the labels, the QR code's border, and each document's values. Text is Georgia, black:
- * regular 19 px for labels, bold 19 px for values, regular 16 px for the designation, and bold 31.5 px
- * white for the title. The background is laid on this grid where the super admin placed it (see
- * BackgroundPlacement); without a saved position it is stretched over the whole grid. There is no
- * sticker without a background image.
+ * reference sticker (958 x 761 px). The background image carries the title bar, the table lines, the
+ * faint pattern and the Seal/Stamp cell; the app draws the rest so it prints sharp at any size: the
+ * labels, the QR code's border, and each document's values. Text is Georgia, black: regular 19 px for
+ * labels, bold 19 px for values, regular 16 px for the designation. The background is laid on this
+ * grid where the super admin placed and cropped it (see BackgroundPlacement); without a saved position
+ * it is stretched over the whole grid. There is no sticker without a background image.
  */
 export const STICKER_W = 958;
 export const STICKER_H = 761;
@@ -17,7 +16,7 @@ export const STICKER_H = 761;
 const FONT_FAMILY = "Georgia, Gelasio, 'Times New Roman', serif";
 /** A value too long for its cell is set smaller rather than run into the next one, down to this size. */
 const MIN_FONT = 10;
-/** Every table line and the QR border, as on the reference. */
+/** The QR border, as on the reference. */
 const LINE = 1.4;
 
 interface TextSlot {
@@ -69,27 +68,6 @@ export const QR_BOX = {
 
 /* ---------------- The fixed parts the app draws ---------------- */
 
-const TITLE_BAR = { x: 29.4, y: 19.2, width: 896.2, height: 54.5 };
-const TITLE = { text: "GENERAL ATTESTATION", x: 477.5, y: 57.6, size: 31.5 };
-
-/** Centres of the table lines. The outer frame runs 73.65–880.3 across and 90.7–528 down. */
-const FRAME = { x1: 73.65, x2: 880.3, y1: 90.7, y2: 528 };
-/** [x, from y, to y] */
-const V_LINES: Array<[number, number, number]> = [
-  [280.4, FRAME.y1, 169.5],
-  [580.9, FRAME.y1, 169.5],
-  [638.9, 169.5, 314.1],
-  [477.6, 409.7, FRAME.y2],
-];
-/** [y, from x, to x] */
-const H_LINES: Array<[number, number, number]> = [
-  [169.5, FRAME.x1, FRAME.x2],
-  [241.1, FRAME.x1, 638.9],
-  [314.1, FRAME.x1, FRAME.x2],
-  [361.9, FRAME.x1, FRAME.x2],
-  [409.7, FRAME.x1, FRAME.x2],
-];
-
 /** Labels in Georgia regular 19 px, black; "Pakistan" is bold, as on the reference. Baselines as measured. */
 const LABELS: Array<{ text: string; x: number; y: number; bold?: boolean }> = [
   { text: "1", x: 88, y: 121 },
@@ -108,8 +86,8 @@ const LABELS: Array<{ text: string; x: number; y: number; bold?: boolean }> = [
 ];
 /**
  * A thin outline on the regular labels. Against the reference they came out lighter than the values
- * did (by ink and by stroke width), so they get a little more weight; values, "Pakistan" and the
- * title are left as they are.
+ * did (by ink and by stroke width), so they get a little more weight; values and "Pakistan" are left
+ * as they are.
  */
 const LABEL_OUTLINE = 0.2;
 
@@ -179,17 +157,9 @@ function valueEl(slot: TextSlot, value: string, measure: Measure): string {
   return text(slot.x, slot.y, t, size, slot.weight, { anchor: slot.anchor });
 }
 
-/** Title bar, table lines and labels — what the background no longer carries. */
+/** The labels. The title bar and table lines come with the background image; the app does not draw them. */
 function frameEl(): string {
   const parts: string[] = [];
-  parts.push(`<rect x="${TITLE_BAR.x}" y="${TITLE_BAR.y}" width="${TITLE_BAR.width}" height="${TITLE_BAR.height}" fill="#000000"/>`);
-  parts.push(text(TITLE.x, TITLE.y, TITLE.text, TITLE.size, "bold", { anchor: "middle", fill: "#ffffff" }));
-  parts.push(
-    `<rect x="${FRAME.x1}" y="${FRAME.y1}" width="${(FRAME.x2 - FRAME.x1).toFixed(2)}" height="${(FRAME.y2 - FRAME.y1).toFixed(2)}" ` +
-      `fill="none" stroke="#000000" stroke-width="${LINE}"/>`,
-  );
-  for (const [x, y1, y2] of V_LINES) parts.push(`<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="#000000" stroke-width="${LINE}"/>`);
-  for (const [y, x1, x2] of H_LINES) parts.push(`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#000000" stroke-width="${LINE}"/>`);
   for (const l of LABELS) {
     parts.push(l.bold ? text(l.x, l.y, l.text, 19, "bold") : text(l.x, l.y, l.text, 19, "normal", { outline: LABEL_OUTLINE }));
   }
@@ -234,58 +204,118 @@ function qrEl(savedSvg: string | null, url: string, withBorder: boolean): string
 
 /* ---------------- The background's position ---------------- */
 
+/** What is cut off each side of the background image, as a share of its width or height (0 to 1). */
+export interface BackgroundCrop {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const NO_CROP: BackgroundCrop = { top: 0, right: 0, bottom: 0, left: 0 };
+
 /**
- * Where the background image sits on the sticker, in sticker units. It always covers the whole
- * sticker; whatever reaches past the edges is cropped. The values and QR code stay at their slots, so
- * moving or zooming the image is what lines its pattern and cells up under them.
+ * Where the background image sits on the sticker, in sticker units, and what is cropped off it. It can
+ * sit anywhere, at any size; the values and QR code stay at their slots, so moving, zooming and
+ * cropping the image is what lines its cells up under them. Whatever reaches past the sticker's edges
+ * is cut off as well.
  */
 export interface BackgroundPlacement {
   x: number;
   y: number;
   width: number;
   height: number;
+  /** Left out when nothing is cropped. */
+  crop?: BackgroundCrop;
 }
 
 /** No position saved: the image is stretched over the whole sticker. */
 export const FULL_PLACEMENT: BackgroundPlacement = { x: 0, y: 0, width: STICKER_W, height: STICKER_H };
 
-/** Rounding slack, so a saved position that sits exactly on an edge still counts as covering it. */
-const EDGE = 0.5;
+/** Cropping always leaves at least this share of the image across and down. */
+export const MIN_KEEP = 0.02;
+/** At least this much of the cropped image stays on the sticker, so it can always be grabbed again. */
+const MIN_VISIBLE = 20;
 
-/** The smallest placement of an image of this size that covers the sticker, centred, proportions kept. */
-export function coverPlacement(imageWidth: number, imageHeight: number): BackgroundPlacement {
-  const scale = Math.max(STICKER_W / imageWidth, STICKER_H / imageHeight);
+/** The whole image as large as it fits on the sticker, centred, proportions kept. */
+export function fitPlacement(imageWidth: number, imageHeight: number): BackgroundPlacement {
+  const scale = Math.min(STICKER_W / imageWidth, STICKER_H / imageHeight);
   const width = imageWidth * scale;
   const height = imageHeight * scale;
   return { x: (STICKER_W - width) / 2, y: (STICKER_H - height) / 2, width, height };
 }
 
-/** Moves a placement back so it covers the sticker, never leaving an edge uncovered. */
-export function clampPlacement(p: BackgroundPlacement): BackgroundPlacement {
+/** The placement with this crop, or with none when nothing is cut off. */
+export function withCrop(p: BackgroundPlacement, crop: BackgroundCrop): BackgroundPlacement {
+  const { x, y, width, height } = p;
+  const cut = crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0;
+  return cut ? { x, y, width, height, crop: { ...crop } } : { x, y, width, height };
+}
+
+/** The part of the sticker the cropped image covers (it may reach past the sticker's edges). */
+export function visibleRect(p: BackgroundPlacement): { x: number; y: number; width: number; height: number } {
+  const c = p.crop ?? NO_CROP;
   return {
-    x: Math.min(0, Math.max(STICKER_W - p.width, p.x)),
-    y: Math.min(0, Math.max(STICKER_H - p.height, p.y)),
-    width: p.width,
-    height: p.height,
+    x: p.x + c.left * p.width,
+    y: p.y + c.top * p.height,
+    width: p.width * (1 - c.left - c.right),
+    height: p.height * (1 - c.top - c.bottom),
   };
 }
 
-/** A saved or sent placement, or null when it is not one: numbers, a sane size, and covering the sticker. */
+/** Moves a placement back when it was dragged so far that almost none of the cropped image is left on the sticker. */
+export function clampPlacement(p: BackgroundPlacement): BackgroundPlacement {
+  const v = visibleRect(p);
+  const shift = (start: number, size: number, edge: number) =>
+    start + size < MIN_VISIBLE ? MIN_VISIBLE - (start + size) : start > edge - MIN_VISIBLE ? edge - MIN_VISIBLE - start : 0;
+  return { ...p, x: p.x + shift(v.x, v.width, STICKER_W), y: p.y + shift(v.y, v.height, STICKER_H) };
+}
+
+/** Four shares between 0 and 1 that leave something of the image, or null when they are not. */
+function cleanCrop(v: unknown): BackgroundCrop | null {
+  if (!v || typeof v !== "object") return null;
+  const raw = v as Record<string, unknown>;
+  const sides = ["top", "right", "bottom", "left"] as const;
+  if (!sides.every((s) => typeof raw[s] === "number" && Number.isFinite(raw[s]) && raw[s] >= 0 && raw[s] < 1)) return null;
+  const c = Object.fromEntries(sides.map((s) => [s, Math.round((raw[s] as number) * 10000) / 10000])) as unknown as BackgroundCrop;
+  // A hair of slack, as the browser's sums of shares are not exact.
+  if (c.left + c.right > 1 - MIN_KEEP + 1e-6 || c.top + c.bottom > 1 - MIN_KEEP + 1e-6) return null;
+  return c;
+}
+
+/**
+ * A saved or sent placement, or null when it is not one: numbers, a sane size, a crop that leaves
+ * something, and some of the image on the sticker.
+ */
 export function cleanPlacement(v: unknown): BackgroundPlacement | null {
   if (!v || typeof v !== "object") return null;
-  const { x, y, width, height } = v as Record<string, unknown>;
+  const raw = v as Record<string, unknown>;
+  const { x, y, width, height } = raw;
   const nums = [x, y, width, height];
   if (!nums.every((k) => typeof k === "number" && Number.isFinite(k))) return null;
   const p = { x: n(x as number), y: n(y as number), width: n(width as number), height: n(height as number) };
   if (p.width <= 0 || p.height <= 0 || p.width > 100 * STICKER_W || p.height > 100 * STICKER_H) return null;
-  const covers = p.x <= EDGE && p.y <= EDGE && p.x + p.width >= STICKER_W - EDGE && p.y + p.height >= STICKER_H - EDGE;
-  return covers ? p : null;
+  let crop = NO_CROP;
+  if (raw.crop !== undefined && raw.crop !== null) {
+    const c = cleanCrop(raw.crop);
+    if (!c) return null;
+    crop = c;
+  }
+  const placed = withCrop(p, crop);
+  const s = visibleRect(placed);
+  const onSticker = s.x < STICKER_W && s.y < STICKER_H && s.x + s.width > 0 && s.y + s.height > 0;
+  return onSticker ? placed : null;
 }
 
 function backgroundEl(href: string, p: BackgroundPlacement): string {
-  return (
+  const image =
     `<image href="${href}" xlink:href="${href}" x="${n(p.x)}" y="${n(p.y)}" width="${n(p.width)}" ` +
-    `height="${n(p.height)}" preserveAspectRatio="none"/>`
+    `height="${n(p.height)}" preserveAspectRatio="none"/>`;
+  if (!p.crop) return image;
+  const v = visibleRect(p);
+  return (
+    `<defs><clipPath id="background-crop"><rect x="${n(v.x)}" y="${n(v.y)}" width="${n(v.width)}" height="${n(v.height)}"/>` +
+    `</clipPath></defs><g clip-path="url(#background-crop)">${image}</g>`
   );
 }
 
@@ -308,10 +338,7 @@ export interface StickerValues {
 }
 
 export interface StickerContent extends StickerValues {
-  /**
-   * Draw the title bar, table lines, labels and QR border. Off only for a background that already has
-   * them printed on it.
-   */
+  /** Draw the labels and the QR border. Off only for a background that already has them printed on it. */
   drawFrame: boolean;
 }
 
