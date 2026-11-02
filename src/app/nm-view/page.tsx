@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { VerifyPage } from "@/components/new-m-page/VerifyPage";
+import { faviconHref } from "@/lib/new-m-page";
 import { assetUrls, findVisit, getDesktop } from "@/lib/new-m-page-server";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +33,12 @@ async function visit() {
 export async function generateMetadata(): Promise<Metadata> {
   try {
     const page = await loadPage();
+    const { favicon } = page.content.meta;
+    const icon = faviconHref(favicon);
     return {
       title: page.content.meta.title,
+      // Without an uploaded favicon the app's own icon shows.
+      ...(icon ? { icons: { icon: [{ url: icon, type: favicon.content_type ?? undefined }], shortcut: icon } } : {}),
       robots: { index: false, follow: false },
       referrer: "same-origin",
     };

@@ -59,6 +59,7 @@ import {
   type MobileContent,
   type PageRecord,
   type PageView,
+  type PFavicon,
   type PImage,
   type PLink,
   type PLinkText,
@@ -659,7 +660,14 @@ export function NewMPageEditor() {
                 onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
               />
             ) : (
-              <Overview content={content} onChange={update} onPick={reveal} onAdd={addTo} />
+              <Overview
+                content={content}
+                assets={assets}
+                onChange={update}
+                onPick={reveal}
+                onAdd={addTo}
+                onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
+              />
             )}
           </aside>
         </div>
@@ -776,14 +784,18 @@ function RecordPicker({ onPick, onClose }: { onPick: (r: NewMRecord | null) => v
 
 function Overview({
   content,
+  assets,
   onChange,
   onPick,
   onAdd,
+  onUploaded,
 }: {
   content: DesktopContent;
+  assets: Record<string, string>;
   onChange: (path: string, value: unknown) => void;
   onPick: (path: string) => void;
   onAdd: (listPath: string) => void;
+  onUploaded: (key: string, url: string) => void;
 }) {
   const groups = outline(content);
   return (
@@ -794,6 +806,13 @@ function Overview({
           <Field label="Browser tab title" hint="Shown on the browser tab and in bookmarks.">
             <Input value={content.meta.title} onChange={(e) => onChange("meta.title", e.target.value)} />
           </Field>
+          <FaviconField
+            value={content.meta.favicon}
+            title={content.meta.title}
+            assets={assets}
+            onChange={(v) => onChange("meta.favicon", v)}
+            onUploaded={onUploaded}
+          />
           <Checkbox
             label="Animate the page as it opens"
             description="Headings rise in, the hero badges float and the shield glows. Visitors who ask their computer for less motion never see it."
@@ -1119,6 +1138,92 @@ function SocialFields({ value, set }: { value: PSocial; set: (f: string, v: unkn
       <Checkbox label="Open in a new tab" checked={value.new_tab} onChange={(e) => set("new_tab", e.target.checked)} />
       <VisibleToggle hidden={value.hidden} onChange={(h) => set("hidden", h)} />
     </>
+  );
+}
+
+/** The verification page's browser-tab icon, shown on a tab as visitors see it, next to the page's title. */
+function FaviconField({
+  value,
+  title,
+  assets,
+  onChange,
+  onUploaded,
+}: {
+  value: PFavicon;
+  title: string;
+  assets: Record<string, string>;
+  onChange: (value: PFavicon) => void;
+  onUploaded: (key: string, url: string) => void;
+}) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
+  const url = value.key ? assets[value.key] : null;
+
+  async function upload(file: File) {
+    setBusy(true);
+    setProgress(0);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("kind", "favicon");
+      const r = await postFormWithProgress<{ key: string; url: string; content_type: string; filename: string }>(
+        "/api/admin/new-m/page/asset",
+        form,
+        setProgress,
+      );
+      onUploaded(r.key, r.url);
+      onChange({ key: r.key, content_type: r.content_type, filename: r.filename });
+      toast("Favicon uploaded. Save the page to put it live.");
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+
+  return (
+    <div>
+      <div className="text-[13px] font-medium mb-1.5">Favicon</div>
+      <div className="rounded-md border bg-surface-2 px-2 pt-2" aria-label="Browser tab preview">
+        <div className="flex items-center gap-2 w-64 max-w-full h-8 px-2.5 rounded-t-md border border-b-0 bg-surface">
+          {/* A signed R2 link, or the app's own icon when none is uploaded. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url ?? "/icon.svg"} alt="" className="size-4 shrink-0 object-contain" />
+          <span className="min-w-0 flex-1 truncate text-[12px]">{title || "Untitled"}</span>
+          <X className="size-3 shrink-0 text-text-faint" />
+        </div>
+      </div>
+      <p className="text-[12px] text-text-muted mt-1">
+        {value.key ? `In use after saving: ${value.filename || "uploaded image"}` : "No favicon uploaded, so the app's own icon shows."}
+      </p>
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        <input
+          ref={input}
+          type="file"
+          accept="image/x-icon,image/vnd.microsoft.icon,.ico,image/png,image/svg+xml,.svg,image/jpeg,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void upload(f);
+          }}
+        />
+        <Button size="sm" variant="primary" icon={<ImageUp className="size-3.5" />} loading={busy} onClick={() => input.current?.click()}>
+          {busy ? `Uploading ${Math.round(progress * 100)}%` : value.key ? "Replace favicon" : "Upload favicon"}
+        </Button>
+        {value.key ? (
+          <Button size="sm" onClick={() => onChange({ key: null, content_type: null, filename: null })}>
+            Use the app&apos;s icon
+          </Button>
+        ) : null}
+      </div>
+      <p className="text-[12.5px] text-text-muted mt-1.5">
+        A square image: ICO or PNG (at least 48 × 48, best 512 × 512) shows in every browser; SVG in most, but not
+        Safari. Up to 1 MB, stored in R2. Visitors see it after the page is saved.
+      </p>
+    </div>
   );
 }
 

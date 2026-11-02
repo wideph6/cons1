@@ -73,10 +73,10 @@ export async function pageImageKeys(): Promise<string[]> {
 /** A day is long enough for anyone reading the page, and the page is drawn fresh on every visit. */
 const ASSET_TTL = 12 * 60 * 60;
 
-/** Signed links to each logo in R2, keyed by storage key. */
+/** Signed links to each logo and the favicon in R2, keyed by storage key. */
 export async function assetUrls(content: DesktopContent): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  const images = [content.header.logo, content.record.logo, content.footer.logo];
+  const images = [content.header.logo, content.record.logo, content.footer.logo, content.meta.favicon];
   await Promise.all(
     images.map(async (im) => {
       if (!im.key || out[im.key]) return;

@@ -192,6 +192,7 @@ export const ACTION_LABELS: Record<string, string> = {
   reset_new_m_background: "Restored New M sticker background",
   update_new_m_page: "Changed New M verification page",
   upload_new_m_page_logo: "Uploaded New M page logo",
+  upload_new_m_page_favicon: "Uploaded New M page favicon",
 };
 
 export function displayPath(path: string): string {

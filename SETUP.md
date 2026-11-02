@@ -840,8 +840,11 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
     save hota hai. **Use the built-in emblem** wapas design wala emblem.
   - Labels ("Attestation number" waghera) ka naam badal sakte hain; un ke neeche ki value har document se aati hai.
   - **PDF viewer**: thumbnails khuli/band se shuru, aur toolbar ka har button dikhana/chhupana.
-- Kuch bhi select na ho to daen taraf **Page settings** (browser tab ka title, animation on/off) aur **page ki har cheez ki list** —
-  chhupi hui cheezen bhi — jahan se click kar ke jump kar sakte hain.
+- Kuch bhi select na ho to daen taraf **Page settings** (browser tab ka title, **favicon**, animation on/off) aur **page ki har
+  cheez ki list** — chhupi hui cheezen bhi — jahan se click kar ke jump kar sakte hain.
+- **Favicon** (browser tab ka chhota icon): **Upload favicon** dabayen — ICO ya PNG behtar (chokor, kam az kam 48 × 48, behtareen
+  512 × 512), 1 MB tak. Upar chhote se tab mein dikhta hai ke visitor ko kaisa nazar aayega. Phir page **Save** karen.
+  **Use the app's icon** se wapas app wala icon. Favicon R2 mein rehta hai, code mein nahi.
 - **Preview with:** kisi bhi asal document ko chun kar dekhen ke us ki values kaisi lagti hain; **Show the "no matching record" page**
   se dusri haalat dekhen.
 - **Undo / Redo** (Ctrl+Z / Ctrl+Shift+Z), **Discard changes**, **Reset to design** (sab kuch asal design par wapas — Save tak live

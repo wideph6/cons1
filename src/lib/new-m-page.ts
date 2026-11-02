@@ -86,6 +86,16 @@ export interface PImage {
   hidden: boolean;
 }
 
+/** The browser tab's icon. key is the R2 object (new-m/page/...); null shows the app's own icon. */
+export interface PFavicon {
+  key: string | null;
+  content_type: string | null;
+  filename: string | null;
+}
+
+/** What a favicon may be stored and served as. */
+export const FAVICON_TYPES = ["image/png", "image/x-icon", "image/svg+xml", "image/jpeg", "image/webp", "image/gif"];
+
 /** Buttons of the PDF viewer's toolbar, left to right. */
 export const VIEWER_TOOLS = [
   { key: "sidebar", label: "Thumbnails (☰)" },
@@ -104,8 +114,8 @@ export const VIEWER_TOOLS = [
 export type ViewerTool = (typeof VIEWER_TOOLS)[number]["key"];
 
 export interface DesktopContent {
-  /** The browser tab's title, and whether the page animates as it opens. */
-  meta: { title: string; animations: boolean };
+  /** The browser tab's title and icon, and whether the page animates as it opens. */
+  meta: { title: string; animations: boolean; favicon: PFavicon };
   header: {
     logo: PImage;
     title: PLinkText;
@@ -212,7 +222,11 @@ export const DEFAULT_TOOLS: Record<ViewerTool, boolean> = Object.fromEntries(
 ) as Record<ViewerTool, boolean>;
 
 export const DEFAULT_DESKTOP: DesktopContent = {
-  meta: { title: "General Attestation Verification", animations: true },
+  meta: {
+    title: "General Attestation Verification",
+    animations: true,
+    favicon: { key: null, content_type: null, filename: null },
+  },
   header: {
     logo: img("Notary Public and Legal Services"),
     title: { text: "GUJRAT NOTARY PUBLIC OFFICE", hidden: false, href: "#", new_tab: false },
@@ -455,6 +469,15 @@ function cleanSocials(v: unknown, d: PSocial[]): PSocial[] {
 /** Logos live in R2 under new-m/page/; nothing else may be pointed at. */
 export const PAGE_KEY_RE = /^new-m\/page\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/;
 
+function cleanFavicon(v: unknown): PFavicon {
+  const o = obj(v);
+  const key = typeof o.key === "string" && PAGE_KEY_RE.test(o.key) ? o.key : null;
+  // Served from this site with this type, so only an image type is taken.
+  const type = typeof o.content_type === "string" && FAVICON_TYPES.includes(o.content_type) ? o.content_type : null;
+  if (!key || !type) return { key: null, content_type: null, filename: null };
+  return { key, content_type: type, filename: str(o.filename, "", 200) };
+}
+
 function cleanImage(v: unknown, d: PImage): PImage {
   const o = obj(v);
   const key = typeof o.key === "string" && PAGE_KEY_RE.test(o.key) ? o.key : null;
@@ -495,7 +518,11 @@ export function cleanDesktop(input: unknown): DesktopContent {
   const rows = Array.isArray(footer.rows) ? footer.rows : null;
 
   return {
-    meta: { title: str(meta.title, d.meta.title, 200), animations: bool(meta.animations, d.meta.animations) },
+    meta: {
+      title: str(meta.title, d.meta.title, 200),
+      animations: bool(meta.animations, d.meta.animations),
+      favicon: cleanFavicon(meta.favicon),
+    },
     header: {
       logo: cleanImage(header.logo, d.header.logo),
       title: cleanLinkText(header.title, d.header.title),
@@ -567,9 +594,18 @@ export function cleanMobile(input: unknown): MobileContent {
   return { note: str(obj(input).note, "", 2000) };
 }
 
-/** Every logo key a desktop content points at, so storage cleanup leaves them alone. */
+/** Every logo and favicon key a desktop content points at, so storage cleanup leaves them alone. */
 export function imageKeys(c: DesktopContent): string[] {
-  return [c.header.logo.key, c.record.logo.key, c.footer.logo.key].filter((k): k is string => Boolean(k));
+  return [c.header.logo.key, c.record.logo.key, c.footer.logo.key, c.meta.favicon.key].filter((k): k is string => Boolean(k));
+}
+
+/**
+ * The address the favicon is served from. It changes with every upload (the key holds a fresh id), so
+ * browsers may keep it for good and still pick up a new one.
+ */
+export function faviconHref(f: PFavicon): string | null {
+  if (!f.key) return null;
+  return `/api/new-m/favicon?v=${f.key.split("/")[2] ?? ""}`;
 }
 
 /* ---------------- Addressing pieces of the page (the editor) ---------------- */

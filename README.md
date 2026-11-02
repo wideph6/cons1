@@ -166,7 +166,9 @@ ranges, so a large scan starts showing at once. `mode=open` / `mode=download` re
 
 **Page design** (super admin) — `/admin/new-m/page-design` shows the page exactly as visitors see it; clicking any text, button,
 tab, link or logo opens its settings (wording, link target, new tab, icon, width, hide/show, order, add/duplicate/delete within
-lists, logo upload). Desktop and mobile are separate views (mobile is a placeholder for now: phones get the desktop design scaled).
+lists, logo upload). With nothing selected, **Page settings** holds the browser tab's title and its **favicon** (ICO, PNG, SVG,
+JPG, WebP or GIF up to 1 MB, kept in R2 under `new-m/page/`; served to visitors from `/api/new-m/favicon?v=…`, an address that changes
+with each upload so browsers may keep it; without one the app's own icon shows). Desktop and mobile are separate views (mobile is a placeholder for now: phones get the desktop design scaled).
 Text, links and settings are saved as JSON in `new_m_page_settings` (one row per view; anything missing falls back to the design's
 default); logos go to R2 under `new-m/page/` and are deleted when replaced or removed. The content is checked on the server
 (`cleanDesktop`): links must be http(s), mailto, tel or same-site, and logo keys must be under `new-m/page/`. A save made against an
