@@ -471,7 +471,9 @@ export function NewMManager() {
 
       <NewMStickerDialog record={stickerFor} onClose={() => setStickerFor(null)} />
 
-      {isSuper ? <NewMBackgroundDialog open={backgroundOpen} onClose={() => setBackgroundOpen(false)} /> : null}
+      {isSuper ? (
+        <NewMBackgroundDialog open={backgroundOpen} onClose={() => setBackgroundOpen(false)} sample={items[0] ?? null} />
+      ) : null}
 
       <NewMSavedValues
         open={savedOpen}

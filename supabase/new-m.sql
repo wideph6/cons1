@@ -67,7 +67,7 @@ create table if not exists public.new_m_officers (
 
 -- ---------- Sticker settings ----------
 -- One row. The sticker's background image as the super admin set it, stored in R2 under
--- new-m/backgrounds/. Empty means the built-in background that ships with the app.
+-- new-m/backgrounds/. Empty means none has been uploaded yet, and no sticker can be made until one is.
 create table if not exists public.new_m_settings (
   id boolean primary key default true check (id),
   background_r2_key text,
@@ -76,6 +76,9 @@ create table if not exists public.new_m_settings (
   -- The app draws the title bar, table lines, labels and QR border itself. True only for a background
   -- that already has them printed on it, so they are not drawn twice.
   background_has_frame boolean not null default false,
+  -- Where the super admin placed the image on the 958 x 761 sticker: {x, y, width, height}, always covering
+  -- the whole sticker, the rest cropped. Null stretches it over the whole sticker.
+  background_placement jsonb,
   updated_by uuid references public.users(id) on delete set null,
   updated_at timestamptz not null default now()
 );
@@ -84,6 +87,7 @@ insert into public.new_m_settings (id) values (true) on conflict (id) do nothing
 
 -- Added after the first release, for databases that already have the table.
 alter table public.new_m_settings add column if not exists background_has_frame boolean not null default false;
+alter table public.new_m_settings add column if not exists background_placement jsonb;
 
 -- ---------- Documents ----------
 create table if not exists public.new_m_records (

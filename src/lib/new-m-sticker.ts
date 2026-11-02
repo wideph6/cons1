@@ -7,8 +7,9 @@ import { verifyQr } from "./new-m-link";
  * Seal/Stamp cell; the app draws the rest itself so it prints sharp at any size: the title bar, the
  * table lines, the labels, the QR code's border, and each document's values. Text is Georgia, black:
  * regular 19 px for labels, bold 19 px for values, regular 16 px for the designation, and bold 31.5 px
- * white for the title. The background is stretched to this grid, so a replacement of any size lines
- * up as long as it keeps the same proportions.
+ * white for the title. The background is laid on this grid where the super admin placed it (see
+ * BackgroundPlacement); without a saved position it is stretched over the whole grid. There is no
+ * sticker without a background image.
  */
 export const STICKER_W = 958;
 export const STICKER_H = 761;
@@ -231,14 +232,67 @@ function qrEl(savedSvg: string | null, url: string, withBorder: boolean): string
   );
 }
 
-export interface StickerInput {
-  /** The background artwork as a data: URI; anything else would block the PNG export. */
-  background: string | null;
-  /**
-   * Draw the title bar, table lines, labels and QR border. Off only for a background that already has
-   * them printed on it.
-   */
-  drawFrame: boolean;
+/* ---------------- The background's position ---------------- */
+
+/**
+ * Where the background image sits on the sticker, in sticker units. It always covers the whole
+ * sticker; whatever reaches past the edges is cropped. The values and QR code stay at their slots, so
+ * moving or zooming the image is what lines its pattern and cells up under them.
+ */
+export interface BackgroundPlacement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** No position saved: the image is stretched over the whole sticker. */
+export const FULL_PLACEMENT: BackgroundPlacement = { x: 0, y: 0, width: STICKER_W, height: STICKER_H };
+
+/** Rounding slack, so a saved position that sits exactly on an edge still counts as covering it. */
+const EDGE = 0.5;
+
+/** The smallest placement of an image of this size that covers the sticker, centred, proportions kept. */
+export function coverPlacement(imageWidth: number, imageHeight: number): BackgroundPlacement {
+  const scale = Math.max(STICKER_W / imageWidth, STICKER_H / imageHeight);
+  const width = imageWidth * scale;
+  const height = imageHeight * scale;
+  return { x: (STICKER_W - width) / 2, y: (STICKER_H - height) / 2, width, height };
+}
+
+/** Moves a placement back so it covers the sticker, never leaving an edge uncovered. */
+export function clampPlacement(p: BackgroundPlacement): BackgroundPlacement {
+  return {
+    x: Math.min(0, Math.max(STICKER_W - p.width, p.x)),
+    y: Math.min(0, Math.max(STICKER_H - p.height, p.y)),
+    width: p.width,
+    height: p.height,
+  };
+}
+
+/** A saved or sent placement, or null when it is not one: numbers, a sane size, and covering the sticker. */
+export function cleanPlacement(v: unknown): BackgroundPlacement | null {
+  if (!v || typeof v !== "object") return null;
+  const { x, y, width, height } = v as Record<string, unknown>;
+  const nums = [x, y, width, height];
+  if (!nums.every((k) => typeof k === "number" && Number.isFinite(k))) return null;
+  const p = { x: n(x as number), y: n(y as number), width: n(width as number), height: n(height as number) };
+  if (p.width <= 0 || p.height <= 0 || p.width > 100 * STICKER_W || p.height > 100 * STICKER_H) return null;
+  const covers = p.x <= EDGE && p.y <= EDGE && p.x + p.width >= STICKER_W - EDGE && p.y + p.height >= STICKER_H - EDGE;
+  return covers ? p : null;
+}
+
+function backgroundEl(href: string, p: BackgroundPlacement): string {
+  return (
+    `<image href="${href}" xlink:href="${href}" x="${n(p.x)}" y="${n(p.y)}" width="${n(p.width)}" ` +
+    `height="${n(p.height)}" preserveAspectRatio="none"/>`
+  );
+}
+
+/* ---------------- The whole sticker ---------------- */
+
+/** What one document puts on its sticker. */
+export interface StickerValues {
   documentType: string;
   issuingOffice: string;
   /** `YYYY-MM-DD`. */
@@ -253,17 +307,41 @@ export interface StickerInput {
   qrUrl: string;
 }
 
+export interface StickerContent extends StickerValues {
+  /**
+   * Draw the title bar, table lines, labels and QR border. Off only for a background that already has
+   * them printed on it.
+   */
+  drawFrame: boolean;
+}
+
+export interface StickerInput extends StickerContent {
+  /** The background artwork as a data: URI; anything else would block the PNG export. */
+  background: string;
+  /** Where the background sits; null stretches it over the whole sticker. */
+  placement: BackgroundPlacement | null;
+}
+
+function wrap(body: string): string {
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${STICKER_W}" ` +
+    `height="${STICKER_H}" viewBox="0 0 ${STICKER_W} ${STICKER_H}">${body}</svg>`
+  );
+}
+
 /** The sticker as one self-contained SVG, ready to show or to rasterise to PNG. */
 export function buildStickerSvg(input: StickerInput, measure: Measure): string {
+  return wrap(backgroundEl(input.background, input.placement ?? FULL_PLACEMENT) + contentEl(input, measure));
+}
+
+/** Everything but the background, for the editor that moves the background underneath it. */
+export function buildStickerOverlaySvg(input: StickerContent, measure: Measure): string {
+  return wrap(contentEl(input, measure));
+}
+
+/** The frame, values, signature and QR code, drawn over the background. */
+function contentEl(input: StickerContent, measure: Measure): string {
   const parts: string[] = [];
-  if (input.background) {
-    parts.push(
-      `<image href="${input.background}" xlink:href="${input.background}" x="0" y="0" width="${STICKER_W}" ` +
-        `height="${STICKER_H}" preserveAspectRatio="none"/>`,
-    );
-  } else {
-    parts.push(`<rect width="${STICKER_W}" height="${STICKER_H}" fill="#ffffff"/>`);
-  }
   if (input.drawFrame) parts.push(frameEl());
 
   parts.push(valueEl(SLOTS.documentType, input.documentType, measure));
@@ -282,9 +360,5 @@ export function buildStickerSvg(input: StickerInput, measure: Measure): string {
   }
   parts.push(valueEl(SLOTS.designation, input.designation, measure));
   parts.push(qrEl(input.qrSvg, input.qrUrl, input.drawFrame));
-
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${STICKER_W}" ` +
-    `height="${STICKER_H}" viewBox="0 0 ${STICKER_W} ${STICKER_H}">${parts.join("")}</svg>`
-  );
+  return parts.join("");
 }

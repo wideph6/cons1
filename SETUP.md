@@ -733,19 +733,27 @@ sticker computer se download karna behtar hai.
 
 ## 13.5b Background image (sirf super admin)
 
+Sticker hamesha super admin ki upload ki hui background image par banta hai. App ke andar koi background nahi, aur app khud koi
+background nahi banata. Jab tak image upload na ho, **View sticker** aur **Download PNG** sirf error dete hain ke background image na
+hone ki wajah se sticker nahi ban sakta.
+
 New M page par **Background image** button sirf super admin ko nazar aata hai. Wahan:
 
-- Mojooda background **sample values ke saath** dikhta hai, taake jagahen check ho saken.
-- **Choose a new image** — JPG, PNG ya WebP (4 MB tak). Save se pehle preview mein dekh lein ke sample values sahi khanon mein aa rahi hain, phir **Use this background**.
-- Nayi image ka layout aur tanasub (proportions) wohi hona chahiye — **958 × 761** ya isi tanasub ki bari image (jaise 1916 × 1522). Tanasub alag ho to warning aati hai.
-- **Restore the built-in background** — wapas app wala background.
+- **Upload an image / Choose a new image** — JPG, PNG ya WebP (4 MB tak).
+- Preview mein image ke upar list ke **pehle document ka asal data** (values, signature, QR) usi jagah dikhta hai jahan har sticker
+  par aata hai. Koi document na ho to sample values.
+- Image ko **mouse se ghaseet kar** hilayen, **arrow keys** se 1 (Shift ke saath 10) qadam, aur **Zoom** se bara karen — image hamesha
+  poore sticker ko dhanpti hai, zoom karne se kinare kat (crop) jate hain. **Reset** wapas shuru wali jagah. Image ka tanasub sticker
+  (**958 × 761**) se alag ho to **Stretch to fit** se poori image khench kar bhi lag sakti hai.
+- Khane values ke neeche theek aa jayen to **Use this background** (nayi image) ya **Save position** (sirf jagah badli ho).
+  Wohi jagah save hoti hai aur har sticker — screen par bhi aur download mein bhi — usi jagah banta hai.
+- Nayi image purani ki jagah le leti hai; purani file storage se mita di jati hai.
 - Nayi image mein **title, lines aur labels pehle se chhape** hon to **"This image already has the title bar, table lines and labels
   printed on it"** par tick karen — phir app un par sirf values, signature aur QR likhta hai (warna sab kuch do dafa nazar aayega).
-  Sirf watermark aur Seal/Stamp wali image ho to tick na karen. Pehle se lagi image par bhi ye tick wahin se badla ja sakta hai.
+  Sirf watermark aur Seal/Stamp wali image ho to tick na karen.
 
-App wala background aap ke diye hue sticker se banaya gaya hai: us mein se title bar, table lines, saare labels, har value, signature
-aur QR mita diye gaye hain — sirf lehron wala watermark aur Seal/Stamp wala khana (us ki likhai samet) wesa hi hai. Ye image public
-folder mein **nahi** rakhi gayi — sirf login kiye hue admin ko panel ke andar milti hai.
+Image sirf R2 bucket mein (`new-m/backgrounds/`) rehti hai, code mein **nahi** — code parhne wala use nahi dekh sakta. Sirf login
+kiye hue admin ko panel ke andar milti hai.
 
 ## 13.6 Permissions
 

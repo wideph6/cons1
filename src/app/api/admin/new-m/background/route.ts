@@ -1,9 +1,8 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { after, type NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
 import { dbError, getBackgroundSettings, requireNewMAccess, type BackgroundSettings } from "@/lib/new-m";
+import { cleanPlacement, type BackgroundPlacement } from "@/lib/new-m-sticker";
 import { deleteObject, getObjectBytes, makeNewMKey, putObject } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import { cleanFilename, guessContentType } from "@/lib/utils";
@@ -11,12 +10,13 @@ import { cleanFilename, guessContentType } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 /**
- * The built-in background: the faint pattern and the Seal/Stamp cell, with the title bar, lines and
- * labels left for the app to draw. It sits in assets/, not public/, so the blank form is only handed
- * out to someone signed in to the panel, never served on a public domain. next.config.ts traces it
- * into this route's bundle.
+ * The sticker is only ever drawn on the image the super admin uploaded, which lives in R2 under
+ * new-m/backgrounds/. Without one there is no sticker, only this message.
  */
-const DEFAULT_BACKGROUND = path.join(process.cwd(), "assets", "new-m", "sticker-background.jpg");
+const NO_BACKGROUND =
+  "The sticker can't be made because no background image has been uploaded. The super admin can upload one from Background image on the New M page.";
+const BACKGROUND_GONE =
+  "The sticker can't be made because the background image is missing from storage. The super admin needs to upload it again from Background image on the New M page.";
 
 /** Served back through a function, whose replies are capped near 4.5 MB on Vercel. */
 const MAX_BACKGROUND = 4 * 1024 * 1024;
@@ -24,22 +24,23 @@ const BACKGROUND_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function info(s: BackgroundSettings) {
   return {
-    custom: Boolean(s.background_r2_key),
+    uploaded: Boolean(s.background_r2_key),
     filename: s.background_filename,
     content_type: s.background_content_type,
     has_frame: s.background_has_frame,
+    placement: s.background_placement,
     updated_at: s.updated_at,
   };
 }
 
-/** The image itself; whether the app should draw the frame on it travels in a header. */
-function image(bytes: Uint8Array, contentType: string, source: "custom" | "default", hasFrame: boolean): Response {
+/** The image itself; whether the app draws the frame on it, and where it sits, travel in headers. */
+function image(bytes: Uint8Array, contentType: string, s: BackgroundSettings): Response {
   return new Response(bytes as BodyInit, {
     headers: {
       "content-type": contentType,
       "cache-control": "private, no-store",
-      "x-background": source,
-      "x-background-has-frame": hasFrame ? "1" : "0",
+      "x-background-has-frame": s.background_has_frame ? "1" : "0",
+      "x-background-placement": s.background_placement ? JSON.stringify(s.background_placement) : "",
     },
   });
 }
@@ -48,8 +49,24 @@ function flag(v: unknown): boolean {
   return v === true || v === "1" || v === "true" || v === "on";
 }
 
+/** A placement from the request, or a 400; absent means stretched over the whole sticker. */
+function placementFrom(v: unknown): BackgroundPlacement | null {
+  if (v === undefined || v === null || v === "") return null;
+  let parsed: unknown = v;
+  if (typeof v === "string") {
+    try {
+      parsed = JSON.parse(v);
+    } catch {
+      parsed = null;
+    }
+  }
+  const p = cleanPlacement(parsed);
+  if (!p) throw new ApiError(400, "Invalid position for the background image: it must cover the whole sticker");
+  return p;
+}
+
 /**
- * GET /api/admin/new-m/background         — the sticker background image itself
+ * GET /api/admin/new-m/background         — the sticker background image itself, or 404 when there is none
  * GET /api/admin/new-m/background?info=1  — which one is in use
  */
 export async function GET(req: NextRequest) {
@@ -59,29 +76,20 @@ export async function GET(req: NextRequest) {
     const settings = await getBackgroundSettings();
     if (req.nextUrl.searchParams.get("info") === "1") return ok(info(settings));
 
-    if (settings.background_r2_key) {
-      const obj = await getObjectBytes(settings.background_r2_key, MAX_BACKGROUND);
-      if (obj) {
-        return image(obj.bytes, settings.background_content_type ?? obj.contentType, "custom", settings.background_has_frame);
-      }
-      // Gone from storage: fall back to a plain background until a new one is set.
+    if (!settings.background_r2_key) throw new ApiError(404, NO_BACKGROUND);
+    const obj = await getObjectBytes(settings.background_r2_key, MAX_BACKGROUND);
+    if (!obj) {
       console.error("[new-m] sticker background missing from storage", settings.background_r2_key);
+      throw new ApiError(404, BACKGROUND_GONE);
     }
-    try {
-      return image(new Uint8Array(await readFile(DEFAULT_BACKGROUND)), "image/jpeg", "default", false);
-    } catch {
-      // No background bundled either: the sticker is drawn on plain white, with the app drawing the frame.
-      return new Response(null, {
-        status: 204,
-        headers: { "cache-control": "private, no-store", "x-background": "none", "x-background-has-frame": "0" },
-      });
-    }
+    return image(obj.bytes, settings.background_content_type ?? obj.contentType, settings);
   });
 }
 
 /**
- * POST /api/admin/new-m/background (multipart: file, has_frame) — super admin only; replaces the
- * background. has_frame says the image already has the title bar, lines and labels on it.
+ * POST /api/admin/new-m/background (multipart: file, has_frame, placement) — super admin only; the new
+ * image takes the old one's place. has_frame says the image already has the title bar, lines and
+ * labels on it; placement (JSON) is where it sits on the sticker.
  */
 export async function POST(req: NextRequest) {
   return run(async () => {
@@ -101,6 +109,7 @@ export async function POST(req: NextRequest) {
     const contentType = guessContentType(filename, file.type);
     if (!BACKGROUND_TYPES.includes(contentType)) throw new ApiError(400, "The background must be a JPG, PNG or WebP image");
     const hasFrame = flag(form.get("has_frame"));
+    const placement = placementFrom(form.get("placement"));
 
     const previous = await getBackgroundSettings();
     const key = makeNewMKey("backgrounds", filename);
@@ -112,6 +121,7 @@ export async function POST(req: NextRequest) {
       background_content_type: contentType,
       background_filename: filename,
       background_has_frame: hasFrame,
+      background_placement: placement,
       updated_at: now,
     };
     const { error } = await db().from("new_m_settings").upsert({ id: true, ...saved, updated_by: user.id });
@@ -128,50 +138,24 @@ export async function POST(req: NextRequest) {
   });
 }
 
-/** PATCH /api/admin/new-m/background { has_frame } — super admin only; for the background in use. */
+/** PATCH /api/admin/new-m/background { has_frame?, placement? } — super admin only; for the image in use. */
 export async function PATCH(req: NextRequest) {
   return run(async () => {
     const user = await requireUser();
     requireSuperadmin(user);
-    const body = await readBody<{ has_frame?: unknown }>(req);
+    const body = await readBody<{ has_frame?: unknown; placement?: unknown }>(req);
     const current = await getBackgroundSettings();
-    // The built-in background never has the frame on it.
-    if (!current.background_r2_key) throw new ApiError(400, "Only an uploaded background can say it has the frame printed on it");
+    if (!current.background_r2_key) throw new ApiError(400, "Upload a background image first");
 
-    const hasFrame = flag(body.has_frame);
+    const patch: Partial<BackgroundSettings> = {};
+    if (body.has_frame !== undefined) patch.background_has_frame = flag(body.has_frame);
+    if (body.placement !== undefined) patch.background_placement = placementFrom(body.placement);
     const now = new Date().toISOString();
     const { error } = await db()
       .from("new_m_settings")
-      .update({ background_has_frame: hasFrame, updated_by: user.id, updated_at: now })
+      .update({ ...patch, updated_by: user.id, updated_at: now })
       .eq("id", true);
     if (error) throw dbError(error);
-    return ok(info({ ...current, background_has_frame: hasFrame, updated_at: now }));
-  });
-}
-
-/** DELETE /api/admin/new-m/background — super admin only; back to the built-in background. */
-export async function DELETE() {
-  return run(async () => {
-    const user = await requireUser();
-    requireSuperadmin(user);
-    const previous = await getBackgroundSettings();
-    if (!previous.background_r2_key) return ok(info(previous));
-
-    const now = new Date().toISOString();
-    const cleared: BackgroundSettings = {
-      background_r2_key: null,
-      background_content_type: null,
-      background_filename: null,
-      background_has_frame: false,
-      updated_at: now,
-    };
-    const { error } = await db().from("new_m_settings").upsert({ id: true, ...cleared, updated_by: user.id });
-    if (error) throw dbError(error);
-
-    after(async () => {
-      await deleteObject(previous.background_r2_key as string);
-      await logActivity({ user_id: user.id, action: "reset_new_m_background", details: { filename: previous.background_filename } });
-    });
-    return ok(info(cleared));
+    return ok(info({ ...current, ...patch, updated_at: now }));
   });
 }

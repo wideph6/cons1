@@ -1,6 +1,7 @@
 import { issuedToIso, pad2, parseIssuedOn, todayIso } from "./dates";
 import { ApiError } from "./errors";
 import { cleanTemplate, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber, verifyQrSvg } from "./new-m-link";
+import { cleanPlacement, type BackgroundPlacement } from "./new-m-sticker";
 import { can } from "./permissions";
 import { deleteObject, getObjectBytes, headObject, isNewMKey, presignDownload } from "./r2";
 import { db } from "./supabase";
@@ -242,6 +243,8 @@ export interface BackgroundSettings {
   background_filename: string | null;
   /** The background already has the title bar, lines and labels printed on it. */
   background_has_frame: boolean;
+  /** Where the super admin placed the image on the sticker; null stretches it over the whole sticker. */
+  background_placement: BackgroundPlacement | null;
   updated_at: string | null;
 }
 
@@ -250,28 +253,34 @@ const NO_BACKGROUND: BackgroundSettings = {
   background_content_type: null,
   background_filename: null,
   background_has_frame: false,
+  background_placement: null,
   updated_at: null,
 };
 
 const BACKGROUND_COLUMNS = "background_r2_key,background_content_type,background_filename,updated_at";
+/** Columns later new-m.sql runs added, newest first. A database that lacks one is read without it. */
+const LATER_BACKGROUND_COLUMNS = ["background_placement", "background_has_frame"];
 
-/** The background the super admin set, or nothing for the built-in one (also before new-m.sql has run). */
+/** The background the super admin uploaded, or nothing when none has been (also before new-m.sql has run). */
 export async function getBackgroundSettings(): Promise<BackgroundSettings> {
-  let res = await db()
-    .from("new_m_settings")
-    .select(`${BACKGROUND_COLUMNS},background_has_frame`)
-    .eq("id", true)
-    .maybeSingle();
-  // 42703: the frame column arrives with a later new-m.sql; until then every background is drawn on.
-  if (res.error?.code === "42703") {
-    res = await db().from("new_m_settings").select(BACKGROUND_COLUMNS).eq("id", true).maybeSingle();
+  for (let skip = 0; ; skip++) {
+    const columns = [BACKGROUND_COLUMNS, ...LATER_BACKGROUND_COLUMNS.slice(skip)].join(",");
+    const res = await db().from("new_m_settings").select(columns).eq("id", true).maybeSingle();
+    // 42703: a column arrives with a later new-m.sql; until then it reads as unset.
+    if (res.error?.code === "42703" && skip < LATER_BACKGROUND_COLUMNS.length) continue;
+    if (res.error) {
+      if (isMissingTable(res.error)) return NO_BACKGROUND;
+      throw dbError(res.error);
+    }
+    const row = res.data as Partial<Record<keyof BackgroundSettings, unknown>> | null;
+    if (!row) return NO_BACKGROUND;
+    return {
+      ...NO_BACKGROUND,
+      ...(row as Partial<BackgroundSettings>),
+      background_has_frame: Boolean(row.background_has_frame),
+      background_placement: cleanPlacement(row.background_placement),
+    };
   }
-  if (res.error) {
-    if (isMissingTable(res.error)) return NO_BACKGROUND;
-    throw dbError(res.error);
-  }
-  const row = res.data as Partial<BackgroundSettings> | null;
-  return row ? { ...NO_BACKGROUND, ...row, background_has_frame: Boolean(row.background_has_frame) } : NO_BACKGROUND;
 }
 
 /* ---------------- Saved lists ---------------- */
