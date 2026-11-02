@@ -20,7 +20,7 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | Domains | Add domains/subdomains, enable/disable, notes, attach to the Vercel project through the Vercel API (optional), DNS guidance |
 | Old M — links | Create paths under a domain (`/`, `/brochures`, `/reports/2025`), rename, delete |
 | Old M — files | Upload (direct browser → R2, multi-file, progress), replace, rename, move to another link, delete, preview inside the panel, copy public link, download counts |
-| New M | Attestation documents, uploaded one PDF at a time. New M has its own domains, each with custom links that carry `{attestation_number}` and `{issue_date}` formulas. Each document picks a domain and link, gets a unique attestation number (`GEN-NMPD-SSTI-FBDS`, generated or typed) and a date (today unless changed), and its complete link and QR code are saved with it. Document type, issuing office, issuing authority and approving officer (name + designation + signature, picked together) are offered from saved lists that grow with every upload. Everything stays editable, the PDF included; one search box covers every domain. The front-end page and the sticker come later |
+| New M | Attestation documents, uploaded one PDF at a time. New M has its own domains, each with custom links that carry `{attestation_number}` and `{issue_date}` formulas. Each document picks a domain and link, gets a unique attestation number (`GEN-NMPD-SSTI-FBDS`, generated or typed) and a date (today unless changed), and its complete link and QR code are saved with it. Document type, issuing office, issuing authority and approving officer (name + designation + signature, picked together) are offered from saved lists that grow with every upload. Everything stays editable, the PDF included; one search box covers every domain. Every link opens a public verification page drawn exactly to the reference design, with the document's values and its PDF in a built-in viewer; the super admin edits every text, link, button, tab and logo of that page from **New M page** |
 | Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
 | Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
@@ -152,7 +152,27 @@ Documents uploaded while New M still used the Domains page are moved by `new-m.s
 
 **Background image** — every sticker is drawn on an image the super admin uploads; the app ships none and never makes one up. Until one is uploaded, **View sticker** and **Download PNG** stop with an error saying the sticker can't be made without a background image. Only the super admin can set it, from **Background image** on the New M page. The editor shows the image under the first document in the list (its real values, signature and QR code, or sample values when there are none), exactly where every sticker writes them; the image is dragged in any direction, nudged with the arrow keys and zoomed until its cells sit under them, then **Crop** puts handles on its edges to cut off what is not wanted, in place. Whatever reaches past the sticker is cut off too. **Move text & QR** then lets every value be dragged together with its own label ("4 by" with the issuing authority, and so on), the QR code with its border, "1 Country Pakistan" as one piece, and the signature and the designation each on their own; arrow keys nudge the chosen one. That position, crop and those moves are saved with it (`background_placement`: where the image sits on the 958 × 761 grid, the share cut off each side, and `layout`, how far each moved set was shifted) and every sticker, on screen and downloaded, uses them; **Save position** changes them later without uploading again. A background that already has the labels and QR border printed on it is marked as such (`background_has_frame`), and the app then writes only the values, signature and QR code onto it. The image is kept only in R2 under `new-m/backgrounds/`, never in the code, and handed out only through the signed-in route `/api/admin/new-m/background`; a new upload takes the old one's place and the old file is deleted (the Storage cleanup leaves the one in use alone).
 
-> The public page these links open is not built yet, and a New M domain still has to be pointed at this deployment (DNS, and attached in Vercel) before its links can answer. Until then, opening a link fails.
+**Verification page** — a link on a New M domain opens the public verification page (`src/app/nm-view`, reached only through
+the middleware, which rewrites a request whose host is a New M domain and whose address matches one of that domain's links). The
+number and date are read back from the link's formulas (`matchTemplate` in `src/lib/new-m-link.ts`; extra query parameters are
+ignored, a trailing slash is forgiven) and looked up on that domain only; a link whose values match no document shows "No matching
+record found", and an address that is no New M link falls through to Old M as before. The page reproduces the reference design on a
+1062 px grid that scales with the window (every size is `calc(var(--u) * n)`, with `--u` one design pixel; the source is
+`verify-page.src.css`, built by `npm run build:nmp-css`). Fonts are the design's own (Segoe UI, Georgia, Arial) where installed,
+otherwise metric-compatible stand-ins served from `public/nm-assets/fonts` (Selawik, Gelasio, Arimo — OFL). The PDF is shown with
+PDF.js in a viewer drawn after the browser's own (thumbnails, page number, zoom, fit, rotate, text notes, drawing, undo/redo, save a
+copy with notes via pdf-lib, download, print, properties); it reads the file through `/api/new-m/document`, which serves byte
+ranges, so a large scan starts showing at once. `mode=open` / `mode=download` redirect to a short-lived R2 link instead.
+
+**Page design** (super admin) — `/admin/new-m/page-design` shows the page exactly as visitors see it; clicking any text, button,
+tab, link or logo opens its settings (wording, link target, new tab, icon, width, hide/show, order, add/duplicate/delete within
+lists, logo upload). Desktop and mobile are separate views (mobile is a placeholder for now: phones get the desktop design scaled).
+Text, links and settings are saved as JSON in `new_m_page_settings` (one row per view; anything missing falls back to the design's
+default); logos go to R2 under `new-m/page/` and are deleted when replaced or removed. The content is checked on the server
+(`cleanDesktop`): links must be http(s), mailto, tel or same-site, and logo keys must be under `new-m/page/`. A save made against an
+older copy than the one stored is refused with a reload hint.
+
+A New M domain still has to point at this deployment (DNS, and attached in Vercel) before its links can answer.
 
 ## Permissions
 
@@ -192,6 +212,11 @@ src/app/api/admin/new-m/*    New M API (documents, its own domains and links, sa
 src/components/admin/*          File manager (Old M), New M, Domains, Storage, Search, Activity, Users
 src/lib/new-m-link.ts        New M link formulas, attestation number and QR settings, shared by server and browser
 src/lib/new-m-qr.ts          New M's QR encoder (ISO/IEC 18004, byte mode)
+src/lib/new-m-page.ts        Verification page content: defaults from the design, checks, paths for the editor
+src/lib/new-m-page-server.ts Page content in the database, logo links, finding the document behind a visited link
+src/components/new-m-page/*  The verification page (VerifyPage), its PDF viewer and its stylesheet
+src/app/nm-view              The public verification page (reached through the middleware only)
+src/app/api/new-m/document   The PDF behind a verification page, with byte ranges
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions
 supabase/new-m.sql           the New M tables on their own, for adding them to an existing database

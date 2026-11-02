@@ -7,6 +7,7 @@ import {
   Globe,
   HardDrive,
   LayoutDashboard,
+  LayoutTemplate,
   LogOut,
   Menu,
   Search,
@@ -48,6 +49,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         can("new_m_settings") ||
         can("new_m_domains"),
     },
+    { href: "/admin/new-m/page-design", label: "New M page", icon: LayoutTemplate, show: isSuper },
     { href: "/admin/domains", label: "Domains", icon: Globe, show: true },
     { href: "/admin/storage", label: "Storage", icon: HardDrive, show: isSuper },
     { href: "/admin/search", label: "Search by date", icon: Search, show: isSuper || can("search") },
@@ -78,7 +80,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         {nav
           .filter((n) => n.show)
           .map((n) => {
-            const active = n.href === "/admin" ? pathname === "/admin" : pathname.startsWith(n.href);
+            // The most specific entry wins, so New M page is not also lit up as New M.
+            const active =
+              n.href === "/admin"
+                ? pathname === "/admin"
+                : pathname.startsWith(n.href) &&
+                  !nav.some((o) => o.show && o.href !== n.href && o.href.startsWith(n.href) && pathname.startsWith(o.href));
             return (
               <Link
                 key={n.href}

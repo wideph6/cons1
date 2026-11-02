@@ -5,6 +5,7 @@ import {
   Eye,
   Globe,
   Image as ImageIcon,
+  LayoutTemplate,
   ListChecks,
   Pencil,
   Plus,
@@ -15,6 +16,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { NewMDomains } from "@/components/admin/NewMDomains";
 import { NewMForm } from "@/components/admin/NewMForm";
@@ -227,6 +229,15 @@ export function NewMManager() {
             <Button icon={<ImageIcon className="size-4" />} onClick={() => setBackgroundOpen(true)}>
               Background image
             </Button>
+          ) : null}
+          {isSuper ? (
+            <Link
+              href="/admin/new-m/page-design"
+              className="inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-md border border-line-strong bg-surface text-sm font-medium hover:bg-surface-2"
+            >
+              <LayoutTemplate className="size-4" />
+              Page design
+            </Link>
           ) : null}
           {canCreate ? (
             <Button variant="primary" icon={<Upload className="size-4" />} disabled={!ready || !lists} onClick={() => openForm(null)}>
@@ -442,7 +453,8 @@ export function NewMManager() {
 
       {page && items.length > 0 ? (
         <p className="text-[12.5px] text-text-muted mt-3">
-          The front-end page for these links is not built yet, so opening one shows “not found” until it is.
+          Each link opens the verification page with that document&apos;s values and PDF, once its domain points at this
+          deployment.{isSuper ? " Change the page's wording, links and logos under Page design." : null}
         </p>
       ) : null}
 

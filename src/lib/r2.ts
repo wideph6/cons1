@@ -48,10 +48,10 @@ export function isManagedKey(key: unknown): key is string {
 }
 
 /**
- * New M's documents, officer signatures and sticker backgrounds live under their own prefix, apart
- * from Old M.
+ * New M's documents, officer signatures, sticker backgrounds and the verification page's logos live
+ * under their own prefix, apart from Old M.
  */
-export type NewMKind = "docs" | "signatures" | "backgrounds";
+export type NewMKind = "docs" | "signatures" | "backgrounds" | "page";
 
 export function makeNewMKey(kind: NewMKind, filename: string): string {
   const safe = cleanFilename(filename).replace(/[^A-Za-z0-9._-]/g, "_");
@@ -59,7 +59,7 @@ export function makeNewMKey(kind: NewMKind, filename: string): string {
 }
 
 export function isNewMKey(key: unknown, kind?: NewMKind): key is string {
-  const part = kind ?? "(?:docs|signatures|backgrounds)";
+  const part = kind ?? "(?:docs|signatures|backgrounds|page)";
   return typeof key === "string" && new RegExp(`^new-m/${part}/[0-9a-f-]{36}/[A-Za-z0-9._-]+$`).test(key);
 }
 
@@ -216,6 +216,16 @@ export async function putObject(key: string, body: Uint8Array, contentType: stri
 export async function getObjectStream(key: string) {
   const res = await r2().send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
   return res;
+}
+
+/** Part of an object (an HTTP Range such as "bytes=0-65535"), or all of it when range is undefined. */
+export async function getObjectRange(key: string, range?: string) {
+  return r2().send(new GetObjectCommand({ Bucket: bucket(), Key: key, Range: range }));
+}
+
+/** An object's headers only. */
+export async function headObjectFull(key: string) {
+  return r2().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
 }
 
 /**

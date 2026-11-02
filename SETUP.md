@@ -612,10 +612,11 @@ Ban gaya ya nahi, ye check karen:
 select table_name from information_schema.tables
 where table_schema = 'public'
   and table_name in ('new_m_records', 'new_m_options', 'new_m_officers',
-                     'new_m_domains', 'new_m_link_templates', 'new_m_settings');
+                     'new_m_domains', 'new_m_link_templates', 'new_m_settings',
+                     'new_m_page_settings');
 ```
 
-**6 rows** aaney chahiyen. SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
+**7 rows** aaney chahiyen (`new_m_page_settings` verification page ki design ke liye hai — Hissa 13.9). SQL chalaye baghair New M kholenge to wahan yehi hidayat likhi nazar aayegi.
 
 ## 13.2 Domains aur links (pehli dafa)
 
@@ -773,13 +774,82 @@ Super admin ko sab milta hai. Jis user ke paas in mein se koi bhi nahi, us ko si
 
 ## 13.7 Storage
 
-New M ki PDFs, signatures aur sticker background bucket mein `new-m/` ke neeche rehti hain (folder ka naam badalne se pehle upload
-hui files apne purane folder mein hi rehti hain aur waise hi chalti hain). **Storage** page in sab ko ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document, saved officer ya mojooda background ki ho.
+New M ki PDFs, signatures, sticker background aur verification page ke logos bucket mein `new-m/` ke neeche rehti hain (folder ka naam badalne se pehle upload
+hui files apne purane folder mein hi rehti hain aur waise hi chalti hain). **Storage** page in sab ko ginta hai, aur cleanup kabhi aisi file ko haath nahi lagata jo kisi document, saved officer, mojooda background ya page ke logo ki ho.
 
 ## 13.8 Abhi kya nahi bana
 
-- **Front end page** abhi nahi bana — link kholne par abhi kuch nahi milta. Jab banega, to New M ke har domain ka DNS bhi is app (Vercel) ki taraf karna hoga, bilkul Hissa 7 ki tarah.
+- **Mobile view** ki apni design abhi nahi bani. Tab tak phone par desktop wali design hi screen ke hisaab se chhoti ho kar nazar aati hai (Hissa 13.9).
 - Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
+
+## 13.9 Verification page (front end)
+
+Har New M document ka poora link (jaise `https://verify.example.com/verify-general-attestation-by-qr?attestation_number=GEN-PSMK-XHLI-NSML&issue_date=15102026`)
+ab **verification page** kholta hai — bilkul di gayi design jaisa: header, menu, hero, "MATCHING RECORD FOUND" patti,
+"General Attestation certificate" card, PDF viewer wala "Original Document Attached" card, "Verify another General Attestation"
+button aur footer.
+
+**Kaunsi value kahan aati hai** (document upload karte hue jo bhara tha):
+
+| Page par | Document ki value |
+| --- | --- |
+| Patti: "Document:" ke baad | Document type |
+| Patti: "Issued on" ke baad, aur "Date of issue" | Issue date (`15 Oct 2026`) |
+| "Attestation number" | Attestation number |
+| "Document type" | Document type |
+| "Issuing office" | Issuing office |
+| "Issuing authority" | Issuing authority |
+| "Approving officer" | Officer ka naam (bold), neeche designation, daen taraf signature |
+| "Original Document Attached" | Document ki PDF, viewer mein; **Open document** usi PDF ko nayi tab mein kholta hai |
+
+**Page kab khulta hai:** jab address ka domain New M ka domain ho **aur** address us domain ke kisi link se milta ho. Number aur date
+link ke formulas se parhe jate hain (link ke ilawa izafi `?utm=…` jaise parameters ki parwah nahi). Number/date kisi document se na
+milen to wohi page **"NO MATCHING RECORD FOUND"** ke saath khulta hai. Domain ya link na mile to request pehle ki tarah Old M ko jati hai.
+Har document **sirf apne domain** par dikhta hai.
+
+**Zaroori:** New M ke har domain ka DNS is app (Vercel) ki taraf hona chahiye aur domain Vercel project mein add hona chahiye —
+bilkul Hissa 7 ki tarah. Is ke baghair link khulega hi nahi.
+Naya domain ya link add/edit karne ke baad pehle 30 second tak purana jawab mil sakta hai (server domains ki list thori der yaad rakhta hai).
+
+**PDF viewer:** browser ke PDF viewer jaisa — thumbnails (☰), page number, zoom − +, fit to page / width, rotate, text likhna (Tт),
+draw (pen; dobara click se rang), undo / redo, **triangle +** (visitor ke notes/drawing samet PDF ki copy save), download, print aur ⋮
+menu (rotate, fit, nayi tab, full screen, document properties). Visitor ke notes sirf us ke apne browser mein rehte hain — asal
+document kabhi nahi badalta. Bari PDF tukron mein parhi jati hai, is liye pehla page jaldi aa jata hai.
+PDF `/api/new-m/document?number=…&date=…` se aati hai — wohi number aur date jo link mein hain.
+
+**Har screen par:** page 1062 px ki design grid par bana hai aur window ke hisaab se poora ka poora chhota/bara hota hai — chhote
+laptop se bari screen tak har cheez apni jagah. 1593 px se bari window par page mazeed bara nahi hota; rangeen patti donon taraf
+phail jati hai. Fonts: Windows par asal Segoe UI / Georgia / Arial; baqi computers par unhi ke naap ke free fonts (Selawik, Gelasio,
+Arimo) jo app ke saath aate hain (`public/nm-assets/fonts/`), is liye har jagah aik jaisa nazar aata hai.
+
+### Page design editor (sirf super admin)
+
+Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page **bilkul waisa** nazar aata hai jaisa visitor dekhta hai.
+
+- **Desktop view / Mobile view** — do alag tabs. Mobile view ki apni design baad mein banegi; abhi wahan notes likh sakte hain aur phone
+  par page kaisa dikhta hai wo preview hai.
+- Page par **kisi bhi** text, button, tab (menu item), link, heading, section ka naam ya logo par **click** karen — daen taraf us ki
+  settings khulti hain:
+  - **Text / naam** (menu aur upar wale buttons mein Enter se do lines, jaise "Verify / Document")
+  - **Link** — kahan khulega (`https://…`, `mailto:…`, `tel:…` ya `/…`); **Open in a new tab**
+  - **Icon** (arrow ↗ / shield), **Width** (design ke 1062 px grid par; khali = text jitna)
+  - **Hide / Show** — chhupi cheez editor mein dhaari-dar nazar aati hai taake dobara dikhayi ja sake
+  - List ki cheezon (top buttons, social icons, menu, breadcrumbs, footer links) ke liye **Earlier / Later** (tarteeb),
+    **Add after**, **Duplicate**, **Delete**. Har list ke aakhir mein **+** naya item jorta hai.
+  - **Logo** (header, certificate, footer): **Upload logo** — PNG/JPG/WebP/GIF/SVG, 2 MB tak, **R2** mein `new-m/page/` ke neeche
+    save hota hai. **Use the built-in emblem** wapas design wala emblem.
+  - Labels ("Attestation number" waghera) ka naam badal sakte hain; un ke neeche ki value har document se aati hai.
+  - **PDF viewer**: thumbnails khuli/band se shuru, aur toolbar ka har button dikhana/chhupana.
+- Kuch bhi select na ho to daen taraf **Page settings** (browser tab ka title, animation on/off) aur **page ki har cheez ki list** —
+  chhupi hui cheezen bhi — jahan se click kar ke jump kar sakte hain.
+- **Preview with:** kisi bhi asal document ko chun kar dekhen ke us ki values kaisi lagti hain; **Show the "no matching record" page**
+  se dusri haalat dekhen.
+- **Undo / Redo** (Ctrl+Z / Ctrl+Shift+Z), **Discard changes**, **Reset to design** (sab kuch asal design par wapas — Save tak live
+  nahi hota), **Save** (Ctrl+S).
+- **Save** dabane par saara text, links, buttons ke naam aur settings **database** (`new_m_page_settings`) mein jate hain aur usi
+  waqt har verification link par lag jate hain. Logo **R2** mein; jo logo hata diya ya badal diya wo R2 se mita diya jata hai.
+  Do admin aik saath badlen to baad wale ko "reload" ka paigham aata hai — kisi ka kaam chupke se mit'ta nahi.
+- Storage page aur cleanup page ke logos ko haath nahi lagate.
 
 ---
 

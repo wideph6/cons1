@@ -190,6 +190,8 @@ export const ACTION_LABELS: Record<string, string> = {
   delete_new_m_link: "Deleted New M link",
   update_new_m_background: "Changed New M sticker background",
   reset_new_m_background: "Restored New M sticker background",
+  update_new_m_page: "Changed New M verification page",
+  upload_new_m_page_logo: "Uploaded New M page logo",
 };
 
 export function displayPath(path: string): string {

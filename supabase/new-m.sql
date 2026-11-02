@@ -91,6 +91,18 @@ insert into public.new_m_settings (id) values (true) on conflict (id) do nothing
 alter table public.new_m_settings add column if not exists background_has_frame boolean not null default false;
 alter table public.new_m_settings add column if not exists background_placement jsonb;
 
+-- ---------- Verification page ----------
+-- What the public verification page says and links to, as the super admin set it under New M → Page design.
+-- One row per view: 'desktop' now, 'mobile' when its own design is made. content is JSON; anything it
+-- leaves out shows the design's default. Uploaded logos are kept in R2 under new-m/page/ and only their
+-- storage keys are stored here.
+create table if not exists public.new_m_page_settings (
+  view text primary key check (view in ('desktop', 'mobile')),
+  content jsonb not null default '{}'::jsonb,
+  updated_by uuid references public.users(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- Documents ----------
 create table if not exists public.new_m_records (
   id uuid primary key default gen_random_uuid(),
@@ -271,6 +283,7 @@ alter table public.new_m_options        enable row level security;
 alter table public.new_m_officers       enable row level security;
 alter table public.new_m_records        enable row level security;
 alter table public.new_m_settings       enable row level security;
+alter table public.new_m_page_settings  enable row level security;
 
 revoke all on all tables    in schema public from anon, authenticated;
 revoke all on all sequences in schema public from anon, authenticated;

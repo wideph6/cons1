@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
 import { getBackgroundSettings, isMissingTable } from "@/lib/new-m";
+import { pageImageKeys } from "@/lib/new-m-page-server";
 import { deleteObjects, listAllObjects, MANAGED_PREFIX, NEW_M_PREFIX } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import type { StorageMismatch, StorageMissing, StorageOrphan, StorageReport } from "@/lib/types";
@@ -75,17 +76,19 @@ async function allNewMRows(): Promise<NewMRowLite[]> {
 }
 
 /**
- * Every saved officer's signature, including ones no document has been given yet, and the sticker
- * background the super admin set.
+ * Every saved officer's signature, including ones no document has been given yet, the sticker
+ * background the super admin set, and the logos on the verification page.
  */
 async function newMOfficerKeys(): Promise<string[]> {
-  const [officers, background] = await Promise.all([
+  const [officers, background, pageKeys] = await Promise.all([
     db().from("new_m_officers").select("signature_r2_key"),
     getBackgroundSettings(),
+    // The verification page's logos, as the super admin set them under Page design.
+    pageImageKeys(),
   ]);
   if (officers.error && !isMissingTable(officers.error)) throw new ApiError(500, officers.error.message);
   const keys = (officers.data ?? []).map((o) => o.signature_r2_key as string | null);
-  return [...keys, background.background_r2_key].filter((k): k is string => Boolean(k));
+  return [...keys, background.background_r2_key, ...pageKeys].filter((k): k is string => Boolean(k));
 }
 
 /** The top folder of a storage key: "new-m/" for "new-m/docs/<id>/a.pdf". */

@@ -106,6 +106,136 @@ export function cleanTemplate(input: string, hostname: string): string {
   return t;
 }
 
+/* ---------------- Reading a visited link back ---------------- */
+
+/** What a visited address said, read through one of the domain's links. */
+export interface LinkMatch {
+  /** The attestation number as written in the address (tidied), or null when the link has no such formula. */
+  number: string | null;
+  /** The issue date as YYYY-MM-DD, or null when the link has no date formula. */
+  date: string | null;
+  /** False when a formula's place held something that is not a valid number or date. */
+  valid: boolean;
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s.replace(/\+/g, " "));
+  } catch {
+    return s;
+  }
+}
+
+/** A piece of a link with formulas in it, as a pattern whose groups capture the formulas' values. */
+function tokenPattern(piece: string): { re: RegExp; order: Array<"number" | "date"> } {
+  const order: Array<"number" | "date"> = [];
+  let src = "";
+  let rest = piece;
+  for (;;) {
+    const n = rest.indexOf(LINK_TOKENS.number);
+    const d = rest.indexOf(LINK_TOKENS.date);
+    const next = [n, d].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+    if (next === undefined) {
+      src += escapeRe(rest);
+      break;
+    }
+    src += escapeRe(rest.slice(0, next));
+    if (next === n) {
+      order.push("number");
+      src += "([^/?#&]+?)";
+      rest = rest.slice(next + LINK_TOKENS.number.length);
+    } else {
+      order.push("date");
+      src += "(\\d{8}|[^/?#&]+?)";
+      rest = rest.slice(next + LINK_TOKENS.date.length);
+    }
+  }
+  return { re: new RegExp(`^${src}$`, "i"), order };
+}
+
+/** `31102026` -> `2026-10-31`; null when it is not a real day. */
+export function dateFromParam(v: string): string | null {
+  const m = /^(\d{2})(\d{2})(\d{4})$/.exec(v.trim());
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || year < 1900 || year > 2999) return null;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day < 1 || day > days) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+function trimSlash(p: string): string {
+  return p.length > 1 ? p.replace(/\/+$/, "") : p;
+}
+
+/**
+ * Whether a visited address (path and query, as the server received it) is one of a domain's links,
+ * and if so, which number and date it carries. The path must match exactly (a trailing slash is
+ * forgiven); each query parameter the link names must be there, in any order, and extra parameters
+ * (tracking tags and the like) are ignored. Whatever follows # never reaches the server, so formulas
+ * written there cannot be read.
+ */
+export function matchTemplate(template: string, pathname: string, search: string): LinkMatch | null {
+  const noHash = template.split("#")[0];
+  const q = noHash.indexOf("?");
+  const tPath = trimSlash((q >= 0 ? noHash.slice(0, q) : noHash) || "/");
+  const tQuery = q >= 0 ? noHash.slice(q + 1) : "";
+
+  const values: { number?: string; date?: string } = {};
+
+  // A template may spell characters percent-encoded (%20) or plainly; both are compared decoded.
+  const path = tokenPattern(safeDecode(tPath));
+  const pm = path.re.exec(trimSlash(safeDecode(pathname || "/")));
+  if (!pm) return null;
+  path.order.forEach((k, i) => (values[k] = pm[i + 1]));
+
+  if (tQuery) {
+    const actual = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    const actualKeys = [...actual.keys()];
+    for (const pair of tQuery.split("&")) {
+      if (!pair) continue;
+      const eq = pair.indexOf("=");
+      const key = safeDecode(eq >= 0 ? pair.slice(0, eq) : pair);
+      const want = safeDecode(eq >= 0 ? pair.slice(eq + 1) : "");
+      const realKey = actualKeys.find((k) => k === key) ?? actualKeys.find((k) => k.toLowerCase() === key.toLowerCase());
+      if (realKey === undefined) return null;
+      const got = actual.getAll(realKey);
+      const p = tokenPattern(want);
+      if (p.order.length === 0) {
+        if (!got.some((g) => g.toLowerCase() === want.toLowerCase())) return null;
+        continue;
+      }
+      const hit = got.map((g) => p.re.exec(g.trim())).find(Boolean);
+      if (!hit) return null;
+      p.order.forEach((k, i) => (values[k] = hit[i + 1]));
+    }
+  }
+
+  let valid = true;
+  let number: string | null = null;
+  let date: string | null = null;
+  if (values.number !== undefined) {
+    number = tidyNumber(values.number);
+    if (!NUMBER_RE.test(number)) valid = false;
+  }
+  if (values.date !== undefined) {
+    date = dateFromParam(values.date);
+    if (!date) valid = false;
+  }
+  if (number === null && date === null) {
+    // A link without formulas would answer for every document at once; it is not read as one.
+    return null;
+  }
+  return { number, date, valid };
+}
+
 /** Whether a link carries the attestation number. Without it, every document on the link shares one address. */
 export function hasNumberToken(template: string): boolean {
   return template.includes(LINK_TOKENS.number);
