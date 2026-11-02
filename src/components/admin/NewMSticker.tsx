@@ -40,7 +40,8 @@ function imageWidth(src: string): Promise<number> {
 }
 
 interface Background {
-  dataUri: string;
+  /** The background artwork, or null to draw the sticker on plain white. */
+  dataUri: string | null;
   /** Pixel width, so the PNG keeps all of a large background's detail. */
   width: number;
   /** The image already has the title bar, lines and labels, so the app must not draw them again. */
@@ -66,6 +67,8 @@ function loadBackground(): Promise<Background> {
       }
       throw new Error(message);
     }
+    // 204: no background set — the sticker is drawn on plain white.
+    if (res.status === 204) return { dataUri: null, width: STICKER_W, hasFrame: false };
     const hasFrame = res.headers.get("x-background-has-frame") === "1";
     const dataUri = await blobToDataUri(await res.blob());
     return { dataUri, width: await imageWidth(dataUri), hasFrame };

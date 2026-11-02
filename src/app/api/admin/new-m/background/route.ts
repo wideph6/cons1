@@ -64,10 +64,18 @@ export async function GET(req: NextRequest) {
       if (obj) {
         return image(obj.bytes, settings.background_content_type ?? obj.contentType, "custom", settings.background_has_frame);
       }
-      // Gone from storage: the built-in background keeps stickers working until a new one is set.
+      // Gone from storage: fall back to a plain background until a new one is set.
       console.error("[new-m] sticker background missing from storage", settings.background_r2_key);
     }
-    return image(new Uint8Array(await readFile(DEFAULT_BACKGROUND)), "image/jpeg", "default", false);
+    try {
+      return image(new Uint8Array(await readFile(DEFAULT_BACKGROUND)), "image/jpeg", "default", false);
+    } catch {
+      // No background bundled either: the sticker is drawn on plain white, with the app drawing the frame.
+      return new Response(null, {
+        status: 204,
+        headers: { "cache-control": "private, no-store", "x-background": "none", "x-background-has-frame": "0" },
+      });
+    }
   });
 }
 
