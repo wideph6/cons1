@@ -114,8 +114,11 @@ export const VIEWER_TOOLS = [
 export type ViewerTool = (typeof VIEWER_TOOLS)[number]["key"];
 
 export interface DesktopContent {
-  /** The browser tab's title and icon, and whether the page animates as it opens. */
-  meta: { title: string; animations: boolean; favicon: PFavicon };
+  /**
+   * The browser tab's title and icon, and whether the page animates as it opens. pdf_favicon is the
+   * icon of the tab a document's PDF opens in; without one that tab shows the page's favicon.
+   */
+  meta: { title: string; animations: boolean; favicon: PFavicon; pdf_favicon: PFavicon };
   header: {
     logo: PImage;
     title: PLinkText;
@@ -269,6 +272,7 @@ export const DEFAULT_DESKTOP: DesktopContent = {
     title: "General Attestation Verification",
     animations: true,
     favicon: { key: null, content_type: null, filename: null },
+    pdf_favicon: { key: null, content_type: null, filename: null },
   },
   header: {
     logo: img("Notary Public and Legal Services"),
@@ -637,6 +641,7 @@ export function cleanDesktop(input: unknown): DesktopContent {
       title: str(meta.title, d.meta.title, 200),
       animations: bool(meta.animations, d.meta.animations),
       favicon: cleanFavicon(meta.favicon),
+      pdf_favicon: cleanFavicon(meta.pdf_favicon),
     },
     header: {
       logo: cleanImage(header.logo, d.header.logo),
@@ -776,21 +781,25 @@ export function cleanMobile(input: unknown): MobileContent {
 
 /**
  * Every logo and favicon key a view's content points at, so storage cleanup leaves them alone. The
- * favicon is set on the desktop view and serves both.
+ * favicons are set on the desktop view and serve both.
  */
 export function imageKeys(c: DesktopContent | MobileContent): string[] {
-  const favicon = "favicon" in c.meta ? c.meta.favicon.key : null;
-  return [c.header.logo.key, c.record.logo.key, c.footer.logo.key, favicon].filter((k): k is string => Boolean(k));
+  const favicons = "favicon" in c.meta ? [c.meta.favicon.key, c.meta.pdf_favicon.key] : [];
+  return [c.header.logo.key, c.record.logo.key, c.footer.logo.key, ...favicons].filter((k): k is string => Boolean(k));
 }
 
 /**
- * The address the favicon is served from. It changes with every upload (the key holds a fresh id), so
- * browsers may keep it for good and still pick up a new one.
+ * The address a favicon is served from: the page's, or (for "pdf") the PDF tab's. It changes with every
+ * upload (the key holds a fresh id), so browsers may keep it for good and still pick up a new one.
  */
-export function faviconHref(f: PFavicon): string | null {
+export function faviconHref(f: PFavicon, which: "page" | "pdf" = "page"): string | null {
   if (!f.key) return null;
-  return `/api/new-m/favicon?v=${f.key.split("/")[2] ?? ""}`;
+  const v = f.key.split("/")[2] ?? "";
+  return which === "pdf" ? `/api/new-m/favicon?for=pdf&v=${v}` : `/api/new-m/favicon?v=${v}`;
 }
+
+/** How a document's PDF is named on the page, for previews: 40 random letters and digits. */
+export const SAMPLE_PDF_NAME = "ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp.pdf";
 
 /**
  * The mobile view with the desktop view's wording, links and logos copied in, for the editor's
@@ -896,10 +905,11 @@ export interface PageRecord {
   document: {
     /** Same-site address pdf.js reads the PDF from (supports byte ranges). */
     src: string;
-    /** Opens the PDF in a new tab. */
+    /** Opens the PDF in a new tab: /storage/applications/{number}/documents/{name}.pdf. */
     open_url: string;
-    /** Saves the PDF. */
+    /** Saves the PDF as {name}.pdf; what phones do with the document. */
     download_url: string;
+    /** {name}.pdf, the document's 40-character name; never the name it was uploaded with. */
     filename: string;
     size: number;
   } | null;

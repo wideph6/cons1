@@ -1,6 +1,6 @@
 import { ApiError } from "./errors";
 import { dbError, isMissingTable } from "./new-m";
-import { matchTemplate } from "./new-m-link";
+import { documentAddress, matchTemplate } from "./new-m-link";
 import {
   cleanDesktop,
   cleanMobile,
@@ -80,7 +80,7 @@ export async function assetUrls(...contents: Array<DesktopContent | MobileConten
     c.header.logo,
     c.record.logo,
     c.footer.logo,
-    ...("favicon" in c.meta ? [c.meta.favicon] : []),
+    ...("favicon" in c.meta ? [c.meta.favicon, c.meta.pdf_favicon] : []),
   ]);
   await Promise.all(
     images.map(async (im) => {
@@ -114,16 +114,39 @@ interface ViewRow {
   doc_r2_key: string;
   doc_size: number | null;
   doc_content_type: string;
+  /** The PDF's own address and name; missing until the new-m.sql that adds them has run. */
+  doc_storage_number?: string | null;
+  doc_hash_name?: string | null;
 }
 
 const ROW_COLUMNS =
   "id,attestation_number,issue_date,document_type,issuing_office,issuing_authority,officer_name,officer_designation,officer_signature_r2_key,officer_signature_content_type,doc_filename,doc_r2_key,doc_size,doc_content_type";
+const ADDRESS_COLUMNS = "doc_storage_number,doc_hash_name";
+
+type ViewRead = { data: unknown; error: { code?: string; message: string } | null };
+
+/**
+ * Reads new_m_view with each document's address columns, or without them while the database has not
+ * had the new-m.sql that adds them (42703); its documents keep their earlier address until then.
+ */
+async function readView(query: (columns: string) => PromiseLike<ViewRead>): Promise<ViewRead> {
+  const res = await query(`${ROW_COLUMNS},${ADDRESS_COLUMNS}`);
+  return res.error?.code === "42703" ? query(ROW_COLUMNS) : res;
+}
 
 /** The same-site address of a document's PDF; the number and date are what unlock it. */
 export function documentPath(number: string, isoDate: string, mode?: "open" | "download"): string {
   const sp = new URLSearchParams({ number, date: isoDate });
   if (mode) sp.set("mode", mode);
   return `/api/new-m/document?${sp.toString()}`;
+}
+
+/**
+ * What the PDF is called on the page and when it is saved: its 40-character name, never the name it
+ * was uploaded with (which only the admin panel shows).
+ */
+export function publicFilename(row: Pick<ViewRow, "doc_hash_name" | "doc_filename">): string {
+  return row.doc_hash_name ? `${row.doc_hash_name}.pdf` : row.doc_filename;
 }
 
 /** A document's values as the page shows them, with signed links to its signature. */
@@ -138,6 +161,9 @@ export async function pageRecord(row: ViewRow): Promise<PageRecord> {
           ASSET_TTL,
         ).catch(() => null)
       : null;
+  // Desktop opens the address in a tab; phones save the PDF from it.
+  const address =
+    row.doc_storage_number && row.doc_hash_name ? documentAddress(row.doc_storage_number, row.doc_hash_name) : null;
   return {
     attestation_number: row.attestation_number,
     issue_date: formatIssued(row.issue_date),
@@ -149,9 +175,9 @@ export async function pageRecord(row: ViewRow): Promise<PageRecord> {
     signature_url: signature,
     document: {
       src: documentPath(row.attestation_number, row.issue_date),
-      open_url: documentPath(row.attestation_number, row.issue_date, "open"),
-      download_url: documentPath(row.attestation_number, row.issue_date, "download"),
-      filename: row.doc_filename,
+      open_url: address ?? documentPath(row.attestation_number, row.issue_date, "open"),
+      download_url: address ? `${address}?download` : documentPath(row.attestation_number, row.issue_date, "download"),
+      filename: publicFilename(row),
       size: Number(row.doc_size ?? 0),
     },
   };
@@ -159,26 +185,48 @@ export async function pageRecord(row: ViewRow): Promise<PageRecord> {
 
 /** One document by id, for the editor's preview. */
 export async function pageRecordById(id: string): Promise<PageRecord> {
-  const { data, error } = await db().from("new_m_view").select(ROW_COLUMNS).eq("id", id).maybeSingle();
+  const { data, error } = await readView((columns) => db().from("new_m_view").select(columns).eq("id", id).maybeSingle());
   if (error) throw dbError(error);
   if (!data) throw new ApiError(404, "Document not found");
-  return pageRecord(data as unknown as ViewRow);
+  return pageRecord(data as ViewRow);
 }
 
 /** The document whose number and date unlock its PDF. */
 export async function rowByNumberAndDate(number: string, isoDate: string): Promise<ViewRow | null> {
-  const { data, error } = await db()
-    .from("new_m_view")
-    .select(ROW_COLUMNS)
-    .eq("attestation_number", number)
-    .eq("issue_date", isoDate)
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await readView((columns) =>
+    db()
+      .from("new_m_view")
+      .select(columns)
+      .eq("attestation_number", number)
+      .eq("issue_date", isoDate)
+      .limit(1)
+      .maybeSingle(),
+  );
   if (error) {
     if (isMissingTable(error)) return null;
     throw dbError(error);
   }
-  return (data as unknown as ViewRow) ?? null;
+  return (data as ViewRow | null) ?? null;
+}
+
+/**
+ * The document a /storage/applications/{number}/documents/{name}.pdf address names, only on the
+ * document's own domain. Null before new-m.sql has added the address columns.
+ */
+export async function rowByAddress(host: string, storageNumber: string, hashName: string): Promise<ViewRow | null> {
+  const { data, error } = await db()
+    .from("new_m_view")
+    .select(`${ROW_COLUMNS},${ADDRESS_COLUMNS}`)
+    .eq("doc_storage_number", storageNumber)
+    .eq("doc_hash_name", hashName)
+    .in("domain_hostname", hostCandidates(host))
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error) || error.code === "42703") return null;
+    throw dbError(error);
+  }
+  return (data as ViewRow | null) ?? null;
 }
 
 export interface VisitResult {
@@ -218,14 +266,16 @@ export async function findVisit(host: string, pathname: string, search: string):
     if (!m) continue;
     if (!m.valid) return { matched: true, record: null };
 
-    let q = db().from("new_m_view").select(ROW_COLUMNS).eq("domain_id", domain.id);
-    if (m.number) q = q.eq("attestation_number", m.number);
-    if (m.date) q = q.eq("issue_date", m.date);
-    // Without a number in the link, only the link itself tells documents apart.
-    if (!m.number) q = q.eq("link_id", link.id);
-    const { data: rows, error: rowError } = await q.limit(2);
+    const { data: rows, error: rowError } = await readView((columns) => {
+      let q = db().from("new_m_view").select(columns).eq("domain_id", domain.id);
+      if (m.number) q = q.eq("attestation_number", m.number);
+      if (m.date) q = q.eq("issue_date", m.date);
+      // Without a number in the link, only the link itself tells documents apart.
+      if (!m.number) q = q.eq("link_id", link.id);
+      return q.limit(2);
+    });
     if (rowError) throw dbError(rowError);
-    const list = (rows ?? []) as unknown as ViewRow[];
+    const list = (rows ?? []) as ViewRow[];
     // Two documents on one address would be a guess; neither is shown.
     if (list.length !== 1) return { matched: true, record: null };
     return { matched: true, record: await pageRecord(list[0]) };

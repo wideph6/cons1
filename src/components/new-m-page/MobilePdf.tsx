@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
-import type { MobileViewerMode, PageRecord } from "@/lib/new-m-page";
+import { SAMPLE_PDF_NAME, type MobileViewerMode, type PageRecord } from "@/lib/new-m-page";
 import { loadPdfjs } from "./PdfViewer";
 
 type Doc = NonNullable<PageRecord["document"]>;
@@ -39,8 +39,9 @@ export function MobilePdf({
     return <PdfPages doc={doc} preview={preview} onFail={() => setFailed(true)} />;
   }
 
-  const name = doc?.filename ?? (preview ? "document.pdf" : "");
-  const href = doc?.open_url;
+  const name = doc?.filename ?? (preview ? SAMPLE_PDF_NAME : "");
+  // On a phone the button saves the PDF.
+  const href = doc?.download_url;
   return (
     <div className="nmpm-file">
       <span className="nmpm-file-icon" aria-hidden="true">
@@ -53,7 +54,7 @@ export function MobilePdf({
       ) : null}
       {!buttonHidden ? (
         href && !preview ? (
-          <a {...buttonProps} className={["nmpm-file-open", buttonProps?.className ?? ""].join(" ").trim()} href={href} target="_blank" rel="noopener noreferrer">
+          <a {...buttonProps} className={["nmpm-file-open", buttonProps?.className ?? ""].join(" ").trim()} href={href} download={name}>
             {buttonText}
           </a>
         ) : (
@@ -121,8 +122,8 @@ function PdfPages({ doc, preview, onFail }: { doc: Doc; preview?: boolean; onFai
           ))
         : null}
       {preview ? null : (
-        <a className="nmpm-pages-open" href={doc.open_url} target="_blank" rel="noopener noreferrer">
-          Open the PDF
+        <a className="nmpm-pages-open" href={doc.download_url} download={doc.filename}>
+          Download the PDF
         </a>
       )}
     </div>

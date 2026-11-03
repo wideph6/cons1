@@ -816,9 +816,23 @@ menu (rotate, fit, nayi tab, full screen, document properties). Visitor ke notes
 document kabhi nahi badalta. Bari PDF tukron mein parhi jati hai, is liye pehla page jaldi aa jata hai.
 PDF `/api/new-m/document?number=…&date=…` se aati hai — wohi number aur date jo link mein hain.
 
+**Document ka apna link aur naam:** har document ko database khud aik **13 digit number** (jaise `3660176069053`) aur aik **40
+character ka random naam** (A–Z, a–z, 0–9, jaise `ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp`) deta hai — dono har document ke liye
+alag, database mein save, aur PDF replace karne par bhi wohi rehte hain. Is se document ka link banta hai:
+`https://<domain>/storage/applications/3660176069053/documents/ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp.pdf`
+- Page par file ka naam aur download hone wali file ka naam hamesha `<40 character naam>.pdf` hota hai. Upload wala asal naam sirf
+  admin panel mein dikhta hai, visitor ko kabhi nahi.
+- **Computer (desktop view):** "Open document" se ye link **nayi tab** mein khulta hai, PDF browser ke apne viewer mein. Tab ka
+  title hamesha document ka **poora link** hota hai, aur favicon wo jo Page settings mein **Favicon of the PDF tab** mein upload kiya
+  (na ho to page wala favicon).
+- **Phone (mobile view):** "Open document" aur file card ka **Open** button document **download** karte hain.
+- Link sirf usi document ke apne domain par khulta hai; ghalat number/naam par "Not found". PDF aap ki site se hi bheji jati hai
+  (R2 ka link visitor ko nahi dikhta), is liye ye Vercel ki bandwidth istemal karti hai.
+- Purane documents ko number aur naam `supabase/new-m.sql` chalane par khud mil jate hain; jab tak wo nahi chali, purane link chalte rehte hain.
+
 **Mobile view (phone):** 768 px se tang screen (har phone) par page ki **apni mobile design** khulti hai — di gayi mobile design
 jaisi: upar logo, daftar ka naam aur **☰ (hamburger) button**; hero; "MATCHING RECORD FOUND" patti; certificate card; document card
-(PDF ka icon, file ka naam aur neela **Open** button jo PDF phone ke apne viewer mein kholta hai); "Verify another General Attestation"
+(PDF ka icon, file ka naam aur neela **Open** button jo PDF download karta hai); "Verify another General Attestation"
 aur footer. Wohi document values usi tarah apni jagah aati hain (upar wala table). **☰ par tap** se menu header ke neeche khulta hai:
 menu items (Home, Attestation, … Verify Document), **Quick links** (Press Releases, LEGAL Services, NPLS Directory, Applicant Portal) aur
 "Connect with NPLS" social icons. Kisi link par, menu se bahar ya ☰ par dobara tap (ya Esc) se band hota hai.
@@ -868,6 +882,9 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
   (chokor, kam az kam 48 × 48, behtareen 512 × 512), 1 MB tak. Upar chhote se tab mein dikhta hai ke visitor ko kaisa nazar aayega.
   Phir page **Save** karen. **Use the app's icon** se wapas app wala icon. Favicon R2 mein rehta hai, code mein nahi. Phone par bhi
   yahi favicon dikhta hai.
+- **Favicon of the PDF tab:** usi jagah neeche — computer par "Open document" se jo PDF tab khulti hai, us ka alag favicon. Upload
+  karen, phir **Save**. Chhote tab preview mein title ki jagah document ka poora link dikhta hai, jaisa asal tab mein. **Use the
+  page's favicon** se hata dein to wo tab page wala favicon dikhati hai.
 - **Preview with:** kisi bhi asal document ko chun kar dekhen ke us ki values kaisi lagti hain; **Show the "no matching record" page**
   se dusri haalat dekhen.
 - **Undo / Redo** (Ctrl+Z / Ctrl+Shift+Z) — har view ki apni history; **Discard changes** (dono views aakhri save par wapas);

@@ -164,20 +164,34 @@ PDF.js in a viewer drawn after the browser's own (thumbnails, page number, zoom,
 copy with notes via pdf-lib, download, print, properties); it reads the file through `/api/new-m/document`, which serves byte
 ranges, so a large scan starts showing at once. `mode=open` / `mode=download` redirect to a short-lived R2 link instead.
 
+**Document address** — every document also has its own address on its domain,
+`/storage/applications/{doc_storage_number}/documents/{doc_hash_name}.pdf`: a 13-digit number and a 40-character name (letters
+and digits, like Laravel's `hashName()`), drawn at random by the database for each document (`new_m_storage_number()`,
+`new_m_hash_name()` in new-m.sql, from `gen_random_uuid()`'s secure random bytes; both unique) and kept when the PDF is replaced.
+The name is what the page shows and what the PDF is saved as; the name it was uploaded with stays in the admin panel only. The
+middleware sends such an address on a New M domain to `src/app/nm-doc`, which answers only on the document's own domain: without a
+query it is the tab the desktop **Open document** button opens — the browser's PDF viewer filling the page, titled with the full
+address and showing the **PDF tab favicon** (else the page's favicon); `?view` is the PDF for that frame and `?download` the PDF as
+an attachment. Both are sent from this site with byte ranges (`sendPdf` in `src/lib/new-m-pdf.ts`), not redirected to R2, whose
+object keys carry the uploaded name; this uses Vercel bandwidth. On phones the **Open document** and file-card buttons download
+`?download`, and a browser that cannot show PDFs inside a page (`navigator.pdfViewerEnabled === false`) is sent there too. Before
+the new-m.sql that adds the two columns has run, documents keep the earlier links.
+
 **Mobile view** — the same page carries a second layout drawn after the mobile design (`MobilePage`, styles in
 `verify-mobile.src.css` → `verify-mobile.css`); below 768 px it shows and the desktop one hides (`.nmp-switch`). It is laid out on a
 360 px grid that scales to the phone (`calc(var(--mu) * n)`, `--mu` = one design pixel of the page's width, capped at 540 px), so
 every phone from 320 px up keeps the design's proportions without horizontal scrolling. The header's hamburger button
 (`MobileMenu`, a small client part) opens the main menu, the quick links and the social icons under the header; Escape, a tap on a
-link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button to the
-PDF) or, if chosen, every page drawn with PDF.js at the phone's width (`MobilePdf`; nothing is downloaded while the view is hidden).
+link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button that
+downloads the PDF) or, if chosen, every page drawn with PDF.js at the phone's width (`MobilePdf`; nothing is downloaded while the view is hidden).
 Its fonts are the mobile design's: Roboto and Noto Serif, served from `public/nm-assets/fonts` (OFL).
 
 **Page design** (super admin) — `/admin/new-m/page-design` shows the page exactly as visitors see it; clicking any text, button,
 tab, link or logo opens its settings (wording, link target, new tab, icon, width, hide/show, order, add/duplicate/delete within
 lists, logo upload). With nothing selected, the desktop view's **Page settings** holds the browser tab's title and its **favicon**
 (ICO, PNG, SVG, JPG, WebP or GIF up to 1 MB, kept in R2 under `new-m/page/`; served to visitors from `/api/new-m/favicon?v=…`, an
-address that changes with each upload so browsers may keep it; without one the app's own icon shows; phones get the same favicon).
+address that changes with each upload so browsers may keep it; without one the app's own icon shows; phones get the same favicon),
+and the **favicon of the PDF tab** a document opens in (`/api/new-m/favicon?for=pdf&v=…`; without one that tab shows the page's).
 Desktop and mobile are separate views with separate content, each with its own undo history and reset; the
 mobile tab shows the page in a phone frame at a chosen width, opens the hamburger menu when its button is clicked so the menu's
 items, quick links and social icons can be edited like everything else, and can copy the desktop wording in (`mobileFromDesktop`).
@@ -231,6 +245,8 @@ src/lib/new-m-page-server.ts Page content in the database, logo links, finding t
 src/components/new-m-page/*  The verification page: desktop (VerifyPage, PdfViewer) and mobile (MobilePage, MobileMenu, MobilePdf), stylesheets
 src/app/nm-view              The public verification page (reached through the middleware only)
 src/app/api/new-m/document   The PDF behind a verification page, with byte ranges
+src/app/nm-doc               A document's /storage/applications/… address: its PDF tab, ?view and ?download (middleware only)
+src/lib/new-m-pdf.ts         Sending a document's PDF from this site, with byte ranges
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions
 supabase/new-m.sql           the New M tables on their own, for adding them to an existing database

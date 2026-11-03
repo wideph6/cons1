@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { matchTemplate } from "@/lib/new-m-link";
+import { matchTemplate, readDocumentAddress } from "@/lib/new-m-link";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 
 function requestHost(req: NextRequest): string {
@@ -64,12 +64,25 @@ function isAppPath(pathname: string): boolean {
   );
 }
 
+/** Hands a New M visit to the app's own route for it, with the address the visitor opened. */
+function serveNewM(req: NextRequest, host: string, route: "/nm-view" | "/nm-doc"): NextResponse {
+  const target = req.nextUrl.clone();
+  target.pathname = route;
+  target.search = "";
+  const headers = new Headers(req.headers);
+  headers.set("x-nm-host", host);
+  headers.set("x-nm-path", encodeURIComponent(req.nextUrl.pathname));
+  headers.set("x-nm-search", encodeURIComponent(req.nextUrl.search));
+  return NextResponse.rewrite(target, { request: { headers } });
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const host = requestHost(req);
 
-  // The verification page is only ever reached through a New M link, never by its own address.
-  if (pathname === "/nm-view" || pathname.startsWith("/nm-view/")) {
+  // The verification page and the document tab are only ever reached through a New M address, never
+  // by their own.
+  if (pathname === "/nm-view" || pathname.startsWith("/nm-view/") || pathname === "/nm-doc" || pathname.startsWith("/nm-doc/")) {
     return new NextResponse("Not found", { status: 404 });
   }
 
@@ -82,16 +95,9 @@ export async function middleware(req: NextRequest) {
   if (!isAdminArea) {
     if (!isAppPath(pathname)) {
       const templates = await newMLinks(host);
-      if (templates?.some((t) => matchTemplate(t, pathname, req.nextUrl.search))) {
-        const target = req.nextUrl.clone();
-        target.pathname = "/nm-view";
-        target.search = "";
-        const headers = new Headers(req.headers);
-        headers.set("x-nm-host", host);
-        headers.set("x-nm-path", encodeURIComponent(pathname));
-        headers.set("x-nm-search", encodeURIComponent(req.nextUrl.search));
-        return NextResponse.rewrite(target, { request: { headers } });
-      }
+      // A document's PDF address (/storage/applications/…/documents/….pdf) on any New M domain.
+      if (templates !== null && readDocumentAddress(pathname)) return serveNewM(req, host, "/nm-doc");
+      if (templates?.some((t) => matchTemplate(t, pathname, req.nextUrl.search))) return serveNewM(req, host, "/nm-view");
     }
     return NextResponse.next();
   }

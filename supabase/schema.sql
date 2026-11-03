@@ -338,6 +338,74 @@ create table if not exists public.new_m_page_settings (
   updated_at timestamptz not null default now()
 );
 
+-- ---------- Document addresses ----------
+-- Each document's PDF opens at /storage/applications/{doc_storage_number}/documents/{doc_hash_name}.pdf
+-- on its own domain: a 13-digit number and a 40-character name of letters and digits, both drawn at
+-- random for each document. The name is also what the PDF is called on the page and when it is
+-- downloaded. Being impossible to guess is what keeps the address private.
+
+-- Random characters from alphabet, from the server's secure random source (gen_random_uuid). Bytes 6
+-- and 8 of a uuid hold its version and variant, so only the other 14 are used; bytes at the top of
+-- the range are skipped rather than folded with %, which would favour the first characters.
+create or replace function public.new_m_random_text(len integer, alphabet text)
+returns text
+language plpgsql
+volatile
+set search_path = public
+as $$
+declare
+  result text := '';
+  n constant integer := length(alphabet);
+  usable constant integer := 256 - 256 % length(alphabet);
+  bytes bytea;
+  b integer;
+begin
+  while length(result) < len loop
+    bytes := decode(replace(gen_random_uuid()::text, '-', ''), 'hex');
+    for i in 0..15 loop
+      continue when i in (6, 8);
+      b := get_byte(bytes, i);
+      continue when b >= usable;
+      result := result || substr(alphabet, b % n + 1, 1);
+      exit when length(result) = len;
+    end loop;
+  end loop;
+  return result;
+end $$;
+
+-- 13 digits, never starting with 0, e.g. 3660176069053.
+create or replace function public.new_m_storage_number()
+returns text
+language sql
+volatile
+set search_path = public
+as $$
+  select public.new_m_random_text(1, '123456789') || public.new_m_random_text(12, '0123456789')
+$$;
+
+-- 40 letters and digits, e.g. ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp.
+create or replace function public.new_m_hash_name()
+returns text
+language sql
+volatile
+set search_path = public
+as $$
+  select public.new_m_random_text(40, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
+$$;
+
+-- Only the server's service_role, which saves documents, may call these.
+revoke all on function public.new_m_random_text(integer, text) from public;
+revoke all on function public.new_m_storage_number() from public;
+revoke all on function public.new_m_hash_name() from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.new_m_random_text(integer, text) to service_role;
+    grant execute on function public.new_m_storage_number() to service_role;
+    grant execute on function public.new_m_hash_name() to service_role;
+  end if;
+end $$;
+
 -- ---------- Documents ----------
 create table if not exists public.new_m_records (
   id uuid primary key default gen_random_uuid(),
@@ -370,6 +438,9 @@ create table if not exists public.new_m_records (
   doc_content_type text not null default 'application/pdf',
   doc_uploaded_at timestamptz not null default now(),
   doc_replaced_at timestamptz,
+  -- The PDF's public address and name (see Document addresses above). They stay when the PDF is replaced.
+  doc_storage_number text not null default public.new_m_storage_number(),
+  doc_hash_name text not null default public.new_m_hash_name(),
 
   -- The QR code of the complete link, saved with the document as an SVG. qr_url is the link it was
   -- drawn from; when the link changes, a new code replaces this one.
@@ -388,6 +459,35 @@ alter table public.new_m_records add column if not exists qr_svg text;
 alter table public.new_m_records add column if not exists qr_updated_at timestamptz;
 alter table public.new_m_records add column if not exists link_id uuid references public.new_m_link_templates(id) on delete set null;
 alter table public.new_m_records add column if not exists link_template text not null default '';
+-- Every document already saved draws its own number and name here.
+alter table public.new_m_records add column if not exists doc_storage_number text not null default public.new_m_storage_number();
+alter table public.new_m_records add column if not exists doc_hash_name text not null default public.new_m_hash_name();
+
+-- Two documents drawing the same number is next to impossible; should it ever happen, the later one
+-- draws again, so the unique indexes below can always be made.
+do $$
+begin
+  loop
+    update public.new_m_records r
+       set doc_storage_number = public.new_m_storage_number()
+     where exists (select 1 from public.new_m_records o where o.doc_storage_number = r.doc_storage_number and o.id < r.id);
+    exit when not found;
+  end loop;
+  loop
+    update public.new_m_records r
+       set doc_hash_name = public.new_m_hash_name()
+     where exists (select 1 from public.new_m_records o where o.doc_hash_name = r.doc_hash_name and o.id < r.id);
+    exit when not found;
+  end loop;
+  if not exists (select 1 from pg_constraint where conname = 'new_m_records_doc_address_check') then
+    alter table public.new_m_records
+      add constraint new_m_records_doc_address_check
+      check (doc_storage_number ~ '^[1-9][0-9]{12}$' and doc_hash_name ~ '^[A-Za-z0-9]{40}$');
+  end if;
+end $$;
+
+create unique index if not exists new_m_records_storage_number_idx on public.new_m_records (doc_storage_number);
+create unique index if not exists new_m_records_hash_name_idx on public.new_m_records (doc_hash_name);
 
 -- Documents uploaded while New M still used the Domains page move to New M's own domains:
 -- each hostname they used becomes a New M domain with the link they were built on, so their

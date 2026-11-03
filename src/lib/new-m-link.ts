@@ -241,6 +241,25 @@ export function hasNumberToken(template: string): boolean {
   return template.includes(LINK_TOKENS.number);
 }
 
+/* ---------------- The PDF's own address ---------------- */
+
+/**
+ * `/storage/applications/3660176069053/documents/ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp.pdf`: where a
+ * document's PDF opens on its domain. The 13-digit number and the 40-character name are drawn at random
+ * for each document by the database (new-m.sql) and saved with it.
+ */
+export const DOCUMENT_PATH_RE = /^\/storage\/applications\/([1-9][0-9]{12})\/documents\/([A-Za-z0-9]{40})\.pdf$/;
+
+export function documentAddress(storageNumber: string, hashName: string): string {
+  return `/storage/applications/${storageNumber}/documents/${hashName}.pdf`;
+}
+
+/** The number and name a visited path carries, or null when it is not a document's address. */
+export function readDocumentAddress(pathname: string): { number: string; name: string } | null {
+  const m = DOCUMENT_PATH_RE.exec(pathname);
+  return m ? { number: m[1], name: m[2] } : null;
+}
+
 /* ---------------- QR code ---------------- */
 
 /**

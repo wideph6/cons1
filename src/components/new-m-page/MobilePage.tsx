@@ -65,6 +65,10 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
     };
   }
 
+  function downloadProps(d: PageRecord["document"]) {
+    return d ? { href: d.download_url, download: d.filename } : { href: "#" };
+  }
+
   function addButton(listPath: string, label = "+") {
     if (!editing) return null;
     return (
@@ -342,7 +346,8 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                     ? (
                       <a
                         {...ed("document.open", doc.open.hidden, "nmpm-open")}
-                        {...linkProps(doc.open.href || r.document?.open_url || "#", doc.open.new_tab)}
+                        // A phone saves the PDF; a link the super admin typed in is followed instead.
+                        {...(doc.open.href ? linkProps(doc.open.href, doc.open.new_tab) : downloadProps(r.document))}
                       >
                         <span>{doc.open.text}</span>
                         {icon(doc.open, "nmpm-open-icon")}

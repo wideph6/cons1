@@ -50,6 +50,7 @@ import {
   MAX_ITEMS,
   MOBILE_VIEWER_MODES,
   RECORD_FIELDS,
+  SAMPLE_PDF_NAME,
   SAMPLE_RECORD,
   SOCIAL_ICONS,
   VIEWER_TOOLS,
@@ -1030,6 +1031,7 @@ function Overview({
                 onChange={(v) => onChange("meta.favicon", v)}
                 onUploaded={onUploaded}
               />
+              <PdfFaviconField content={content as DesktopContent} assets={assets} onChange={onChange} onUploaded={onUploaded} />
             </>
           ) : null}
           <Checkbox
@@ -1431,16 +1433,61 @@ function SocialFields({ value, set }: { value: PSocial; set: (f: string, v: unkn
   );
 }
 
-/** The verification page's browser-tab icon, shown on a tab as visitors see it, next to the page's title. */
-function FaviconField({
-  value,
-  title,
+/**
+ * The icon of the tab a document's PDF opens in on a computer. That tab's title is always the
+ * document's full address, as in the sample here.
+ */
+function PdfFaviconField({
+  content,
   assets,
   onChange,
   onUploaded,
 }: {
+  content: DesktopContent;
+  assets: Record<string, string>;
+  onChange: (path: string, value: unknown) => void;
+  onUploaded: (key: string, url: string) => void;
+}) {
+  const page = content.meta.favicon;
+  return (
+    <FaviconField
+      label="Favicon of the PDF tab"
+      value={content.meta.pdf_favicon}
+      title={`https://your-domain.com/storage/applications/3660176069053/documents/${SAMPLE_PDF_NAME}`}
+      fallback={{
+        url: (page.key && assets[page.key]) || "/icon.svg",
+        text: page.key
+          ? "No favicon of its own, so the PDF tab shows the page's favicon."
+          : "No favicon of its own, so the PDF tab shows the app's icon.",
+      }}
+      resetLabel="Use the page's favicon"
+      assets={assets}
+      onChange={(v) => onChange("meta.pdf_favicon", v)}
+      onUploaded={onUploaded}
+    />
+  );
+}
+
+/**
+ * A browser-tab icon — the verification page's, or the PDF tab's — shown on a tab as visitors see it,
+ * next to that tab's title.
+ */
+function FaviconField({
+  label = "Favicon",
+  value,
+  title,
+  fallback = { url: "/icon.svg", text: "No favicon uploaded, so the app's own icon shows." },
+  resetLabel = "Use the app's icon",
+  assets,
+  onChange,
+  onUploaded,
+}: {
+  label?: string;
   value: PFavicon;
   title: string;
+  /** What the tab shows without an upload. */
+  fallback?: { url: string; text: string };
+  resetLabel?: string;
   assets: Record<string, string>;
   onChange: (value: PFavicon) => void;
   onUploaded: (key: string, url: string) => void;
@@ -1476,18 +1523,18 @@ function FaviconField({
 
   return (
     <div>
-      <div className="text-[13px] font-medium mb-1.5">Favicon</div>
-      <div className="rounded-md border bg-surface-2 px-2 pt-2" aria-label="Browser tab preview">
-        <div className="flex items-center gap-2 w-64 max-w-full h-8 px-2.5 rounded-t-md border border-b-0 bg-surface">
-          {/* A signed R2 link, or the app's own icon when none is uploaded. */}
+      <div className="text-[13px] font-medium mb-1.5">{label}</div>
+      <div className="rounded-md border bg-surface-2 px-2 pt-2" aria-label={`${label}: browser tab preview`}>
+        <div className="flex items-center gap-2 w-64 max-w-full h-8 px-2.5 rounded-t-md border border-b-0 bg-surface" title={title}>
+          {/* A signed R2 link, or what shows when none is uploaded. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url ?? "/icon.svg"} alt="" className="size-4 shrink-0 object-contain" />
+          <img src={url ?? fallback.url} alt="" className="size-4 shrink-0 object-contain" />
           <span className="min-w-0 flex-1 truncate text-[12px]">{title || "Untitled"}</span>
           <X className="size-3 shrink-0 text-text-faint" />
         </div>
       </div>
       <p className="text-[12px] text-text-muted mt-1">
-        {value.key ? `In use after saving: ${value.filename || "uploaded image"}` : "No favicon uploaded, so the app's own icon shows."}
+        {value.key ? `In use after saving: ${value.filename || "uploaded image"}` : fallback.text}
       </p>
       <div className="flex flex-wrap gap-1.5 mt-2">
         <input
@@ -1505,7 +1552,7 @@ function FaviconField({
         </Button>
         {value.key ? (
           <Button size="sm" onClick={() => onChange({ key: null, content_type: null, filename: null })}>
-            Use the app&apos;s icon
+            {resetLabel}
           </Button>
         ) : null}
       </div>

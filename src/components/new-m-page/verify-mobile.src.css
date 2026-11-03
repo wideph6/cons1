@@ -694,16 +694,16 @@
   letter-spacing: 0.01em;
 }
 .nmpm-file-name {
-  display: flex;
-  justify-content: safe center;
+  display: block;
   width: 100%;
   margin-top: M(14.17);
   padding: 0 M(1.5);
-  overflow: hidden;
   color: #202124;
   font-size: M(14);
   line-height: M(20);
-  white-space: nowrap;
+  text-align: center;
+  /* A document's 40-character name has no spaces: it breaks where it must, so it always shows whole. */
+  overflow-wrap: anywhere;
 }
 .nmpm-file-open {
   display: flex;

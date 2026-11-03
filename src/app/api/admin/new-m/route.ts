@@ -74,6 +74,18 @@ export async function GET(req: NextRequest) {
   });
 }
 
+/**
+ * Saves a new document. The database draws the PDF's address number and name; should either ever match
+ * another document's (next to impossible), it draws again.
+ */
+async function insertRecord(row: Record<string, unknown>) {
+  for (let attempt = 1; ; attempt++) {
+    const res = await db().from("new_m_records").insert(row).select("*").single();
+    const clash = res.error?.code === "23505" && /storage_number|hash_name/.test(`${res.error.message} ${res.error.details ?? ""}`);
+    if (!clash || attempt === 3) return res;
+  }
+}
+
 /** POST /api/admin/new-m — upload one document. The number and date are filled in when left blank. */
 export async function POST(req: NextRequest) {
   return run(async () => {
@@ -124,7 +136,7 @@ export async function POST(req: NextRequest) {
     // The document and any new saved values are written together. A saved value that fails to save
     // must not fail a document that did, so that error is only logged.
     const [{ data, error }] = await Promise.all([
-      db().from("new_m_records").insert(row).select("*").single(),
+      insertRecord(row),
       rememberOptions(user, texts).catch((e) => console.error("[new-m] saving list values failed", e)),
     ]);
     if (error) {
