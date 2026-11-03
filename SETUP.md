@@ -825,7 +825,7 @@ link banta hai:
 - Page par file ka naam aur download hone wali file ka naam hamesha `<40 character naam>.pdf` hota hai. Upload wala asal naam sirf
   admin panel mein dikhta hai, visitor ko kabhi nahi.
 - **Computer (desktop view):** "Open document" se ye link **nayi tab** mein khulta hai, PDF browser ke apne viewer mein. Tab ka
-  title hamesha document ka **poora link** hota hai, aur favicon wo jo Page settings mein **Favicon of the PDF tab** mein upload kiya
+  title document ka **40 character wala naam** hota hai, aur favicon wo jo Page settings mein **Favicon of the PDF tab** mein upload kiya
   (na ho to page wala favicon).
 - **Phone (mobile view):** "Open document" aur file card ka **Open** button document **download** karte hain.
 - Link sirf usi document ke apne domain par khulta hai; ghalat number/naam par "Not found". PDF seedha R2 ke chhote waqt wale link
@@ -887,7 +887,7 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
   Phir page **Save** karen. **Use the app's icon** se wapas app wala icon. Favicon R2 mein rehta hai, code mein nahi. Phone par bhi
   yahi favicon dikhta hai.
 - **Favicon of the PDF tab:** usi jagah neeche — computer par "Open document" se jo PDF tab khulti hai, us ka alag favicon. Upload
-  karen, phir **Save**. Chhote tab preview mein title ki jagah document ka poora link dikhta hai, jaisa asal tab mein. **Use the
+  karen, phir **Save**. Chhote tab preview mein title ki jagah document ka 40 character wala naam dikhta hai, jaisa asal tab mein. **Use the
   page's favicon** se hata dein to wo tab page wala favicon dikhati hai.
 - **Preview with:** kisi bhi asal document ko chun kar dekhen ke us ki values kaisi lagti hain; **Show the "no matching record" page**
   se dusri haalat dekhen.

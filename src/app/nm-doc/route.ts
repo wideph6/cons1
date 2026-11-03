@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 /**
  * A document's own address on its New M domain, as the middleware hands it on:
  *
- *   /storage/applications/{number}/documents/{name}.pdf           the PDF in a browser tab, titled with this
- *                                                                  full address, with the PDF tab's favicon
+ *   /storage/applications/{number}/documents/{name}.pdf           the PDF in a browser tab, titled with the
+ *                                                                  40-character name, with the PDF tab's favicon
  *   /storage/applications/{number}/documents/{name}.pdf?download  the PDF, saved as {name}.pdf
  *   /storage/applications/{number}/documents/{name}.pdf?view      the PDF itself, for the tab's frame
  *
@@ -119,12 +119,10 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // The tab's title is always the document's full address, as the visitor's browser reached it.
-  const shownHost = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? host).split(",")[0].trim().toLowerCase();
-  const proto = (req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(/:$/, "")).split(",")[0].trim() || "https";
+  // The tab's title is the document's 40-character name.
   const nonce = crypto.randomUUID().replace(/-/g, "");
   const html = tabPage({
-    title: `${proto}://${shownHost}${path}`,
+    title: address.name,
     icon: await tabIcon(),
     filename,
     view: `${path}?view`,

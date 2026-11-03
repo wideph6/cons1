@@ -173,7 +173,7 @@ replaced PDF brings a new name and so a new address, while the number stays. Doc
 R2 until uploaded again. The name is what the page shows and what the PDF is saved as; the name it was uploaded with stays in the
 admin panel only. The middleware sends such an address on a New M domain to `src/app/nm-doc`, which answers only on the document's
 own domain: without a query it is the tab the desktop **Open document** button opens — the browser's PDF viewer filling the page,
-titled with the full address and showing the **PDF tab favicon** (else the page's favicon); `?view` (the PDF for that frame) and
+titled with the document's 40-character name and showing the **PDF tab favicon** (else the page's favicon); `?view` (the PDF for that frame) and
 `?download` redirect to a short-lived R2 link named `{name}.pdf`, so they cost Vercel no bandwidth. On phones the **Open
 document** and file-card buttons download `?download`, and a browser that cannot show PDFs inside a page
 (`navigator.pdfViewerEnabled === false`) is sent there too. Before the new-m.sql that adds the two columns has run, documents keep

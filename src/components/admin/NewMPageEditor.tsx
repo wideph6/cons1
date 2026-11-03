@@ -1434,8 +1434,8 @@ function SocialFields({ value, set }: { value: PSocial; set: (f: string, v: unkn
 }
 
 /**
- * The icon of the tab a document's PDF opens in on a computer. That tab's title is always the
- * document's full address, as in the sample here.
+ * The icon of the tab a document's PDF opens in on a computer. That tab's title is the document's
+ * 40-character name, as in the sample here.
  */
 function PdfFaviconField({
   content,
@@ -1453,7 +1453,7 @@ function PdfFaviconField({
     <FaviconField
       label="Favicon of the PDF tab"
       value={content.meta.pdf_favicon}
-      title={`https://your-domain.com/storage/applications/3660176069053/documents/${SAMPLE_PDF_NAME}`}
+      title={SAMPLE_PDF_NAME.replace(/\.pdf$/, "")}
       fallback={{
         url: (page.key && assets[page.key]) || "/icon.svg",
         text: page.key
