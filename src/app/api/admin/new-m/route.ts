@@ -7,6 +7,7 @@ import {
   docColumns,
   linkFor,
   mapRecord,
+  missingHashColumn,
   normalizeNumber,
   numberTaken,
   officerColumns,
@@ -75,14 +76,19 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Saves a new document. The database draws the PDF's address number and name; should either ever match
+ * Saves a new document. The database draws the PDF's 13-digit address number; should it ever match
  * another document's (next to impossible), it draws again.
  */
 async function insertRecord(row: Record<string, unknown>) {
   for (let attempt = 1; ; attempt++) {
     const res = await db().from("new_m_records").insert(row).select("*").single();
-    const clash = res.error?.code === "23505" && /storage_number|hash_name/.test(`${res.error.message} ${res.error.details ?? ""}`);
-    if (!clash || attempt === 3) return res;
+    if (missingHashColumn(res.error) && "doc_hash_name" in row) {
+      const { doc_hash_name: _, ...rest } = row;
+      row = rest;
+      continue;
+    }
+    const clash = res.error?.code === "23505" && /storage_number/.test(`${res.error.message} ${res.error.details ?? ""}`);
+    if (!clash || attempt >= 3) return res;
   }
 }
 

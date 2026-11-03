@@ -2,8 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { readDocumentAddress } from "@/lib/new-m-link";
 import { faviconHref } from "@/lib/new-m-page";
 import { getDesktop, publicFilename, rowByAddress } from "@/lib/new-m-page-server";
-import { pdfError, sendPdf } from "@/lib/new-m-pdf";
-import { APP_MARKER } from "@/lib/r2";
+import { APP_MARKER, presignDownload } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +14,23 @@ export const dynamic = "force-dynamic";
  *   /storage/applications/{number}/documents/{name}.pdf?download  the PDF, saved as {name}.pdf
  *   /storage/applications/{number}/documents/{name}.pdf?view      the PDF itself, for the tab's frame
  *
- * The PDF is sent from this site rather than a storage link, whose address carries the name the file
- * was uploaded with. Only the document's own domain answers. The random 40-character name is what
- * keeps the address private, as the number and date do for the verification link.
+ * ?view and ?download send the browser to a short-lived storage link, which costs this server no
+ * bandwidth; the PDF is stored under the same 40-character name. Only the document's own domain
+ * answers. The random name is what keeps the address private, as the number and date do for the
+ * verification link.
  */
+
+function plain(status: number, message: string): NextResponse {
+  return new NextResponse(message, {
+    status,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+      "x-robots-tag": "noindex",
+      [APP_MARKER]: "1",
+    },
+  });
+}
 
 function decode(v: string | null): string {
   if (!v) return "";
@@ -76,25 +88,36 @@ else document.getElementById("pdf").src = ${js(o.view)};
 `;
 }
 
-async function handle(req: NextRequest, head: boolean): Promise<Response> {
+export async function GET(req: NextRequest) {
   const host = (req.headers.get("x-nm-host") ?? "").toLowerCase();
   const path = decode(req.headers.get("x-nm-path"));
   const params = new URLSearchParams(decode(req.headers.get("x-nm-search")));
   const address = readDocumentAddress(path);
-  if (!host || !address) return pdfError(404, "Not found");
+  if (!host || !address) return plain(404, "Not found");
 
   let row;
   try {
     row = await rowByAddress(host, address.number, address.name);
   } catch (e) {
     console.error("[new-m document tab]", e);
-    return pdfError(503, "The document is temporarily unavailable. Please try again in a moment.");
+    return plain(503, "The document is temporarily unavailable. Please try again in a moment.");
   }
-  if (!row) return pdfError(404, "Not found");
+  if (!row) return plain(404, "Not found");
 
   const filename = publicFilename(row);
-  if (params.has("download")) return sendPdf(req, row, filename, "attachment", head);
-  if (params.has("view")) return sendPdf(req, row, filename, "inline", head);
+  if (params.has("download") || params.has("view")) {
+    const url = await presignDownload(
+      row.doc_r2_key,
+      filename,
+      params.has("download") ? "attachment" : "inline",
+      row.doc_content_type || "application/pdf",
+      300,
+    );
+    return NextResponse.redirect(url, {
+      status: 302,
+      headers: { "cache-control": "private, no-store", "x-robots-tag": "noindex", [APP_MARKER]: "1" },
+    });
+  }
 
   // The tab's title is always the document's full address, as the visitor's browser reached it.
   const shownHost = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? host).split(",")[0].trim().toLowerCase();
@@ -112,19 +135,12 @@ async function handle(req: NextRequest, head: boolean): Promise<Response> {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "private, no-store",
-      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; object-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      // The frame follows ?view to a short-lived storage link, hence https: in frame-src.
+      "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src 'self' data:; frame-src 'self' https:; object-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
       "referrer-policy": "same-origin",
       "x-content-type-options": "nosniff",
       "x-robots-tag": "noindex, nofollow",
       [APP_MARKER]: "1",
     },
   });
-}
-
-export async function GET(req: NextRequest) {
-  return handle(req, false);
-}
-
-export async function HEAD(req: NextRequest) {
-  return handle(req, true);
 }

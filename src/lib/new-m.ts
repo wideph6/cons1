@@ -1,6 +1,15 @@
 import { issuedToIso, pad2, parseIssuedOn, todayIso } from "./dates";
 import { ApiError } from "./errors";
-import { cleanTemplate, NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber, verifyQrSvg } from "./new-m-link";
+import {
+  cleanTemplate,
+  hashNameFromKey,
+  NUMBER_EXAMPLE,
+  NUMBER_RE,
+  randomNumber,
+  resolveLink,
+  tidyNumber,
+  verifyQrSvg,
+} from "./new-m-link";
 import { cleanPlacement, type BackgroundPlacement } from "./new-m-sticker";
 import { can } from "./permissions";
 import { deleteObject, getObjectBytes, headObject, isNewMKey, presignDownload } from "./r2";
@@ -301,19 +310,33 @@ export async function getLists(): Promise<NewMLists> {
 
 /* ---------------- Documents ---------------- */
 
-/** Checks an uploaded PDF really is in storage and returns the columns that point a document at it. */
+/**
+ * Checks an uploaded PDF really is in storage and returns the columns that point a document at it. A
+ * PDF is stored under a fresh 40-character name, which becomes the document's doc_hash_name (its name
+ * on the page and in its address); the uploaded name is kept as doc_filename for the admin panel.
+ */
 export async function docColumns(key: unknown, filenameHint: unknown, contentTypeHint: unknown): Promise<Record<string, unknown>> {
   if (!isNewMKey(key, "docs")) throw new ApiError(400, "Invalid document storage key");
   const head = await headObject(key);
   if (!head) throw new ApiError(400, "The uploaded PDF was not found in storage. Please upload again.");
   const filename = cleanFilename(filenameHint ?? key.split("/").pop());
   if (fileExtension(filename) !== "pdf") throw new ApiError(400, "Only PDF files can be uploaded to New M");
+  const hashName = hashNameFromKey(key);
   return {
     doc_r2_key: key,
     doc_filename: filename,
     doc_size: head.size,
     doc_content_type: guessContentType(filename, typeof contentTypeHint === "string" ? contentTypeHint : head.contentType),
+    ...(hashName ? { doc_hash_name: hashName } : {}),
   };
+}
+
+/**
+ * True when a write failed only because the database has no doc_hash_name yet (the new-m.sql that
+ * adds it has not run); the document is then saved without it.
+ */
+export function missingHashColumn(error: { code?: string; message?: string } | null): boolean {
+  return Boolean(error && (error.code === "PGRST204" || error.code === "42703") && error.message?.includes("doc_hash_name"));
 }
 
 type RawRecord = Omit<NewMRecord, "verify_url">;

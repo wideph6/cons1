@@ -816,9 +816,11 @@ menu (rotate, fit, nayi tab, full screen, document properties). Visitor ke notes
 document kabhi nahi badalta. Bari PDF tukron mein parhi jati hai, is liye pehla page jaldi aa jata hai.
 PDF `/api/new-m/document?number=…&date=…` se aati hai — wohi number aur date jo link mein hain.
 
-**Document ka apna link aur naam:** har document ko database khud aik **13 digit number** (jaise `3660176069053`) aur aik **40
-character ka random naam** (A–Z, a–z, 0–9, jaise `ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp`) deta hai — dono har document ke liye
-alag, database mein save, aur PDF replace karne par bhi wohi rehte hain. Is se document ka link banta hai:
+**Document ka apna link aur naam:** har document ka aik **13 digit number** (jaise `3660176069053`) aur aik **40 character ka
+random naam** (A–Z, a–z, 0–9, jaise `ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp`) hota hai — dono har document ke liye alag aur
+database mein save. PDF upload hote hi R2 mein bhi isi 40 character naam se save hoti hai (asal naam se nahi). Entry edit kar ke
+PDF dobara upload karen to naye PDF ka naya naam (aur naya link) ban jata hai; 13 digit number wohi rehta hai. Is se document ka
+link banta hai:
 `https://<domain>/storage/applications/3660176069053/documents/ddwhrO4nWtA99vRYDAnUVtWcK3aoYPJhxmbVlwLp.pdf`
 - Page par file ka naam aur download hone wali file ka naam hamesha `<40 character naam>.pdf` hota hai. Upload wala asal naam sirf
   admin panel mein dikhta hai, visitor ko kabhi nahi.
@@ -826,9 +828,11 @@ alag, database mein save, aur PDF replace karne par bhi wohi rehte hain. Is se d
   title hamesha document ka **poora link** hota hai, aur favicon wo jo Page settings mein **Favicon of the PDF tab** mein upload kiya
   (na ho to page wala favicon).
 - **Phone (mobile view):** "Open document" aur file card ka **Open** button document **download** karte hain.
-- Link sirf usi document ke apne domain par khulta hai; ghalat number/naam par "Not found". PDF aap ki site se hi bheji jati hai
-  (R2 ka link visitor ko nahi dikhta), is liye ye Vercel ki bandwidth istemal karti hai.
-- Purane documents ko number aur naam `supabase/new-m.sql` chalane par khud mil jate hain; jab tak wo nahi chali, purane link chalte rehte hain.
+- Link sirf usi document ke apne domain par khulta hai; ghalat number/naam par "Not found". PDF seedha R2 ke chhote waqt wale link
+  se aati hai (naam `<40 character naam>.pdf`), is liye Vercel ki bandwidth nahi lagti.
+- Purane documents ko number aur naam `supabase/new-m.sql` chalane par khud mil jate hain; jab tak wo nahi chali, purane link chalte
+  rehte hain. Purane documents ki PDF R2 mein abhi asal naam se hai — entry edit kar ke PDF dobara upload karne se R2 mein bhi naya
+  40 character naam aa jata hai.
 
 **Mobile view (phone):** 768 px se tang screen (har phone) par page ki **apni mobile design** khulti hai — di gayi mobile design
 jaisi: upar logo, daftar ka naam aur **☰ (hamburger) button**; hero; "MATCHING RECORD FOUND" patti; certificate card; document card

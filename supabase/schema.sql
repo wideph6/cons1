@@ -340,9 +340,11 @@ create table if not exists public.new_m_page_settings (
 
 -- ---------- Document addresses ----------
 -- Each document's PDF opens at /storage/applications/{doc_storage_number}/documents/{doc_hash_name}.pdf
--- on its own domain: a 13-digit number and a 40-character name of letters and digits, both drawn at
--- random for each document. The name is also what the PDF is called on the page and when it is
--- downloaded. Being impossible to guess is what keeps the address private.
+-- on its own domain: a 13-digit number and a 40-character name of letters and digits, both random and
+-- unique. The name is also what the PDF is called on the page, when it is downloaded and in R2: a PDF
+-- uploaded through the panel is stored under a fresh name, which the document takes (a replaced PDF
+-- brings a new one); documents saved before that draw one here. Being impossible to guess is what keeps
+-- the address private.
 
 -- Random characters from alphabet, from the server's secure random source (gen_random_uuid). Bytes 6
 -- and 8 of a uuid hold its version and variant, so only the other 14 are used; bytes at the top of
@@ -438,7 +440,8 @@ create table if not exists public.new_m_records (
   doc_content_type text not null default 'application/pdf',
   doc_uploaded_at timestamptz not null default now(),
   doc_replaced_at timestamptz,
-  -- The PDF's public address and name (see Document addresses above). They stay when the PDF is replaced.
+  -- The PDF's public address and name (see Document addresses above). The number stays for good; the name
+  -- is the one the PDF is stored under in R2, so a replaced PDF brings a new one.
   doc_storage_number text not null default public.new_m_storage_number(),
   doc_hash_name text not null default public.new_m_hash_name(),
 

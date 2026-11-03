@@ -8,6 +8,7 @@ import {
   docColumns,
   getLinkWithHost,
   getRecord,
+  missingHashColumn,
   normalizeNumber,
   numberTaken,
   officerColumns,
@@ -146,8 +147,16 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const changedTexts: Partial<Record<NewMOptionKind, string>> = {};
     for (const kind of OPTION_KINDS) if (kind in patch) changedTexts[kind] = patch[kind] as string;
 
+    // A new PDF brings its own 40-character name (and with it a new address); a database that does
+    // not have that column yet saves the rest.
+    const save = async () => {
+      const res = await db().from("new_m_records").update(patch).eq("id", id).select("*").single();
+      if (!missingHashColumn(res.error) || !("doc_hash_name" in patch)) return res;
+      delete patch.doc_hash_name;
+      return db().from("new_m_records").update(patch).eq("id", id).select("*").single();
+    };
     const [{ data, error }] = await Promise.all([
-      db().from("new_m_records").update(patch).eq("id", id).select("*").single(),
+      save(),
       rememberOptions(user, changedTexts).catch((e) => console.error("[new-m] saving list values failed", e)),
     ]);
     if (error) {

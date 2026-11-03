@@ -8,6 +8,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { randomHashName } from "./new-m-link";
 import { cleanFilename, contentDisposition } from "./utils";
 
 let client: S3Client | null = null;
@@ -54,7 +55,9 @@ export function isManagedKey(key: unknown): key is string {
 export type NewMKind = "docs" | "signatures" | "backgrounds" | "page";
 
 export function makeNewMKey(kind: NewMKind, filename: string): string {
-  const safe = cleanFilename(filename).replace(/[^A-Za-z0-9._-]/g, "_");
+  // A document's PDF is stored under a fresh 40-character name, the one the verification page shows
+  // and links to, so the storage link it opens from never carries the name it was uploaded with.
+  const safe = kind === "docs" ? `${randomHashName()}.pdf` : cleanFilename(filename).replace(/[^A-Za-z0-9._-]/g, "_");
   return `new-m/${kind}/${crypto.randomUUID()}/${safe}`;
 }
 

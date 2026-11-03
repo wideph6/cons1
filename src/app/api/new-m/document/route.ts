@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { dateFromParam, NUMBER_RE, tidyNumber } from "@/lib/new-m-link";
 import { publicFilename, rowByNumberAndDate } from "@/lib/new-m-page-server";
-import { pdfError, sendPdf } from "@/lib/new-m-pdf";
-import { APP_MARKER, presignDownload } from "@/lib/r2";
+import { APP_MARKER, getObjectRange, headObjectFull, presignDownload } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +13,15 @@ export const dynamic = "force-dynamic";
  *
  * Without mode the file is served from this site with byte-range support, so the page's viewer can
  * read a large scan in pieces (no storage CORS needed). mode=open and mode=download send the browser
- * to a short-lived storage link instead, which costs this server no bandwidth; the page only uses them
- * for documents without their own /storage/applications/… address yet.
+ * to a short-lived storage link instead, which costs this server no bandwidth.
  */
+
+function fail(status: number, message: string): NextResponse {
+  return new NextResponse(message, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", [APP_MARKER]: "1" },
+  });
+}
 
 /** `2026-10-31`, or `31102026` as the link writes it. */
 function readDate(v: string | null): string | null {
@@ -25,20 +30,25 @@ function readDate(v: string | null): string | null {
   return dateFromParam(s);
 }
 
+function contentDisposition(type: "inline" | "attachment", filename: string): string {
+  const ascii = filename.replace(/[^\u0020-\u007e]/g, "_").replace(/["\\]/g, "_");
+  return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
 async function handle(req: NextRequest, head: boolean): Promise<Response> {
   const sp = req.nextUrl.searchParams;
   const number = tidyNumber(sp.get("number") ?? "");
   const date = readDate(sp.get("date"));
-  if (!NUMBER_RE.test(number) || !date) return pdfError(400, "The attestation number or date is not valid.");
+  if (!NUMBER_RE.test(number) || !date) return fail(400, "The attestation number or date is not valid.");
 
   let row;
   try {
     row = await rowByNumberAndDate(number, date);
   } catch (e) {
     console.error("[new-m document]", e);
-    return pdfError(503, "The document is temporarily unavailable. Please try again in a moment.");
+    return fail(503, "The document is temporarily unavailable. Please try again in a moment.");
   }
-  if (!row) return pdfError(404, "No document matches this attestation number and date.");
+  if (!row) return fail(404, "No document matches this attestation number and date.");
 
   // Saved under the document's 40-character name, never the name it was uploaded with.
   const filename = publicFilename(row);
@@ -56,7 +66,43 @@ async function handle(req: NextRequest, head: boolean): Promise<Response> {
       headers: { "cache-control": "private, no-store", "x-robots-tag": "noindex", [APP_MARKER]: "1" },
     });
   }
-  return sendPdf(req, row, filename, "inline", head);
+
+  const range = head ? null : req.headers.get("range");
+  const valid = range && /^bytes=\d*-\d*$/.test(range.trim()) ? range.trim() : undefined;
+  try {
+    const headers = new Headers({
+      "content-type": row.doc_content_type || "application/pdf",
+      "content-disposition": contentDisposition("inline", filename),
+      "accept-ranges": "bytes",
+      "cache-control": "private, max-age=300",
+      "x-robots-tag": "noindex",
+      "x-content-type-options": "nosniff",
+      [APP_MARKER]: "1",
+    });
+    if (head) {
+      const meta = await headObjectFull(row.doc_r2_key);
+      if (meta.ETag) headers.set("etag", meta.ETag);
+      if (meta.ContentLength !== undefined) headers.set("content-length", String(meta.ContentLength));
+      return new NextResponse(null, { status: 200, headers });
+    }
+    const obj = await getObjectRange(row.doc_r2_key, valid);
+    if (obj.ETag) headers.set("etag", obj.ETag);
+    if (obj.ContentLength !== undefined) headers.set("content-length", String(obj.ContentLength));
+    if (obj.ContentRange) headers.set("content-range", obj.ContentRange);
+    const status = obj.ContentRange && valid ? 206 : 200;
+    const body = obj.Body ? (obj.Body as { transformToWebStream: () => ReadableStream }).transformToWebStream() : null;
+    return new NextResponse(body, { status, headers });
+  } catch (e) {
+    const code = (e as { $metadata?: { httpStatusCode?: number }; name?: string }) ?? {};
+    if (code.$metadata?.httpStatusCode === 416 || code.name === "InvalidRange") {
+      return new NextResponse(null, { status: 416, headers: { "content-range": `bytes */${row.doc_size ?? 0}` } });
+    }
+    if (code.$metadata?.httpStatusCode === 404 || code.name === "NoSuchKey") {
+      return fail(404, "The document file is missing from storage.");
+    }
+    console.error("[new-m document] read", e);
+    return fail(503, "The document is temporarily unavailable. Please try again in a moment.");
+  }
 }
 
 export async function GET(req: NextRequest) {

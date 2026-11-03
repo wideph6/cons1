@@ -29,11 +29,11 @@ export const NUMBER_EXAMPLE = "GEN-NMPD-SSTI-FBDS";
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /**
- * Uniform random letters. Values at the top of the byte range are thrown away rather than folded
- * with %, which would quietly make the first few letters more likely than the rest.
+ * Uniform random characters. Values at the top of the byte range are thrown away rather than folded
+ * with %, which would quietly make the first few characters more likely than the rest.
  */
-function randomLetters(count: number): string {
-  const limit = 256 - (256 % LETTERS.length);
+function randomLetters(count: number, alphabet = LETTERS): string {
+  const limit = 256 - (256 % alphabet.length);
   let out = "";
   while (out.length < count) {
     const bytes = new Uint8Array(count - out.length + 8);
@@ -41,7 +41,7 @@ function randomLetters(count: number): string {
     for (const b of bytes) {
       if (out.length >= count) break;
       if (b >= limit) continue;
-      out += LETTERS[b % LETTERS.length];
+      out += alphabet[b % alphabet.length];
     }
   }
   return out;
@@ -258,6 +258,19 @@ export function documentAddress(storageNumber: string, hashName: string): string
 export function readDocumentAddress(pathname: string): { number: string; name: string } | null {
   const m = DOCUMENT_PATH_RE.exec(pathname);
   return m ? { number: m[1], name: m[2] } : null;
+}
+
+/**
+ * A fresh 40-character name (letters and digits) for an uploaded PDF. The PDF is stored in R2 under it
+ * and the document takes it as its doc_hash_name, so the storage link never carries the uploaded name.
+ */
+export function randomHashName(): string {
+  return randomLetters(40, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
+}
+
+/** The 40-character name a PDF's storage key ends in, or null for a PDF stored under its uploaded name. */
+export function hashNameFromKey(key: string): string | null {
+  return /\/([A-Za-z0-9]{40})\.pdf$/.exec(key)?.[1] ?? null;
 }
 
 /* ---------------- QR code ---------------- */
