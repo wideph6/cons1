@@ -779,7 +779,6 @@ hui files apne purane folder mein hi rehti hain aur waise hi chalti hain). **Sto
 
 ## 13.8 Abhi kya nahi bana
 
-- **Mobile view** ki apni design abhi nahi bani. Tab tak phone par desktop wali design hi screen ke hisaab se chhoti ho kar nazar aati hai (Hissa 13.9).
 - Search by date, dashboard ke numbers aur users ke counters abhi sirf Old M ko ginte hain.
 
 ## 13.9 Verification page (front end)
@@ -817,7 +816,19 @@ menu (rotate, fit, nayi tab, full screen, document properties). Visitor ke notes
 document kabhi nahi badalta. Bari PDF tukron mein parhi jati hai, is liye pehla page jaldi aa jata hai.
 PDF `/api/new-m/document?number=…&date=…` se aati hai — wohi number aur date jo link mein hain.
 
-**Har screen par:** page 1062 px ki design grid par bana hai aur window ke hisaab se poora ka poora chhota/bara hota hai — chhote
+**Mobile view (phone):** 768 px se tang screen (har phone) par page ki **apni mobile design** khulti hai — di gayi mobile design
+jaisi: upar logo, daftar ka naam aur **☰ (hamburger) button**; hero; "MATCHING RECORD FOUND" patti; certificate card; document card
+(PDF ka icon, file ka naam aur neela **Open** button jo PDF phone ke apne viewer mein kholta hai); "Verify another General Attestation"
+aur footer. Wohi document values usi tarah apni jagah aati hain (upar wala table). **☰ par tap** se menu header ke neeche khulta hai:
+menu items (Home, Attestation, … Verify Document), **Quick links** (Press Releases, LEGAL Services, NPLS Directory, Applicant Portal) aur
+"Connect with NPLS" social icons. Kisi link par, menu se bahar ya ☰ par dobara tap (ya Esc) se band hota hai.
+Mobile design 360 px grid par bani hai aur **har phone** (320 px ke chhote phone se 480 px ke bare phone/foldable tak) par usi
+hisaab se poori ki poori chhoti/bari hoti hai — har cheez apni jagah, koi cheez screen se bahar nahi. 540 px se zyada chori screen
+(chhota tablet) par page mazeed bara nahi hota, rangeen pattiyan donon taraf phail jati hain. Mobile ke fonts desktop se alag hain,
+bilkul design jaise: **Roboto** (aam text) aur **Noto Serif** ("Certificate Result", "GENERAL ATTESTATION") — dono app ke saath aate
+hain, is liye iPhone aur Android par aik jaise. 768 px ya us se bari window par desktop design khulti hai.
+
+**Har screen par (desktop):** page 1062 px ki design grid par bana hai aur window ke hisaab se poora ka poora chhota/bara hota hai — chhote
 laptop se bari screen tak har cheez apni jagah. 1593 px se bari window par page mazeed bara nahi hota; rangeen patti donon taraf
 phail jati hai. Fonts: Windows par asal Segoe UI / Georgia / Arial; baqi computers par unhi ke naap ke free fonts (Selawik, Gelasio,
 Arimo) jo app ke saath aate hain (`public/nm-assets/fonts/`), is liye har jagah aik jaisa nazar aata hai.
@@ -826,8 +837,8 @@ Arimo) jo app ke saath aate hain (`public/nm-assets/fonts/`), is liye har jagah 
 
 Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page **bilkul waisa** nazar aata hai jaisa visitor dekhta hai.
 
-- **Desktop view / Mobile view** — do alag tabs. Mobile view ki apni design baad mein banegi; abhi wahan notes likh sakte hain aur phone
-  par page kaisa dikhta hai wo preview hai.
+- **Desktop view / Mobile view** — do alag tabs, dono ki apni apni settings (aik view badalne se doosra nahi badalta). Jis tab mein
+  unsaved tabdeeli ho us ke naam ke saath narangi nuqta aata hai.
 - Page par **kisi bhi** text, button, tab (menu item), link, heading, section ka naam ya logo par **click** karen — daen taraf us ki
   settings khulti hain:
   - **Text / naam** (menu aur upar wale buttons mein Enter se do lines, jaise "Verify / Document")
@@ -840,17 +851,31 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
     save hota hai. **Use the built-in emblem** wapas design wala emblem.
   - Labels ("Attestation number" waghera) ka naam badal sakte hain; un ke neeche ki value har document se aati hai.
   - **PDF viewer**: thumbnails khuli/band se shuru, aur toolbar ka har button dikhana/chhupana.
+- **Mobile view tab:** phone ke frame mein mobile page bilkul waisa jaisa phone par. Yahan bhi **har** cheez par click se us ki settings
+  khulti hain — desktop ki tarah naam, link, nayi tab, icon, hide/show, tarteeb, add/duplicate/delete, logo upload (R2).
+  - **☰ button par click** (ya upar **Menu open**) se menu preview mein khul jata hai; phir har menu item, quick link, "Quick links"
+    heading, "Connect with NPLS" aur har social icon par click kar ke us ka **naam aur link** badlen; **+** se naya item. Menu ki koi
+    cheez select ho to menu khula rehta hai. ☰ button ka naam (screen readers ke liye) aur hide/show bhi yahin.
+  - **Phone width** — 320, 360 (design), 375, 390, 393, 412, 430, 480 px par dekh len ke har phone par kaisa lagta hai.
+  - **Document panel** par click: phone par kya dikhe — **File card + Open button** (design jaisa) ya **PDF ke pages aik ke neeche
+    aik**; file ka naam dikhana/chhupana aur **Open** button ka naam.
+  - Footer links ki **Width** mobile ke 360 px grid par (khali = text jitna); row ke links design ki tarah doosri line par jate hain.
+  - Kuch select na ho to **Mobile page settings**: animation on/off, **Copy wording from the desktop view** (desktop ke saare text,
+    links, menu, top buttons → quick links, social icons aur logos mobile mein copy; Undo se wapas), aur **Notes**.
 - Kuch bhi select na ho to daen taraf **Page settings** (browser tab ka title, **favicon**, animation on/off) aur **page ki har
   cheez ki list** — chhupi hui cheezen bhi — jahan se click kar ke jump kar sakte hain.
-- **Favicon** (browser tab ka chhota icon): **Upload favicon** dabayen — ICO ya PNG behtar (chokor, kam az kam 48 × 48, behtareen
-  512 × 512), 1 MB tak. Upar chhote se tab mein dikhta hai ke visitor ko kaisa nazar aayega. Phir page **Save** karen.
-  **Use the app's icon** se wapas app wala icon. Favicon R2 mein rehta hai, code mein nahi.
+- **Favicon** (browser tab ka chhota icon): desktop view ki **Page settings** mein **Upload favicon** dabayen — ICO ya PNG behtar
+  (chokor, kam az kam 48 × 48, behtareen 512 × 512), 1 MB tak. Upar chhote se tab mein dikhta hai ke visitor ko kaisa nazar aayega.
+  Phir page **Save** karen. **Use the app's icon** se wapas app wala icon. Favicon R2 mein rehta hai, code mein nahi. Phone par bhi
+  yahi favicon dikhta hai.
 - **Preview with:** kisi bhi asal document ko chun kar dekhen ke us ki values kaisi lagti hain; **Show the "no matching record" page**
   se dusri haalat dekhen.
-- **Undo / Redo** (Ctrl+Z / Ctrl+Shift+Z), **Discard changes**, **Reset to design** (sab kuch asal design par wapas — Save tak live
-  nahi hota), **Save** (Ctrl+S).
+- **Undo / Redo** (Ctrl+Z / Ctrl+Shift+Z) — har view ki apni history; **Discard changes** (dono views aakhri save par wapas);
+  **Reset desktop/mobile to design** (sirf khula hua view asal design par wapas — Save tak live nahi hota); **Save** (Ctrl+S) — jo
+  view badla ho wohi save hota hai.
 - **Save** dabane par saara text, links, buttons ke naam aur settings **database** (`new_m_page_settings`) mein jate hain aur usi
-  waqt har verification link par lag jate hain. Logo **R2** mein; jo logo hata diya ya badal diya wo R2 se mita diya jata hai.
+  waqt har verification link par lag jate hain. Logo **R2** mein; jo logo hata diya ya badal diya wo R2 se mita diya jata hai — magar sirf tab jab doosra view bhi use
+  istemal na kar raha ho.
   Do admin aik saath badlen to baad wale ko "reload" ka paigham aata hai — kisi ka kaam chupke se mit'ta nahi.
 - Storage page aur cleanup page ke logos ko haath nahi lagate.
 

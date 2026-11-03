@@ -2,14 +2,16 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { MobilePage } from "@/components/new-m-page/MobilePage";
 import { VerifyPage } from "@/components/new-m-page/VerifyPage";
 import { faviconHref } from "@/lib/new-m-page";
-import { assetUrls, findVisit, getDesktop } from "@/lib/new-m-page-server";
+import { assetUrls, findVisit, getDesktop, getMobile } from "@/lib/new-m-page-server";
 
 export const dynamic = "force-dynamic";
 
 /** The page content, read once per visit even though the title and the page both need it. */
 const loadPage = cache(getDesktop);
+const loadMobile = cache(getMobile);
 
 function decode(v: string | null): string {
   if (!v) return "";
@@ -56,9 +58,15 @@ export default async function VerifyRoute() {
   const v = await visit();
   if (!v.host) notFound();
 
-  const [result, page] = await Promise.all([findVisit(v.host, v.path, v.search), loadPage()]);
+  const [result, page, mobile] = await Promise.all([findVisit(v.host, v.path, v.search), loadPage(), loadMobile()]);
   if (!result.matched) notFound();
 
-  const assets = await assetUrls(page.content).catch(() => ({}));
-  return <VerifyPage content={page.content} record={result.record} assets={assets} />;
+  const assets = await assetUrls(page.content, mobile.content).catch(() => ({}));
+  // Both views are sent; the stylesheet shows the mobile one below 768 px and the desktop one above.
+  return (
+    <div className="nmp-switch">
+      <VerifyPage content={page.content} record={result.record} assets={assets} />
+      <MobilePage content={mobile.content} record={result.record} assets={assets} />
+    </div>
+  );
 }

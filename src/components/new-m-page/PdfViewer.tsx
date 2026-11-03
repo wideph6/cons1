@@ -111,7 +111,7 @@ function icon(w: number, h = w): CSSProperties {
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
 /** PDF.js and its worker, loaded once and only in the browser. */
-function loadPdfjs(): Promise<typeof import("pdfjs-dist")> {
+export function loadPdfjs(): Promise<typeof import("pdfjs-dist")> {
   if (!pdfjsPromise) {
     pdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs").then((lib) => {
       const pdfjs = lib as unknown as typeof import("pdfjs-dist");
@@ -192,6 +192,21 @@ export function PdfViewer({ document: doc, tools, sidebarOpen, preview }: Props)
 
   /* ---------- Loading the document ---------- */
 
+  /**
+   * Whether the viewer is on screen at all. The public page carries the desktop and the mobile view
+   * together and shows one; the hidden one has no size, and never downloads the document.
+   */
+  const [shown, setShown] = useState(false);
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const check = () => setShown(el.getClientRects().length > 0 && el.offsetWidth > 0);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!doc) {
       setPdf(null);
@@ -199,6 +214,7 @@ export function PdfViewer({ document: doc, tools, sidebarOpen, preview }: Props)
       setStatus("idle");
       return;
     }
+    if (!shown) return;
     let cancelled = false;
     let loaded: PDFDocumentProxy | null = null;
     setStatus("loading");
@@ -254,7 +270,7 @@ export function PdfViewer({ document: doc, tools, sidebarOpen, preview }: Props)
       cancelled = true;
       if (loaded) void loaded.destroy();
     };
-  }, [doc]);
+  }, [doc, shown]);
 
   /* ---------- Pane size and scale ---------- */
 

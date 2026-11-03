@@ -66,17 +66,22 @@ export async function savePage(view: PageView, content: DesktopContent | MobileC
  * read throws rather than answering "none", so storage cleanup never takes a logo in use for rubbish.
  */
 export async function pageImageKeys(): Promise<string[]> {
-  const page = await getDesktop();
-  return imageKeys(page.content);
+  const [desktop, mobile] = await Promise.all([getDesktop(), getMobile()]);
+  return [...new Set([...imageKeys(desktop.content), ...imageKeys(mobile.content)])];
 }
 
 /** A day is long enough for anyone reading the page, and the page is drawn fresh on every visit. */
 const ASSET_TTL = 12 * 60 * 60;
 
-/** Signed links to each logo and the favicon in R2, keyed by storage key. */
-export async function assetUrls(content: DesktopContent): Promise<Record<string, string>> {
+/** Signed links to each logo and the favicon in R2, keyed by storage key, for one or both views. */
+export async function assetUrls(...contents: Array<DesktopContent | MobileContent>): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  const images = [content.header.logo, content.record.logo, content.footer.logo, content.meta.favicon];
+  const images = contents.flatMap((c) => [
+    c.header.logo,
+    c.record.logo,
+    c.footer.logo,
+    ...("favicon" in c.meta ? [c.meta.favicon] : []),
+  ]);
   await Promise.all(
     images.map(async (im) => {
       if (!im.key || out[im.key]) return;

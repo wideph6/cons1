@@ -184,8 +184,51 @@ export interface DesktopContent {
   };
 }
 
-/** The mobile view gets its own design later; until then it only remembers that it exists. */
+/** How the document is shown on a phone. */
+export type MobileViewerMode = "card" | "pages";
+export const MOBILE_VIEWER_MODES: { value: MobileViewerMode; label: string }[] = [
+  { value: "card", label: "File card with an Open button (as in the design)" },
+  { value: "pages", label: "The PDF's pages, one under the other" },
+];
+
+/**
+ * The mobile view: its own wording, links and logos, laid out after the mobile design. The main menu
+ * sits behind the hamburger button, together with the header's quick links and social icons.
+ */
 export interface MobileContent {
+  meta: { animations: boolean };
+  header: {
+    logo: PImage;
+    title: PLinkText;
+    subtitle: PText;
+    /** The hamburger button: its spoken name, and whether it is shown at all. */
+    menu_button: PText;
+  };
+  menu: {
+    items: PLink[];
+    links_title: PText;
+    links: PLink[];
+    connect: PText;
+    social: PSocial[];
+  };
+  hero: DesktopContent["hero"];
+  result: DesktopContent["result"];
+  record: DesktopContent["record"];
+  document: {
+    eyebrow: PText;
+    title: PText;
+    open: PLink;
+    viewer: {
+      mode: MobileViewerMode;
+      /** The file's name under the PDF icon. */
+      filename: { hidden: boolean };
+      /** The blue button under the file name. */
+      button: PText;
+    };
+  };
+  cta: DesktopContent["cta"];
+  footer: DesktopContent["footer"];
+  /** Notes for whoever works on the mobile design; never shown on the page. */
   note: string;
 }
 
@@ -344,13 +387,87 @@ export const DEFAULT_DESKTOP: DesktopContent = {
   },
 };
 
-export const DEFAULT_MOBILE: MobileContent = { note: "" };
+/** A copy of a list with every item made fresh, so the two views never share an object. */
+function copyLinks(list: PLink[], change?: (l: PLink) => Partial<PLink>): PLink[] {
+  return list.map((l) => ({ ...l, ...(change ? change(l) : {}) }));
+}
+
+/**
+ * Footer link widths on the phone, measured from the mobile design (in its 360 px grid). The links
+ * wrap onto a second line inside each group exactly as the design does.
+ */
+const MOBILE_FOOTER_WIDTHS: Record<string, number | null> = {
+  "footer-law": 141.5,
+  "footer-ceo": 127,
+  "footer-npls": 42.6,
+  "footer-services": 147.5,
+  "footer-contact": null,
+  "footer-legal": 114,
+  "footer-checklist": 168,
+  "footer-fees": 42,
+  "footer-countries": 69,
+  "footer-process": null,
+  "footer-other": 96,
+  "footer-verify": 149.5,
+  "footer-courier": 172.5,
+  "footer-accessibility": null,
+};
+
+/** Words the mobile design spells differently from the desktop one. */
+const MOBILE_TEXT: Record<string, string> = {
+  "footer-left-notrization": "Notarization and Legalization",
+  "footer-accessibility": "Accessibility Statement",
+};
+
+export const DEFAULT_MOBILE: MobileContent = {
+  meta: { animations: true },
+  header: {
+    logo: { ...DEFAULT_DESKTOP.header.logo },
+    title: { ...DEFAULT_DESKTOP.header.title },
+    subtitle: { ...DEFAULT_DESKTOP.header.subtitle },
+    menu_button: t("Menu"),
+  },
+  menu: {
+    items: copyLinks(DEFAULT_DESKTOP.nav.items, (l) => ({ text: l.text.replace(/\s*\n\s*/g, " "), width: null })),
+    links_title: t("Quick links"),
+    links: copyLinks(DEFAULT_DESKTOP.header.top_links, () => ({ width: null })),
+    connect: { ...DEFAULT_DESKTOP.header.connect },
+    social: DEFAULT_DESKTOP.header.social.map((x) => ({ ...x })),
+  },
+  hero: {
+    ...DEFAULT_DESKTOP.hero,
+    crumbs: copyLinks(DEFAULT_DESKTOP.hero.crumbs),
+    lead: t("This General Attestation record is issued by the Notary Public"),
+  },
+  result: { ...DEFAULT_DESKTOP.result },
+  record: { ...DEFAULT_DESKTOP.record, logo: { ...DEFAULT_DESKTOP.record.logo } },
+  document: {
+    eyebrow: { ...DEFAULT_DESKTOP.document.eyebrow },
+    title: { ...DEFAULT_DESKTOP.document.title },
+    open: { ...DEFAULT_DESKTOP.document.open },
+    viewer: { mode: "card", filename: { hidden: false }, button: t("Open") },
+  },
+  cta: { ...DEFAULT_DESKTOP.cta },
+  footer: {
+    ...DEFAULT_DESKTOP.footer,
+    logo: { ...DEFAULT_DESKTOP.footer.logo },
+    left_links: copyLinks(DEFAULT_DESKTOP.footer.left_links, (l) => (MOBILE_TEXT[l.id] ? { text: MOBILE_TEXT[l.id] } : {})),
+    rows: DEFAULT_DESKTOP.footer.rows.map((row) =>
+      copyLinks(row, (l) => ({
+        width: MOBILE_FOOTER_WIDTHS[l.id] ?? null,
+        ...(MOBILE_TEXT[l.id] ? { text: MOBILE_TEXT[l.id] } : {}),
+      })),
+    ),
+  },
+  note: "",
+};
 
 /* ---------------- Checking what the editor sends ---------------- */
 
 const MAX_TEXT = 600;
 const MAX_HREF = 1000;
-const MAX_ITEMS = 24;
+/** The most items a list (menu, footer row, social icons…) keeps. */
+export const MAX_ITEMS = 24;
 
 function str(v: unknown, fallback: string, max = MAX_TEXT): string {
   if (typeof v !== "string") return fallback;
@@ -510,12 +627,10 @@ export function cleanDesktop(input: unknown): DesktopContent {
   const hero = obj(c.hero);
   const result = obj(c.result);
   const record = obj(c.record);
-  const labels = obj(record.labels);
   const doc = obj(c.document);
   const viewer = obj(doc.viewer);
   const cta = obj(c.cta);
   const footer = obj(c.footer);
-  const rows = Array.isArray(footer.rows) ? footer.rows : null;
 
   return {
     meta: {
@@ -532,35 +647,9 @@ export function cleanDesktop(input: unknown): DesktopContent {
       social: cleanSocials(header.social, d.header.social),
     },
     nav: { items: cleanLinks(nav.items, d.nav.items, "nav") },
-    hero: {
-      crumbs: cleanLinks(hero.crumbs, d.hero.crumbs, "crumb"),
-      crumb_current: cleanText(hero.crumb_current, d.hero.crumb_current),
-      eyebrow: cleanText(hero.eyebrow, d.hero.eyebrow),
-      title: cleanText(hero.title, d.hero.title),
-      title_accent: cleanText(hero.title_accent, d.hero.title_accent),
-      lead: cleanText(hero.lead, d.hero.lead),
-      art: { hidden: bool(obj(hero.art).hidden, d.hero.art.hidden) },
-    },
-    result: {
-      found_title: cleanText(result.found_title, d.result.found_title),
-      document_label: cleanText(result.document_label, d.result.document_label),
-      issued_label: cleanText(result.issued_label, d.result.issued_label),
-      missing_title: cleanText(result.missing_title, d.result.missing_title),
-      missing_text: cleanText(result.missing_text, d.result.missing_text),
-    },
-    record: {
-      eyebrow: cleanText(record.eyebrow, d.record.eyebrow),
-      title: cleanText(record.title, d.record.title),
-      logo: cleanImage(record.logo, d.record.logo),
-      cert_title: cleanText(record.cert_title, d.record.cert_title),
-      cert_subtitle: cleanText(record.cert_subtitle, d.record.cert_subtitle),
-      labels: Object.fromEntries(
-        RECORD_FIELDS.map((f) => [f, cleanText(labels[f], d.record.labels[f])]),
-      ) as DesktopContent["record"]["labels"],
-      designation: { hidden: bool(obj(record.designation).hidden, d.record.designation.hidden) },
-      signature: { hidden: bool(obj(record.signature).hidden, d.record.signature.hidden) },
-      disclaimer: cleanText(record.disclaimer, d.record.disclaimer),
-    },
+    hero: cleanHero(hero, d.hero),
+    result: cleanResult(result, d.result),
+    record: cleanRecord(record, d.record),
     document: {
       eyebrow: cleanText(doc.eyebrow, d.document.eyebrow),
       title: cleanText(doc.title, d.document.title),
@@ -570,33 +659,128 @@ export function cleanDesktop(input: unknown): DesktopContent {
         tools: cleanTools(viewer.tools),
       },
     },
-    cta: {
-      button: cleanLink(cta.button, d.cta.button),
-      help_before: cleanText(cta.help_before, d.cta.help_before),
-      email: cleanLink(cta.email, d.cta.email),
-      help_after: cleanText(cta.help_after, d.cta.help_after),
-    },
-    footer: {
-      title: cleanText(footer.title, d.footer.title),
-      visit: cleanLink(footer.visit, d.footer.visit),
-      logo: cleanImage(footer.logo, d.footer.logo),
-      brand_title: cleanLinkText(footer.brand_title, d.footer.brand_title),
-      brand_subtitle: cleanText(footer.brand_subtitle, d.footer.brand_subtitle),
-      left_links: cleanLinks(footer.left_links, d.footer.left_links, "footer-left"),
-      rows: d.footer.rows.map((defRow, i) => cleanLinks(rows ? rows[i] : undefined, defRow, `footer-row${i}`)),
-      copyright: cleanText(footer.copyright, d.footer.copyright),
-      powered: cleanLink(footer.powered, d.footer.powered),
-    },
+    cta: cleanCta(cta, d.cta),
+    footer: cleanFooter(footer, d.footer),
   };
 }
 
-export function cleanMobile(input: unknown): MobileContent {
-  return { note: str(obj(input).note, "", 2000) };
+type Hero = DesktopContent["hero"];
+type Result = DesktopContent["result"];
+type RecordSection = DesktopContent["record"];
+type Cta = DesktopContent["cta"];
+type Footer = DesktopContent["footer"];
+
+function cleanHero(hero: Record<string, unknown>, d: Hero): Hero {
+  return {
+    crumbs: cleanLinks(hero.crumbs, d.crumbs, "crumb"),
+    crumb_current: cleanText(hero.crumb_current, d.crumb_current),
+    eyebrow: cleanText(hero.eyebrow, d.eyebrow),
+    title: cleanText(hero.title, d.title),
+    title_accent: cleanText(hero.title_accent, d.title_accent),
+    lead: cleanText(hero.lead, d.lead),
+    art: { hidden: bool(obj(hero.art).hidden, d.art.hidden) },
+  };
 }
 
-/** Every logo and favicon key a desktop content points at, so storage cleanup leaves them alone. */
-export function imageKeys(c: DesktopContent): string[] {
-  return [c.header.logo.key, c.record.logo.key, c.footer.logo.key, c.meta.favicon.key].filter((k): k is string => Boolean(k));
+function cleanResult(result: Record<string, unknown>, d: Result): Result {
+  return {
+    found_title: cleanText(result.found_title, d.found_title),
+    document_label: cleanText(result.document_label, d.document_label),
+    issued_label: cleanText(result.issued_label, d.issued_label),
+    missing_title: cleanText(result.missing_title, d.missing_title),
+    missing_text: cleanText(result.missing_text, d.missing_text),
+  };
+}
+
+function cleanRecord(record: Record<string, unknown>, d: RecordSection): RecordSection {
+  const labels = obj(record.labels);
+  return {
+    eyebrow: cleanText(record.eyebrow, d.eyebrow),
+    title: cleanText(record.title, d.title),
+    logo: cleanImage(record.logo, d.logo),
+    cert_title: cleanText(record.cert_title, d.cert_title),
+    cert_subtitle: cleanText(record.cert_subtitle, d.cert_subtitle),
+    labels: Object.fromEntries(RECORD_FIELDS.map((f) => [f, cleanText(labels[f], d.labels[f])])) as RecordSection["labels"],
+    designation: { hidden: bool(obj(record.designation).hidden, d.designation.hidden) },
+    signature: { hidden: bool(obj(record.signature).hidden, d.signature.hidden) },
+    disclaimer: cleanText(record.disclaimer, d.disclaimer),
+  };
+}
+
+function cleanCta(cta: Record<string, unknown>, d: Cta): Cta {
+  return {
+    button: cleanLink(cta.button, d.button),
+    help_before: cleanText(cta.help_before, d.help_before),
+    email: cleanLink(cta.email, d.email),
+    help_after: cleanText(cta.help_after, d.help_after),
+  };
+}
+
+function cleanFooter(footer: Record<string, unknown>, d: Footer): Footer {
+  const rows = Array.isArray(footer.rows) ? footer.rows : null;
+  return {
+    title: cleanText(footer.title, d.title),
+    visit: cleanLink(footer.visit, d.visit),
+    logo: cleanImage(footer.logo, d.logo),
+    brand_title: cleanLinkText(footer.brand_title, d.brand_title),
+    brand_subtitle: cleanText(footer.brand_subtitle, d.brand_subtitle),
+    left_links: cleanLinks(footer.left_links, d.left_links, "footer-left"),
+    rows: d.rows.map((defRow, i) => cleanLinks(rows ? rows[i] : undefined, defRow, `footer-row${i}`)),
+    copyright: cleanText(footer.copyright, d.copyright),
+    powered: cleanLink(footer.powered, d.powered),
+  };
+}
+
+/** The mobile view's content, checked and laid over the mobile design's defaults like the desktop one. */
+export function cleanMobile(input: unknown): MobileContent {
+  const c = obj(input);
+  const d = DEFAULT_MOBILE;
+  const header = obj(c.header);
+  const menu = obj(c.menu);
+  const doc = obj(c.document);
+  const viewer = obj(doc.viewer);
+  const mode = viewer.mode === "pages" || viewer.mode === "card" ? viewer.mode : d.document.viewer.mode;
+  return {
+    meta: { animations: bool(obj(c.meta).animations, d.meta.animations) },
+    header: {
+      logo: cleanImage(header.logo, d.header.logo),
+      title: cleanLinkText(header.title, d.header.title),
+      subtitle: cleanText(header.subtitle, d.header.subtitle),
+      menu_button: cleanText(header.menu_button, d.header.menu_button),
+    },
+    menu: {
+      items: cleanLinks(menu.items, d.menu.items, "menu"),
+      links_title: cleanText(menu.links_title, d.menu.links_title),
+      links: cleanLinks(menu.links, d.menu.links, "menu-link"),
+      connect: cleanText(menu.connect, d.menu.connect),
+      social: cleanSocials(menu.social, d.menu.social),
+    },
+    hero: cleanHero(obj(c.hero), d.hero),
+    result: cleanResult(obj(c.result), d.result),
+    record: cleanRecord(obj(c.record), d.record),
+    document: {
+      eyebrow: cleanText(doc.eyebrow, d.document.eyebrow),
+      title: cleanText(doc.title, d.document.title),
+      open: cleanLink(doc.open, d.document.open),
+      viewer: {
+        mode,
+        filename: { hidden: bool(obj(viewer.filename).hidden, d.document.viewer.filename.hidden) },
+        button: cleanText(viewer.button, d.document.viewer.button),
+      },
+    },
+    cta: cleanCta(obj(c.cta), d.cta),
+    footer: cleanFooter(obj(c.footer), d.footer),
+    note: str(c.note, "", 2000),
+  };
+}
+
+/**
+ * Every logo and favicon key a view's content points at, so storage cleanup leaves them alone. The
+ * favicon is set on the desktop view and serves both.
+ */
+export function imageKeys(c: DesktopContent | MobileContent): string[] {
+  const favicon = "favicon" in c.meta ? c.meta.favicon.key : null;
+  return [c.header.logo.key, c.record.logo.key, c.footer.logo.key, favicon].filter((k): k is string => Boolean(k));
 }
 
 /**
@@ -606,6 +790,41 @@ export function imageKeys(c: DesktopContent): string[] {
 export function faviconHref(f: PFavicon): string | null {
   if (!f.key) return null;
   return `/api/new-m/favicon?v=${f.key.split("/")[2] ?? ""}`;
+}
+
+/**
+ * The mobile view with the desktop view's wording, links and logos copied in, for the editor's
+ * "Copy from desktop". What only the phone has (the menu button, the file card, footer link widths
+ * on the phone, notes) stays as it is; list items keep their phone width where the item matches.
+ */
+export function mobileFromDesktop(desk: DesktopContent, mob: MobileContent): MobileContent {
+  const widthOf = (id: string) => mob.footer.rows.flat().find((l) => l.id === id)?.width ?? MOBILE_FOOTER_WIDTHS[id] ?? null;
+  return cleanMobile({
+    ...mob,
+    meta: { animations: desk.meta.animations },
+    header: {
+      logo: desk.header.logo,
+      title: desk.header.title,
+      subtitle: desk.header.subtitle,
+      menu_button: mob.header.menu_button,
+    },
+    menu: {
+      ...mob.menu,
+      items: desk.nav.items.map((l) => ({ ...l, text: l.text.replace(/\s*\n\s*/g, " "), width: null })),
+      links: desk.header.top_links.map((l) => ({ ...l, width: null })),
+      connect: desk.header.connect,
+      social: desk.header.social,
+    },
+    hero: desk.hero,
+    result: desk.result,
+    record: desk.record,
+    document: { ...mob.document, eyebrow: desk.document.eyebrow, title: desk.document.title, open: desk.document.open },
+    cta: desk.cta,
+    footer: {
+      ...desk.footer,
+      rows: desk.footer.rows.map((row) => row.map((l) => ({ ...l, width: widthOf(l.id) }))),
+    },
+  });
 }
 
 /* ---------------- Addressing pieces of the page (the editor) ---------------- */

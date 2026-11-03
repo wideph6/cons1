@@ -20,7 +20,7 @@ https://files.example.com/brochures/2025/summer.pdf   ->  file downloads immedia
 | Domains | Add domains/subdomains, enable/disable, notes, attach to the Vercel project through the Vercel API (optional), DNS guidance |
 | Old M — links | Create paths under a domain (`/`, `/brochures`, `/reports/2025`), rename, delete |
 | Old M — files | Upload (direct browser → R2, multi-file, progress), replace, rename, move to another link, delete, preview inside the panel, copy public link, download counts |
-| New M | Attestation documents, uploaded one PDF at a time. New M has its own domains, each with custom links that carry `{attestation_number}` and `{issue_date}` formulas. Each document picks a domain and link, gets a unique attestation number (`GEN-NMPD-SSTI-FBDS`, generated or typed) and a date (today unless changed), and its complete link and QR code are saved with it. Document type, issuing office, issuing authority and approving officer (name + designation + signature, picked together) are offered from saved lists that grow with every upload. Everything stays editable, the PDF included; one search box covers every domain. Every link opens a public verification page drawn exactly to the reference design, with the document's values and its PDF in a built-in viewer; the super admin edits every text, link, button, tab and logo of that page from **New M page** |
+| New M | Attestation documents, uploaded one PDF at a time. New M has its own domains, each with custom links that carry `{attestation_number}` and `{issue_date}` formulas. Each document picks a domain and link, gets a unique attestation number (`GEN-NMPD-SSTI-FBDS`, generated or typed) and a date (today unless changed), and its complete link and QR code are saved with it. Document type, issuing office, issuing authority and approving officer (name + designation + signature, picked together) are offered from saved lists that grow with every upload. Everything stays editable, the PDF included; one search box covers every domain. Every link opens a public verification page drawn exactly to the reference designs — one for computers, one for phones (with a hamburger menu) — with the document's values and its PDF; the super admin edits every text, link, button, tab and logo of both views from **New M page** |
 | Bulk actions | Tick several files, then move them to another link, replace them all at once (each new file is paired to the selected file with the same name), or delete them |
 | Storage | Super-admin page comparing the R2 bucket with the database: space used, leftovers from uploads that never finished (one click to delete), files whose object is missing, sizes that do not match |
 | Search | Find files uploaded (or changed) inside a date **and time** range, by domain, link, name or uploader; CSV export |
@@ -164,14 +164,26 @@ PDF.js in a viewer drawn after the browser's own (thumbnails, page number, zoom,
 copy with notes via pdf-lib, download, print, properties); it reads the file through `/api/new-m/document`, which serves byte
 ranges, so a large scan starts showing at once. `mode=open` / `mode=download` redirect to a short-lived R2 link instead.
 
+**Mobile view** — the same page carries a second layout drawn after the mobile design (`MobilePage`, styles in
+`verify-mobile.src.css` → `verify-mobile.css`); below 768 px it shows and the desktop one hides (`.nmp-switch`). It is laid out on a
+360 px grid that scales to the phone (`calc(var(--mu) * n)`, `--mu` = one design pixel of the page's width, capped at 540 px), so
+every phone from 320 px up keeps the design's proportions without horizontal scrolling. The header's hamburger button
+(`MobileMenu`, a small client part) opens the main menu, the quick links and the social icons under the header; Escape, a tap on a
+link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button to the
+PDF) or, if chosen, every page drawn with PDF.js at the phone's width (`MobilePdf`; nothing is downloaded while the view is hidden).
+Its fonts are the mobile design's: Roboto and Noto Serif, served from `public/nm-assets/fonts` (OFL).
+
 **Page design** (super admin) — `/admin/new-m/page-design` shows the page exactly as visitors see it; clicking any text, button,
 tab, link or logo opens its settings (wording, link target, new tab, icon, width, hide/show, order, add/duplicate/delete within
-lists, logo upload). With nothing selected, **Page settings** holds the browser tab's title and its **favicon** (ICO, PNG, SVG,
-JPG, WebP or GIF up to 1 MB, kept in R2 under `new-m/page/`; served to visitors from `/api/new-m/favicon?v=…`, an address that changes
-with each upload so browsers may keep it; without one the app's own icon shows). Desktop and mobile are separate views (mobile is a placeholder for now: phones get the desktop design scaled).
+lists, logo upload). With nothing selected, the desktop view's **Page settings** holds the browser tab's title and its **favicon**
+(ICO, PNG, SVG, JPG, WebP or GIF up to 1 MB, kept in R2 under `new-m/page/`; served to visitors from `/api/new-m/favicon?v=…`, an
+address that changes with each upload so browsers may keep it; without one the app's own icon shows; phones get the same favicon).
+Desktop and mobile are separate views with separate content, each with its own undo history and reset; the
+mobile tab shows the page in a phone frame at a chosen width, opens the hamburger menu when its button is clicked so the menu's
+items, quick links and social icons can be edited like everything else, and can copy the desktop wording in (`mobileFromDesktop`).
 Text, links and settings are saved as JSON in `new_m_page_settings` (one row per view; anything missing falls back to the design's
-default); logos go to R2 under `new-m/page/` and are deleted when replaced or removed. The content is checked on the server
-(`cleanDesktop`): links must be http(s), mailto, tel or same-site, and logo keys must be under `new-m/page/`. A save made against an
+default); logos go to R2 under `new-m/page/` and are deleted when replaced or removed and no longer used by either view. The content
+is checked on the server (`cleanDesktop` / `cleanMobile`): links must be http(s), mailto, tel or same-site, and logo keys must be under `new-m/page/`. A save made against an
 older copy than the one stored is refused with a reload hint.
 
 A New M domain still has to point at this deployment (DNS, and attached in Vercel) before its links can answer.
@@ -216,7 +228,7 @@ src/lib/new-m-link.ts        New M link formulas, attestation number and QR sett
 src/lib/new-m-qr.ts          New M's QR encoder (ISO/IEC 18004, byte mode)
 src/lib/new-m-page.ts        Verification page content: defaults from the design, checks, paths for the editor
 src/lib/new-m-page-server.ts Page content in the database, logo links, finding the document behind a visited link
-src/components/new-m-page/*  The verification page (VerifyPage), its PDF viewer and its stylesheet
+src/components/new-m-page/*  The verification page: desktop (VerifyPage, PdfViewer) and mobile (MobilePage, MobileMenu, MobilePdf), stylesheets
 src/app/nm-view              The public verification page (reached through the middleware only)
 src/app/api/new-m/document   The PDF behind a verification page, with byte ranges
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers

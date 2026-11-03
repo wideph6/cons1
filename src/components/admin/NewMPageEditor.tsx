@@ -8,6 +8,7 @@ import {
   EyeOff,
   ExternalLink,
   ImageUp,
+  Menu as MenuIcon,
   Monitor,
   MousePointer2,
   Plus,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { MobilePage } from "@/components/new-m-page/MobilePage";
 import { VerifyPage } from "@/components/new-m-page/VerifyPage";
 import {
   Alert,
@@ -45,18 +47,23 @@ import {
   DEFAULT_DESKTOP,
   DEFAULT_MOBILE,
   LINK_ICONS,
+  MAX_ITEMS,
+  MOBILE_VIEWER_MODES,
   RECORD_FIELDS,
   SAMPLE_RECORD,
   SOCIAL_ICONS,
   VIEWER_TOOLS,
   getAt,
+  imageKeys,
   listOf,
+  mobileFromDesktop,
   newId,
   safeHref,
   setAt,
   type DesktopContent,
   type LinkIcon,
   type MobileContent,
+  type MobileViewerMode,
   type PageRecord,
   type PageView,
   type PFavicon,
@@ -71,6 +78,8 @@ import {
 } from "@/lib/new-m-page";
 import type { NewMRecord, Paged } from "@/lib/types";
 import { formatDateTime, formatIssued } from "@/lib/utils";
+
+type AnyContent = DesktopContent | MobileContent;
 
 /* ---------------- What each piece is called ---------------- */
 
@@ -130,6 +139,24 @@ const NAMES: Record<string, string> = {
   "footer.powered": "“Powered by” link",
 };
 
+/** The mobile view's own pieces, and the ones it names differently. */
+const MOBILE_NAMES: Record<string, string> = {
+  ...NAMES,
+  "header.menu_button": "Menu button (☰)",
+  "menu.items": "Menu item",
+  "menu.links_title": "Menu — quick links heading",
+  "menu.links": "Menu — quick link",
+  "menu.connect": "Menu — “Connect with” text",
+  "menu.social": "Menu — social icon",
+  "document.viewer": "Document panel",
+  "document.viewer.filename": "Document panel — file name",
+  "document.viewer.button": "Document panel — Open button",
+};
+
+function namesFor(view: PageView): Record<string, string> {
+  return view === "mobile" ? MOBILE_NAMES : NAMES;
+}
+
 /** Which document value appears under each label. */
 const FIELD_SOURCE: Record<RecordField, string> = {
   attestation_number: "the document's attestation number",
@@ -142,41 +169,45 @@ const FIELD_SOURCE: Record<RecordField, string> = {
 
 /** Text that may run over several lines (Enter makes a line break on the page). */
 const MULTILINE = new Set(["hero.lead", "record.disclaimer", "result.missing_text"]);
+/** Desktop lists whose names may be split over two lines, as in “Verify Document”. */
 const LINEBREAK_LISTS = new Set(["nav.items", "header.top_links"]);
+/** Links drawn with an icon after their name (the others never show one). */
+const ICON_LISTS = new Set(["header.top_links", "nav.items", "menu.items", "menu.links"]);
+const ICON_PATHS = new Set(["document.open", "cta.button", "footer.visit"]);
 
-function nameOf(path: string, content: DesktopContent): string {
-  if (NAMES[path]) return NAMES[path];
+/** The grid a list's item widths are measured on, or null when the list sizes its items itself. */
+function widthGrid(view: PageView, listPath: string): number | null {
+  if (/^footer\.rows\.\d+$/.test(listPath)) return view === "desktop" ? 1062 : 360;
+  if (view === "desktop" && (listPath === "nav.items" || listPath === "header.top_links")) return 1062;
+  return null;
+}
+
+function nameOf(view: PageView, path: string, content: AnyContent): string {
+  const names = namesFor(view);
+  if (names[path]) return names[path];
   const list = listOf(content, path);
-  if (list && NAMES[list.listPath]) return NAMES[list.listPath];
+  if (list && names[list.listPath]) return names[list.listPath];
   return path;
 }
 
+type OutlineItem = { path: string; label: string; hidden: boolean };
+type OutlineGroup = { title: string; items: OutlineItem[]; add?: string[] };
+
 /** The outline beside the preview: every piece of the page, hidden ones included. */
-function outline(c: DesktopContent): Array<{ title: string; items: Array<{ path: string; label: string; hidden: boolean }>; add?: string[] }> {
-  const t = (path: string) => {
-    const v = getAt(c, path) as { hidden?: boolean; text?: string } | undefined;
-    return { path, label: NAMES[path] ?? path, hidden: Boolean(v?.hidden) };
+function outline(view: PageView, c: AnyContent): OutlineGroup[] {
+  const names = namesFor(view);
+  const t = (path: string): OutlineItem => {
+    const v = getAt(c, path) as { hidden?: boolean } | undefined;
+    return { path, label: names[path] ?? path, hidden: Boolean(v?.hidden) };
   };
-  const list = (listPath: string, items: Array<{ id: string; hidden: boolean; text?: string; label?: string }>) =>
+  const list = (listPath: string, items: Array<{ id: string; hidden: boolean; text?: string; label?: string }>): OutlineItem[] =>
     items.map((i) => ({
       path: `${listPath}.${i.id}`,
-      label: `${NAMES[listPath] ?? listPath}: ${(i.text ?? i.label ?? "").replace(/\n/g, " ") || "(empty)"}`,
+      label: `${names[listPath] ?? listPath}: ${(i.text ?? i.label ?? "").replace(/\n/g, " ") || "(empty)"}`,
       hidden: i.hidden,
     }));
-  return [
-    {
-      title: "Header",
-      items: [
-        t("header.logo"),
-        t("header.title"),
-        t("header.subtitle"),
-        ...list("header.top_links", c.header.top_links),
-        t("header.connect"),
-        ...list("header.social", c.header.social),
-      ],
-      add: ["header.top_links", "header.social"],
-    },
-    { title: "Main menu", items: list("nav.items", c.nav.items), add: ["nav.items"] },
+
+  const middle: OutlineGroup[] = [
     {
       title: "Hero",
       items: [
@@ -192,13 +223,7 @@ function outline(c: DesktopContent): Array<{ title: string; items: Array<{ path:
     },
     {
       title: "Result banner",
-      items: [
-        t("result.found_title"),
-        t("result.document_label"),
-        t("result.issued_label"),
-        t("result.missing_title"),
-        t("result.missing_text"),
-      ],
+      items: [t("result.found_title"), t("result.document_label"), t("result.issued_label"), t("result.missing_title"), t("result.missing_text")],
     },
     {
       title: "Verification record",
@@ -214,14 +239,9 @@ function outline(c: DesktopContent): Array<{ title: string; items: Array<{ path:
         t("record.disclaimer"),
       ],
     },
-    {
-      title: "Supporting document",
-      items: [t("document.eyebrow"), t("document.title"), t("document.open"), { path: "document.viewer", label: NAMES["document.viewer"], hidden: false }],
-    },
-    {
-      title: "Bottom of the page",
-      items: [t("cta.button"), t("cta.help_before"), t("cta.email"), t("cta.help_after")],
-    },
+  ];
+  const end: OutlineGroup[] = [
+    { title: "Bottom of the page", items: [t("cta.button"), t("cta.help_before"), t("cta.email"), t("cta.help_after")] },
     {
       title: "Footer",
       items: [
@@ -235,28 +255,94 @@ function outline(c: DesktopContent): Array<{ title: string; items: Array<{ path:
         t("footer.copyright"),
         t("footer.powered"),
       ],
-      add: ["footer.left_links", "footer.rows.0", "footer.rows.1", "footer.rows.2"],
+      add: ["footer.left_links", ...c.footer.rows.map((_, i) => `footer.rows.${i}`)],
     },
+  ];
+
+  if (view === "mobile") {
+    const m = c as MobileContent;
+    return [
+      { title: "Header", items: [t("header.logo"), t("header.title"), t("header.subtitle"), t("header.menu_button")] },
+      {
+        title: "Menu (opens from ☰)",
+        items: [
+          ...list("menu.items", m.menu.items),
+          t("menu.links_title"),
+          ...list("menu.links", m.menu.links),
+          t("menu.connect"),
+          ...list("menu.social", m.menu.social),
+        ],
+        add: ["menu.items", "menu.links", "menu.social"],
+      },
+      ...middle,
+      {
+        title: "Supporting document",
+        items: [
+          t("document.eyebrow"),
+          t("document.title"),
+          t("document.open"),
+          { path: "document.viewer", label: names["document.viewer"], hidden: false },
+          t("document.viewer.filename"),
+          t("document.viewer.button"),
+        ],
+      },
+      ...end,
+    ];
+  }
+
+  const d = c as DesktopContent;
+  return [
+    {
+      title: "Header",
+      items: [
+        t("header.logo"),
+        t("header.title"),
+        t("header.subtitle"),
+        ...list("header.top_links", d.header.top_links),
+        t("header.connect"),
+        ...list("header.social", d.header.social),
+      ],
+      add: ["header.top_links", "header.social"],
+    },
+    { title: "Main menu", items: list("nav.items", d.nav.items), add: ["nav.items"] },
+    ...middle,
+    {
+      title: "Supporting document",
+      items: [t("document.eyebrow"), t("document.title"), t("document.open"), { path: "document.viewer", label: names["document.viewer"], hidden: false }],
+    },
+    ...end,
   ];
 }
 
-/** A new item for a list, made like the list's own items. */
-function blankItem(listPath: string, like?: PLink | PSocial): PLink | PSocial {
-  if (listPath === "header.social") {
-    const s = like as PSocial | undefined;
-    return { id: newId("social"), icon: s?.icon ?? "website", label: "Website", href: "#", new_tab: true, hidden: false };
-  }
-  const prefix = listPath.replace(/[^a-z0-9]+/gi, "-");
-  return {
-    id: newId(prefix),
-    text: "New link",
-    href: "#",
-    new_tab: false,
-    hidden: false,
-    icon: "none",
-    width: null,
-  };
+function isSocialList(listPath: string): boolean {
+  return listPath === "header.social" || listPath === "menu.social";
 }
+
+/** A new item for a list, made like its neighbour. */
+function blankItem(listPath: string, id: string, like?: PLink | PSocial): PLink | PSocial {
+  if (isSocialList(listPath)) {
+    const s = like as PSocial | undefined;
+    return { id, icon: s?.icon ?? "website", label: "Website", href: "#", new_tab: true, hidden: false };
+  }
+  const l = like as PLink | undefined;
+  return { id, text: "New link", href: "#", new_tab: l?.new_tab ?? false, hidden: false, icon: "none", width: null };
+}
+
+function idPrefix(listPath: string): string {
+  return isSocialList(listPath) ? "social" : listPath.replace(/[^a-z0-9]+/gi, "-");
+}
+
+/** Phone widths the mobile preview can be shown at. The page scales to every one of them. */
+const PHONES: Array<{ width: number; label: string }> = [
+  { width: 320, label: "320 px · small phones (iPhone SE 1st gen)" },
+  { width: 360, label: "360 px · the design (most Android phones)" },
+  { width: 375, label: "375 px · iPhone SE 2/3, iPhone 8, mini" },
+  { width: 390, label: "390 px · iPhone 12, 13, 14" },
+  { width: 393, label: "393 px · iPhone 15, 16, Pixel" },
+  { width: 412, label: "412 px · Galaxy S Ultra, Pixel Pro" },
+  { width: 430, label: "430 px · iPhone Plus / Pro Max" },
+  { width: 480, label: "480 px · large phones, foldables" },
+];
 
 /* ---------------- The editor ---------------- */
 
@@ -268,31 +354,51 @@ interface LoadResult {
   table_ready: boolean;
 }
 
+/** One view's content: as saved, as being edited, and the edits that can be undone and redone. */
+interface ViewDoc<T> {
+  saved: T;
+  savedAt: string | null;
+  content: T;
+  past: T[];
+  future: T[];
+}
+
+interface Docs {
+  desktop: ViewDoc<DesktopContent>;
+  mobile: ViewDoc<MobileContent>;
+}
+
+function fresh<T>(content: T, savedAt: string | null): ViewDoc<T> {
+  return { saved: content, savedAt, content, past: [], future: [] };
+}
+
+function isDirty(d: ViewDoc<AnyContent>): boolean {
+  return JSON.stringify(d.content) !== JSON.stringify(d.saved);
+}
+
+const VIEW_LABEL: Record<PageView, string> = { desktop: "Desktop", mobile: "Mobile" };
+
 export function NewMPageEditor() {
   const { toast } = useToast();
   const [view, setView] = useState<PageView>("desktop");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tableReady, setTableReady] = useState(true);
 
-  const [saved, setSaved] = useState<DesktopContent | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [content, setContent] = useState<DesktopContent | null>(null);
-  const [past, setPast] = useState<DesktopContent[]>([]);
-  const [future, setFuture] = useState<DesktopContent[]>([]);
+  const [docs, setDocs] = useState<Docs | null>(null);
   const [assets, setAssets] = useState<Record<string, string>>({});
-
-  const [mobileSaved, setMobileSaved] = useState<MobileContent>(DEFAULT_MOBILE);
-  const [mobileAt, setMobileAt] = useState<string | null>(null);
-  const [mobile, setMobile] = useState<MobileContent>(DEFAULT_MOBILE);
 
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirm, setConfirm] = useState<null | "reset" | "discard">(null);
+  const [confirm, setConfirm] = useState<null | "reset" | "discard" | "copy">(null);
 
   const [record, setRecord] = useState<PageRecord>(SAMPLE_RECORD);
   const [recordLabel, setRecordLabel] = useState("Sample values from the design");
   const [showMissing, setShowMissing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  /** Mobile preview: the phone width shown, and the menu held open by the admin. */
+  const [phone, setPhone] = useState(360);
+  const [menuPinned, setMenuPinned] = useState(false);
 
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -300,18 +406,12 @@ export function NewMPageEditor() {
     try {
       const r = await api<LoadResult>("/api/admin/new-m/page");
       // Read through the same checks as the server, so anything missing shows the design's default.
-      const desktop = cleanDesktop(r.desktop.content);
-      const mobileContent = cleanMobile(r.mobile.content);
-      setSaved(desktop);
-      setContent(desktop);
-      setSavedAt(r.desktop.updated_at);
-      setMobileSaved(mobileContent);
-      setMobile(mobileContent);
-      setMobileAt(r.mobile.updated_at);
+      setDocs({
+        desktop: fresh(cleanDesktop(r.desktop.content), r.desktop.updated_at),
+        mobile: fresh(cleanMobile(r.mobile.content), r.mobile.updated_at),
+      });
       setAssets(r.assets);
       setTableReady(r.table_ready);
-      setPast([]);
-      setFuture([]);
       setLoadError(null);
     } catch (e) {
       setLoadError(errorMessage(e));
@@ -352,12 +452,9 @@ export function NewMPageEditor() {
     }
   }
 
-  const dirty = useMemo(
-    () =>
-      (content && saved && JSON.stringify(content) !== JSON.stringify(saved)) ||
-      JSON.stringify(mobile) !== JSON.stringify(mobileSaved),
-    [content, saved, mobile, mobileSaved],
-  );
+  const dirtyDesktop = useMemo(() => (docs ? isDirty(docs.desktop) : false), [docs]);
+  const dirtyMobile = useMemo(() => (docs ? isDirty(docs.mobile) : false), [docs]);
+  const dirty = dirtyDesktop || dirtyMobile;
 
   useEffect(() => {
     if (!dirty) return;
@@ -369,38 +466,44 @@ export function NewMPageEditor() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  /** Every change goes through here, so it can be undone. */
-  const change = useCallback(
-    (next: DesktopContent) => {
-      setContent((cur) => {
-        if (cur) setPast((p) => [...p.slice(-99), cur]);
-        return next;
-      });
-      setFuture([]);
-    },
-    [],
-  );
+  /** Every change to a view goes through here, so it can be undone. */
+  const edit = useCallback((v: PageView, fn: (c: AnyContent) => AnyContent) => {
+    setDocs((d) => {
+      if (!d) return d;
+      const cur = d[v] as ViewDoc<AnyContent>;
+      const next = fn(cur.content);
+      if (next === cur.content) return d;
+      return { ...d, [v]: { ...cur, content: next, past: [...cur.past.slice(-99), cur.content], future: [] } } as Docs;
+    });
+  }, []);
 
-  const update = useCallback(
-    (path: string, value: unknown) => {
-      if (!content) return;
-      change(setAt(content, path, value));
-    },
-    [content, change],
-  );
+  const update = useCallback((path: string, value: unknown) => edit(view, (c) => setAt(c, path, value)), [edit, view]);
 
   function undo() {
-    if (!past.length || !content) return;
-    setFuture((f) => [content, ...f]);
-    setContent(past[past.length - 1]);
-    setPast((p) => p.slice(0, -1));
+    setDocs((d) => {
+      if (!d) return d;
+      const cur = d[view] as ViewDoc<AnyContent>;
+      if (!cur.past.length) return d;
+      return {
+        ...d,
+        [view]: { ...cur, content: cur.past[cur.past.length - 1], past: cur.past.slice(0, -1), future: [cur.content, ...cur.future] },
+      } as Docs;
+    });
   }
 
   function redo() {
-    if (!future.length || !content) return;
-    setPast((p) => [...p, content]);
-    setContent(future[0]);
-    setFuture((f) => f.slice(1));
+    setDocs((d) => {
+      if (!d) return d;
+      const cur = d[view] as ViewDoc<AnyContent>;
+      if (!cur.future.length) return d;
+      return { ...d, [view]: { ...cur, content: cur.future[0], past: [...cur.past, cur.content], future: cur.future.slice(1) } } as Docs;
+    });
+  }
+
+  function switchView(v: PageView) {
+    if (v === view) return;
+    setView(v);
+    setSelected(null);
   }
 
   useEffect(() => {
@@ -420,6 +523,7 @@ export function NewMPageEditor() {
         void save();
       } else if (e.key === "Escape") {
         setSelected(null);
+        setMenuPinned(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -429,89 +533,101 @@ export function NewMPageEditor() {
   /* ---------- Lists ---------- */
 
   function addTo(listPath: string, after?: string) {
-    if (!content) return;
-    const list = (getAt(content, listPath) as Array<PLink | PSocial>) ?? [];
-    const at = after ? list.findIndex((x) => x.id === after) : -1;
-    const like = at >= 0 ? list[at] : list[list.length - 1];
-    const item = blankItem(listPath, like);
-    if (like && "text" in like && "text" in item) {
-      // A new item looks like its neighbours: same icon-less style and an automatic width.
-      item.new_tab = like.new_tab;
+    if (!docs) return;
+    const current = (getAt(docs[view].content, listPath) as Array<PLink | PSocial> | undefined) ?? [];
+    if (current.length >= MAX_ITEMS) {
+      toast(`A list holds at most ${MAX_ITEMS} items. Delete or hide one first.`, "info");
+      return;
     }
-    const next = list.slice();
-    next.splice(at >= 0 ? at + 1 : next.length, 0, item);
-    change(setAt(content, listPath, next));
-    setSelected(`${listPath}.${item.id}`);
+    const id = newId(idPrefix(listPath));
+    edit(view, (c) => {
+      const list = (getAt(c, listPath) as Array<PLink | PSocial> | undefined) ?? [];
+      const at = after ? list.findIndex((x) => x.id === after) : -1;
+      const like = at >= 0 ? list[at] : list[list.length - 1];
+      const next = list.slice();
+      next.splice(at >= 0 ? at + 1 : next.length, 0, blankItem(listPath, id, like));
+      return setAt(c, listPath, next);
+    });
+    reveal(`${listPath}.${id}`);
   }
 
   function duplicate(path: string) {
-    if (!content) return;
-    const l = listOf(content, path);
+    if (!docs) return;
+    const l = listOf(docs[view].content, path);
     if (!l) return;
-    const list = getAt(content, l.listPath) as Array<PLink | PSocial>;
-    const i = list.findIndex((x) => x.id === l.itemId);
-    const copy = { ...list[i], id: newId(l.listPath.replace(/[^a-z0-9]+/gi, "-")) };
-    const next = list.slice();
-    next.splice(i + 1, 0, copy);
-    change(setAt(content, l.listPath, next));
-    setSelected(`${l.listPath}.${copy.id}`);
+    const current = getAt(docs[view].content, l.listPath) as Array<PLink | PSocial>;
+    if (current.length >= MAX_ITEMS) {
+      toast(`A list holds at most ${MAX_ITEMS} items. Delete or hide one first.`, "info");
+      return;
+    }
+    const id = newId(idPrefix(l.listPath));
+    edit(view, (c) => {
+      const list = getAt(c, l.listPath) as Array<PLink | PSocial>;
+      const i = list.findIndex((x) => x.id === l.itemId);
+      if (i < 0) return c;
+      const next = list.slice();
+      next.splice(i + 1, 0, { ...list[i], id });
+      return setAt(c, l.listPath, next);
+    });
+    reveal(`${l.listPath}.${id}`);
   }
 
   function move(path: string, dir: -1 | 1) {
-    if (!content) return;
-    const l = listOf(content, path);
+    if (!docs) return;
+    const l = listOf(docs[view].content, path);
     if (!l) return;
-    const list = (getAt(content, l.listPath) as Array<PLink | PSocial>).slice();
-    const i = list.findIndex((x) => x.id === l.itemId);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= list.length) return;
-    [list[i], list[j]] = [list[j], list[i]];
-    change(setAt(content, l.listPath, list));
+    edit(view, (c) => {
+      const list = (getAt(c, l.listPath) as Array<PLink | PSocial>).slice();
+      const i = list.findIndex((x) => x.id === l.itemId);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= list.length) return c;
+      [list[i], list[j]] = [list[j], list[i]];
+      return setAt(c, l.listPath, list);
+    });
   }
 
   function remove(path: string) {
-    if (!content) return;
-    const l = listOf(content, path);
+    if (!docs) return;
+    const l = listOf(docs[view].content, path);
     if (!l) return;
-    const list = (getAt(content, l.listPath) as Array<PLink | PSocial>).filter((x) => x.id !== l.itemId);
-    change(setAt(content, l.listPath, list));
+    edit(view, (c) => setAt(c, l.listPath, (getAt(c, l.listPath) as Array<PLink | PSocial>).filter((x) => x.id !== l.itemId)));
     setSelected(null);
   }
 
   /* ---------- Saving ---------- */
 
   async function save() {
-    if (!content || saving) return;
+    if (!docs || saving) return;
+    const changed = (["desktop", "mobile"] as const).filter((v) => isDirty(docs[v] as ViewDoc<AnyContent>));
+    if (!changed.length) {
+      toast("Nothing has changed since the last save", "info");
+      return;
+    }
     setSaving(true);
     try {
-      const desktopChanged = saved && JSON.stringify(content) !== JSON.stringify(saved);
-      const mobileChanged = JSON.stringify(mobile) !== JSON.stringify(mobileSaved);
-      if (!desktopChanged && !mobileChanged) {
-        toast("Nothing has changed since the last save", "info");
-        return;
-      }
-      if (desktopChanged) {
-        const r = await api<{ content: DesktopContent; updated_at: string; assets: Record<string, string> }>(
-          "/api/admin/new-m/page",
-          { method: "PUT", json: { view: "desktop", content, base_updated_at: savedAt } },
-        );
-        const desktop = cleanDesktop(r.content);
-        setSaved(desktop);
-        setContent(desktop);
-        setSavedAt(r.updated_at);
-        setAssets((a) => ({ ...a, ...r.assets }));
-      }
-      if (mobileChanged) {
-        const r = await api<{ content: MobileContent; updated_at: string }>("/api/admin/new-m/page", {
+      for (const v of changed) {
+        const cur = docs[v] as ViewDoc<AnyContent>;
+        const other = docs[v === "desktop" ? "mobile" : "desktop"] as ViewDoc<AnyContent>;
+        const r = await api<{ content: AnyContent; updated_at: string; assets?: Record<string, string> }>("/api/admin/new-m/page", {
           method: "PUT",
-          json: { view: "mobile", content: mobile, base_updated_at: mobileAt },
+          // The other view's logos, saved or not, are kept in storage by this save.
+          json: { view: v, content: cur.content, base_updated_at: cur.savedAt, keep: imageKeys(other.content) },
         });
-        const m = cleanMobile(r.content);
-        setMobileSaved(m);
-        setMobile(m);
-        setMobileAt(r.updated_at);
+        const clean = v === "desktop" ? cleanDesktop(r.content) : cleanMobile(r.content);
+        setDocs((d) => {
+          if (!d) return d;
+          const now = d[v] as ViewDoc<AnyContent>;
+          // Edits made while the save was on its way stay unsaved.
+          const content = JSON.stringify(now.content) === JSON.stringify(cur.content) ? clean : now.content;
+          return { ...d, [v]: { ...now, saved: clean, savedAt: r.updated_at, content } } as Docs;
+        });
+        if (r.assets) setAssets((a) => ({ ...a, ...r.assets }));
       }
-      toast("Page saved. Every verification link shows it now.");
+      toast(
+        changed.length === 2
+          ? "Both views saved. Every verification link shows them now."
+          : `${VIEW_LABEL[changed[0]]} view saved. Every verification link shows it now.`,
+      );
     } catch (e) {
       toast(errorMessage(e), "danger");
       if (e instanceof ClientError && e.status === 409) void load();
@@ -521,6 +637,8 @@ export function NewMPageEditor() {
   }
 
   /* ---------- Clicks in the preview ---------- */
+
+  const menuOpen = view === "mobile" && (menuPinned || Boolean(selected?.startsWith("menu.")));
 
   function onPreviewClick(e: React.MouseEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
@@ -534,7 +652,13 @@ export function NewMPageEditor() {
       addTo(add.dataset.add as string);
       return;
     }
-    if (hit) setSelected(hit.dataset.edit as string);
+    if (!hit) return;
+    const path = hit.dataset.edit as string;
+    if (path === "header.menu_button") {
+      // The ☰ button opens and closes the menu here too, so its items can be clicked and edited.
+      setMenuPinned(!menuOpen);
+    }
+    setSelected(path);
   }
 
   function reveal(path: string) {
@@ -542,7 +666,7 @@ export function NewMPageEditor() {
     window.setTimeout(() => {
       const el = previewRef.current?.querySelector(`[data-edit="${CSS.escape(path)}"]`);
       el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }, 30);
+    }, 60);
   }
 
   /* ---------- Render ---------- */
@@ -557,7 +681,48 @@ export function NewMPageEditor() {
       </Alert>
     );
   }
-  if (!content || !saved) return <Loading />;
+  if (!docs) return <Loading />;
+
+  const active = docs[view] as ViewDoc<AnyContent>;
+  const content = active.content;
+  const desktop = docs.desktop.content;
+  const mobile = docs.mobile.content;
+  const shownRecord = showMissing ? null : record;
+  const unsavedViews = [dirtyDesktop && "Desktop", dirtyMobile && "Mobile"].filter(Boolean).join(" and ");
+
+  const inspector = selected ? (
+    <Inspector
+      key={`${view}:${selected}`}
+      view={view}
+      path={selected}
+      content={content}
+      assets={assets}
+      onChange={update}
+      onClose={() => setSelected(null)}
+      onMove={(d) => move(selected, d)}
+      onDuplicate={() => duplicate(selected)}
+      onRemove={() => remove(selected)}
+      onAddAfter={() => {
+        const l = listOf(content, selected);
+        if (l) addTo(l.listPath, l.itemId);
+      }}
+      onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
+      onPick={reveal}
+      menuOpen={menuOpen}
+      onMenuOpen={setMenuPinned}
+    />
+  ) : (
+    <Overview
+      view={view}
+      content={content}
+      assets={assets}
+      onChange={update}
+      onPick={reveal}
+      onAdd={addTo}
+      onCopyFromDesktop={() => setConfirm("copy")}
+      onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
+    />
+  );
 
   return (
     <div className="flex flex-col gap-3 min-w-0">
@@ -571,24 +736,32 @@ export function NewMPageEditor() {
           </div>
           <h1 className="text-lg font-semibold leading-tight mt-0.5">Verification page design</h1>
           <p className="text-text-muted text-sm mt-1 max-w-3xl">
-            This is the page every New M verification link opens. Click any text, button, link, tab or logo on it to
-            change its wording, where it leads, or hide it; the document&apos;s own values fill in by themselves.
-            Text and links are saved in the database, logos in R2.
+            This is the page every New M verification link opens — the desktop view on computers and the mobile view on
+            phones. Click any text, button, link, tab or logo on it to change its wording, where it leads, or hide it; the
+            document&apos;s own values fill in by themselves. Text and links are saved in the database, logos in R2.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {dirty ? <Badge tone="warn">Unsaved changes</Badge> : savedAt ? <Badge tone="ok">Saved {formatDateTime(savedAt)}</Badge> : <Badge>Design defaults</Badge>}
-          <Button icon={<Undo2 className="size-4" />} onClick={undo} disabled={!past.length} title="Undo (Ctrl+Z)">
+          {dirty ? (
+            <Badge tone="warn">Unsaved changes · {unsavedViews}</Badge>
+          ) : active.savedAt ? (
+            <Badge tone="ok">
+              {VIEW_LABEL[view]} saved {formatDateTime(active.savedAt)}
+            </Badge>
+          ) : (
+            <Badge>Design defaults</Badge>
+          )}
+          <Button icon={<Undo2 className="size-4" />} onClick={undo} disabled={!active.past.length} title="Undo (Ctrl+Z)">
             Undo
           </Button>
-          <Button icon={<Redo2 className="size-4" />} onClick={redo} disabled={!future.length} title="Redo (Ctrl+Shift+Z)">
+          <Button icon={<Redo2 className="size-4" />} onClick={redo} disabled={!active.future.length} title="Redo (Ctrl+Shift+Z)">
             Redo
           </Button>
           <Button onClick={() => setConfirm("discard")} disabled={!dirty}>
             Discard changes
           </Button>
           <Button icon={<RotateCcw className="size-4" />} onClick={() => setConfirm("reset")}>
-            Reset to design
+            Reset {view} to design
           </Button>
           <Button variant="primary" icon={<Save className="size-4" />} loading={saving} onClick={() => void save()} disabled={!dirty || !tableReady}>
             Save
@@ -604,24 +777,22 @@ export function NewMPageEditor() {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2 border-b">
-        <TabButton active={view === "desktop"} onClick={() => setView("desktop")} icon={<Monitor className="size-4" />}>
+        <TabButton active={view === "desktop"} onClick={() => switchView("desktop")} icon={<Monitor className="size-4" />} dot={dirtyDesktop}>
           Desktop view
         </TabButton>
-        <TabButton active={view === "mobile"} onClick={() => setView("mobile")} icon={<Smartphone className="size-4" />}>
+        <TabButton active={view === "mobile"} onClick={() => switchView("mobile")} icon={<Smartphone className="size-4" />} dot={dirtyMobile}>
           Mobile view
         </TabButton>
-        {view === "desktop" ? (
-          <div className="ml-auto flex flex-wrap items-center gap-2 pb-1.5">
-            <span className="text-[12.5px] text-text-muted">Preview with:</span>
-            <div className="relative">
-              <Button size="sm" icon={<Search className="size-3.5" />} onClick={() => setPickerOpen((o) => !o)}>
-                <span className="max-w-[16rem] truncate">{recordLabel}</span>
-              </Button>
-              {pickerOpen ? <RecordPicker onPick={pickRecord} onClose={() => setPickerOpen(false)} /> : null}
-            </div>
-            <Checkbox label="Show the “no matching record” page" checked={showMissing} onChange={(e) => setShowMissing(e.target.checked)} />
+        <div className="ml-auto flex flex-wrap items-center gap-2 pb-1.5">
+          <span className="text-[12.5px] text-text-muted">Preview with:</span>
+          <div className="relative">
+            <Button size="sm" icon={<Search className="size-3.5" />} onClick={() => setPickerOpen((o) => !o)}>
+              <span className="max-w-[16rem] truncate">{recordLabel}</span>
+            </Button>
+            {pickerOpen ? <RecordPicker onPick={pickRecord} onClose={() => setPickerOpen(false)} /> : null}
           </div>
-        ) : null}
+          <Checkbox label="Show the “no matching record” page" checked={showMissing} onChange={(e) => setShowMissing(e.target.checked)} />
+        </div>
       </div>
 
       {view === "desktop" ? (
@@ -632,83 +803,109 @@ export function NewMPageEditor() {
               Click anything to edit it · hidden pieces are striped · <span className="font-medium text-text">+</span> adds an item to a list
             </div>
             <div ref={previewRef} className="max-h-[calc(100vh-14rem)] overflow-y-auto" onClickCapture={onPreviewClick}>
-              <VerifyPage
-                content={content}
-                record={showMissing ? null : record}
-                assets={assets}
-                editor={{ selected }}
-              />
+              <VerifyPage content={desktop} record={shownRecord} assets={assets} editor={{ selected }} />
             </div>
           </div>
-
-          <aside className="xl:sticky xl:top-4 rounded-md border bg-surface min-w-0">
-            {selected ? (
-              <Inspector
-                key={selected}
-                path={selected}
-                content={content}
-                assets={assets}
-                onChange={update}
-                onClose={() => setSelected(null)}
-                onMove={(d) => move(selected, d)}
-                onDuplicate={() => duplicate(selected)}
-                onRemove={() => remove(selected)}
-                onAddAfter={() => {
-                  const l = listOf(content, selected);
-                  if (l) addTo(l.listPath, l.itemId);
-                }}
-                onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
-              />
-            ) : (
-              <Overview
-                content={content}
-                assets={assets}
-                onChange={update}
-                onPick={reveal}
-                onAdd={addTo}
-                onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
-              />
-            )}
-          </aside>
+          <aside className="xl:sticky xl:top-4 rounded-md border bg-surface min-w-0">{inspector}</aside>
         </div>
       ) : (
-        <MobilePanel
-          mobile={mobile}
-          onChange={setMobile}
-          preview={<VerifyPage content={content} record={showMissing ? null : record} assets={assets} preview />}
-        />
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+          <div className="min-w-0 rounded-md border bg-surface overflow-hidden">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5 min-h-9 border-b bg-surface-2 text-[12.5px] text-text-muted">
+              <span className="inline-flex items-center gap-2">
+                <MousePointer2 className="size-3.5" />
+                Click anything to edit it · click <MenuIcon className="size-3.5" aria-label="the menu button" /> to open the menu and edit its items
+              </span>
+              <div className="ml-auto flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-1.5">
+                  <span>Phone width</span>
+                  <Select
+                    value={phone}
+                    onChange={(e) => setPhone(Number(e.target.value))}
+                    style={{ width: "auto", padding: "3px 28px 3px 8px", fontSize: 12.5 }}
+                  >
+                    {PHONES.map((p) => (
+                      <option key={p.width} value={p.width}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <Checkbox
+                  label="Menu open"
+                  checked={menuOpen}
+                  onChange={(e) => {
+                    setMenuPinned(e.target.checked);
+                    if (!e.target.checked && selected?.startsWith("menu.")) setSelected(null);
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex justify-center bg-[#e7ebee] px-3 py-4 overflow-x-auto">
+              <div className="shrink-0 rounded-[2.4rem] shadow-xl overflow-hidden" style={{ border: "10px solid #1b2a41", background: "#1b2a41" }}>
+                <div
+                  ref={previewRef}
+                  onClickCapture={onPreviewClick}
+                  className="overflow-y-auto overflow-x-hidden bg-white rounded-[1.6rem] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  style={{ width: phone, height: "max(32rem, calc(100vh - 17rem))" }}
+                >
+                  <MobilePage content={mobile} record={shownRecord} assets={assets} editor={{ selected, menuOpen }} />
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside className="xl:sticky xl:top-4 rounded-md border bg-surface min-w-0">{inspector}</aside>
+        </div>
       )}
 
       <ConfirmDialog
         open={confirm === "discard"}
         onClose={() => setConfirm(null)}
         onConfirm={() => {
-          setContent(saved);
-          setMobile(mobileSaved);
-          setPast([]);
-          setFuture([]);
+          setDocs((d) => (d ? { desktop: fresh(d.desktop.saved, d.desktop.savedAt), mobile: fresh(d.mobile.saved, d.mobile.savedAt) } : d));
           setSelected(null);
           setConfirm(null);
         }}
         title="Discard your changes?"
         confirmLabel="Discard"
         danger
-        message="Everything changed since the last save is undone. The page visitors see is not affected."
+        message={`Everything changed since the last save is undone (${unsavedViews || "nothing"} view). The page visitors see is not affected.`}
       />
       <ConfirmDialog
         open={confirm === "reset"}
         onClose={() => setConfirm(null)}
         onConfirm={() => {
-          change(structuredClone(DEFAULT_DESKTOP));
+          edit(view, () => structuredClone(view === "desktop" ? DEFAULT_DESKTOP : DEFAULT_MOBILE));
           setSelected(null);
           setConfirm(null);
         }}
-        title="Reset the page to the design?"
+        title={`Reset the ${view} view to the design?`}
         confirmLabel="Reset"
         message={
           <>
-            Every text, link, button and logo goes back to the original design. Nothing changes for visitors until you
-            press <b>Save</b>, and <b>Undo</b> brings your version back. Uploaded logos are deleted from R2 when you save.
+            Every text, link, button and logo of the {view} view goes back to the original {view} design; the other view
+            stays as it is. Nothing changes for visitors until you press <b>Save</b>, and <b>Undo</b> brings your version
+            back. Logos no longer used by either view are deleted from R2 when you save.
+          </>
+        }
+      />
+      <ConfirmDialog
+        open={confirm === "copy"}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => {
+          edit("mobile", (m) => mobileFromDesktop(desktop, m as MobileContent));
+          setSelected(null);
+          setConfirm(null);
+          toast("The desktop wording, links and logos are copied in. Check the preview, then Save.");
+        }}
+        title="Copy the desktop view into the mobile view?"
+        confirmLabel="Copy"
+        message={
+          <>
+            The mobile view takes the desktop view&apos;s texts, links, menu items, top buttons (as the menu&apos;s quick
+            links), social icons and logos, as they are now in the editor. What only phones have stays: the menu button,
+            the document panel, the phone widths of the footer links and your notes. <b>Undo</b> brings the mobile view
+            back.
           </>
         }
       />
@@ -716,7 +913,19 @@ export function NewMPageEditor() {
   );
 }
 
-function TabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: ReactNode; children: ReactNode }) {
+function TabButton({
+  active,
+  onClick,
+  icon,
+  dot,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  dot?: boolean;
+  children: ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -728,6 +937,7 @@ function TabButton({ active, onClick, icon, children }: { active: boolean; onCli
     >
       {icon}
       {children}
+      {dot ? <span className="size-1.5 rounded-full bg-amber-500" title="Unsaved changes" /> : null}
     </button>
   );
 }
@@ -783,42 +993,69 @@ function RecordPicker({ onPick, onClose }: { onPick: (r: NewMRecord | null) => v
 /* ---------------- Nothing selected: page settings and outline ---------------- */
 
 function Overview({
+  view,
   content,
   assets,
   onChange,
   onPick,
   onAdd,
+  onCopyFromDesktop,
   onUploaded,
 }: {
-  content: DesktopContent;
+  view: PageView;
+  content: AnyContent;
   assets: Record<string, string>;
   onChange: (path: string, value: unknown) => void;
   onPick: (path: string) => void;
   onAdd: (listPath: string) => void;
+  onCopyFromDesktop: () => void;
   onUploaded: (key: string, url: string) => void;
 }) {
-  const groups = outline(content);
+  const groups = outline(view, content);
+  const names = namesFor(view);
   return (
     <div>
       <div className="px-4 py-3 border-b">
-        <h2 className="text-sm font-semibold">Page settings</h2>
+        <h2 className="text-sm font-semibold">{view === "mobile" ? "Mobile page settings" : "Page settings"}</h2>
         <div className="mt-3 space-y-3">
-          <Field label="Browser tab title" hint="Shown on the browser tab and in bookmarks.">
-            <Input value={content.meta.title} onChange={(e) => onChange("meta.title", e.target.value)} />
-          </Field>
-          <FaviconField
-            value={content.meta.favicon}
-            title={content.meta.title}
-            assets={assets}
-            onChange={(v) => onChange("meta.favicon", v)}
-            onUploaded={onUploaded}
-          />
+          {view === "desktop" ? (
+            <>
+              <Field label="Browser tab title" hint="Shown on the browser tab and in bookmarks, on computers and phones alike.">
+                <Input value={(content as DesktopContent).meta.title} onChange={(e) => onChange("meta.title", e.target.value)} />
+              </Field>
+              <FaviconField
+                value={(content as DesktopContent).meta.favicon}
+                title={(content as DesktopContent).meta.title}
+                assets={assets}
+                onChange={(v) => onChange("meta.favicon", v)}
+                onUploaded={onUploaded}
+              />
+            </>
+          ) : null}
           <Checkbox
             label="Animate the page as it opens"
-            description="Headings rise in, the hero badges float and the shield glows. Visitors who ask their computer for less motion never see it."
+            description={
+              view === "mobile"
+                ? "Headings and cards rise in and the shield glows. Phones set to reduce motion never see it."
+                : "Headings rise in, the hero badges float and the shield glows. Visitors who ask their computer for less motion never see it."
+            }
             checked={content.meta.animations}
             onChange={(e) => onChange("meta.animations", e.target.checked)}
           />
+          {view === "mobile" ? (
+            <>
+              <p className="text-[12.5px] text-text-muted">
+                Phones and windows narrower than 768 px show this view; wider screens show the desktop view. The browser
+                tab title is set under Desktop view and serves both.
+              </p>
+              <Button size="sm" icon={<Copy className="size-3.5" />} onClick={onCopyFromDesktop}>
+                Copy wording from the desktop view
+              </Button>
+              <Field label="Notes" hint="Kept with the mobile view for whoever works on it. Never shown on the page.">
+                <Textarea rows={3} value={(content as MobileContent).note} onChange={(e) => onChange("note", e.target.value)} />
+              </Field>
+            </>
+          ) : null}
         </div>
       </div>
       <div className="px-4 py-3">
@@ -846,7 +1083,7 @@ function Overview({
                   onClick={() => onAdd(listPath)}
                   className="w-full flex items-center gap-2 px-2 py-1 rounded text-left text-[12.5px] text-teal-700 hover:bg-teal-50"
                 >
-                  <Plus className="size-3.5" /> Add {(NAMES[listPath] ?? "item").toLowerCase()}
+                  <Plus className="size-3.5" /> Add {(names[listPath] ?? "item").toLowerCase()}
                 </button>
               ))}
             </div>
@@ -860,6 +1097,7 @@ function Overview({
 /* ---------------- One piece selected ---------------- */
 
 function Inspector({
+  view,
   path,
   content,
   assets,
@@ -870,9 +1108,13 @@ function Inspector({
   onRemove,
   onAddAfter,
   onUploaded,
+  onPick,
+  menuOpen,
+  onMenuOpen,
 }: {
+  view: PageView;
   path: string;
-  content: DesktopContent;
+  content: AnyContent;
   assets: Record<string, string>;
   onChange: (path: string, value: unknown) => void;
   onClose: () => void;
@@ -881,6 +1123,9 @@ function Inspector({
   onRemove: () => void;
   onAddAfter: () => void;
   onUploaded: (key: string, url: string) => void;
+  onPick: (path: string) => void;
+  menuOpen: boolean;
+  onMenuOpen: (open: boolean) => void;
 }) {
   const value = getAt(content, path);
   const list = listOf(content, path);
@@ -889,8 +1134,41 @@ function Inspector({
   const set = (field: string, v: unknown) => onChange(`${path}.${field}`, v);
 
   let body: ReactNode = <p className="text-sm text-text-muted">This piece has no settings.</p>;
-  if (path === "document.viewer") {
-    body = <ViewerFields content={content} onChange={onChange} />;
+  if (value === undefined) {
+    body = <p className="text-sm text-text-muted">This piece is no longer on the page.</p>;
+  } else if (path === "document.viewer") {
+    body =
+      view === "desktop" ? (
+        <ViewerFields content={content as DesktopContent} onChange={onChange} />
+      ) : (
+        <MobileViewerFields content={content as MobileContent} onChange={onChange} onPick={onPick} />
+      );
+  } else if (path === "document.viewer.filename" || path === "document.viewer.button") {
+    const pagesMode = view === "mobile" && (content as MobileContent).document.viewer.mode === "pages";
+    body = (
+      <>
+        {path === "document.viewer.button" ? (
+          <TextFields value={value as PText} set={set} multiline={false} />
+        ) : (
+          <VisibleToggle hidden={(value as { hidden: boolean }).hidden} onChange={(h) => set("hidden", h)} />
+        )}
+        <Alert tone="info">
+          {path === "document.viewer.button"
+            ? "It opens the document's PDF in a new tab, where the phone shows it in its own PDF viewer."
+            : "The name of each document's PDF file, shown under the PDF icon. It changes with every document."}
+        </Alert>
+        {pagesMode ? (
+          <Alert tone="warn">
+            The document panel is set to show the PDF&apos;s pages, so this shows only when a PDF cannot be drawn.{" "}
+            <button type="button" className="underline font-medium" onClick={() => onPick("document.viewer")}>
+              Change the panel
+            </button>
+          </Alert>
+        ) : null}
+      </>
+    );
+  } else if (path === "header.menu_button") {
+    body = <MenuButtonFields value={value as PText} set={set} menuOpen={menuOpen} onMenuOpen={onMenuOpen} />;
   } else if (path.startsWith("record.labels.")) {
     const field = path.split(".")[2] as RecordField;
     body = (
@@ -914,7 +1192,9 @@ function Inspector({
     body = (
       <>
         <VisibleToggle hidden={(value as { hidden: boolean }).hidden} onChange={(h) => set("hidden", h)} />
-        <p className="text-[12.5px] text-text-muted">The circles, shield and badges on the right of the hero.</p>
+        <p className="text-[12.5px] text-text-muted">
+          {view === "mobile" ? "The shield badge and the circles in the hero." : "The circles, shield and badges on the right of the hero."}
+        </p>
       </>
     );
   } else if (value && typeof value === "object") {
@@ -929,8 +1209,9 @@ function Inspector({
           path={path}
           value={value as PLink}
           set={set}
-          multiline={Boolean(list && LINEBREAK_LISTS.has(list.listPath))}
-          widthHint={Boolean(list)}
+          multiline={view === "desktop" && Boolean(list && LINEBREAK_LISTS.has(list.listPath))}
+          grid={list ? widthGrid(view, list.listPath) : null}
+          showIcon={Boolean((list && ICON_LISTS.has(list.listPath)) || ICON_PATHS.has(path))}
         />
       );
     } else if ("href" in v && "text" in v) {
@@ -944,8 +1225,8 @@ function Inspector({
     <div>
       <div className="flex items-start gap-2 px-4 py-3 border-b">
         <div className="min-w-0 flex-1">
-          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-text-faint">Editing</div>
-          <h2 className="text-sm font-semibold truncate">{nameOf(path, content)}</h2>
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-text-faint">Editing · {VIEW_LABEL[view]} view</div>
+          <h2 className="text-sm font-semibold truncate">{nameOf(view, path, content)}</h2>
         </div>
         <button type="button" onClick={onClose} className="p-1 text-text-muted hover:text-text" aria-label="Close" title="Close (Esc)">
           <X className="size-4" />
@@ -1065,13 +1346,16 @@ function LinkFields({
   value,
   set,
   multiline,
-  widthHint,
+  grid,
+  showIcon,
 }: {
   path: string;
   value: PLink;
   set: (f: string, v: unknown) => void;
   multiline: boolean;
-  widthHint: boolean;
+  /** The design grid the width is measured on; null hides the width. */
+  grid: number | null;
+  showIcon: boolean;
 }) {
   const isOpen = path === "document.open";
   return (
@@ -1090,27 +1374,33 @@ function LinkFields({
         emptyHint="Empty opens the document's own PDF in a new tab — the right choice for almost every page."
       />
       <Checkbox label="Open in a new tab" checked={value.new_tab} onChange={(e) => set("new_tab", e.target.checked)} />
-      <Field label="Icon after the name">
-        <Select value={value.icon} onChange={(e) => set("icon", e.target.value as LinkIcon)}>
-          {LINK_ICONS.map((i) => (
-            <option key={i.value} value={i.value}>
-              {i.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      {widthHint ? (
+      {showIcon ? (
+        <Field label="Icon after the name">
+          <Select value={value.icon} onChange={(e) => set("icon", e.target.value as LinkIcon)}>
+            {LINK_ICONS.map((i) => (
+              <option key={i.value} value={i.value}>
+                {i.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
+      {grid ? (
         <Field
           label="Width (design pixels)"
-          hint="The page is laid out on a 1062 px wide grid and scales to the window. Leave empty to fit the name."
+          hint={
+            grid === 360
+              ? "The phone layout is drawn on a 360 px wide grid and scales to each phone. Leave empty to fit the name; the links of a row wrap onto a second line like the design."
+              : "The page is laid out on a 1062 px wide grid and scales to the window. Leave empty to fit the name."
+          }
         >
           <Input
             type="number"
             min={0}
-            max={1062}
+            max={grid}
             step={0.1}
             value={value.width ?? ""}
-            onChange={(e) => set("width", e.target.value === "" ? null : Number(e.target.value))}
+            onChange={(e) => set("width", e.target.value === "" ? null : Math.min(grid, Math.max(0, Number(e.target.value))))}
           />
         </Field>
       ) : null}
@@ -1349,25 +1639,71 @@ function ViewerFields({ content, onChange }: { content: DesktopContent; onChange
   );
 }
 
-/* ---------------- Mobile ---------------- */
+/* ---------------- Mobile-only pieces ---------------- */
 
-function MobilePanel({ mobile, onChange, preview }: { mobile: MobileContent; onChange: (m: MobileContent) => void; preview: ReactNode }) {
+function MobileViewerFields({
+  content,
+  onChange,
+  onPick,
+}: {
+  content: MobileContent;
+  onChange: (path: string, value: unknown) => void;
+  onPick: (path: string) => void;
+}) {
+  const v = content.document.viewer;
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px] items-start">
-      <div className="space-y-3">
-        <Alert tone="info">
-          The mobile view gets its own design later, with its own settings here. Until then phones show the desktop
-          design, scaled to fit the screen exactly as on the right — every change made under Desktop view shows there too.
-        </Alert>
-        <Field label="Notes for the mobile design" hint="Saved with the page, for whoever designs the mobile view.">
-          <Textarea rows={8} value={mobile.note} onChange={(e) => onChange({ ...mobile, note: e.target.value })} />
-        </Field>
-      </div>
-      <div className="mx-auto w-[390px] max-w-full rounded-[2rem] border-8 border-ink-800 bg-ink-800 shadow-xl overflow-hidden">
-        <div className="h-[700px] overflow-y-auto bg-white" style={{ pointerEvents: "none" }}>
-          {preview}
+    <>
+      <Field label="What phones show here">
+        <Select value={v.mode} onChange={(e) => onChange("document.viewer.mode", e.target.value as MobileViewerMode)}>
+          {MOBILE_VIEWER_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <p className="text-[12.5px] text-text-muted">
+        {v.mode === "card"
+          ? "As in the mobile design: the PDF icon, the file's name and a button that opens the PDF in the phone's own viewer, where it can be zoomed, saved and shared."
+          : "Every page of the PDF is drawn at the phone's width, one under the other, with an “Open the PDF” link below them. Pages load as the visitor scrolls to them. If the PDF cannot be drawn, the file card shows instead."}
+      </p>
+      {v.mode === "card" ? (
+        <div className="space-y-1.5">
+          <Button size="sm" onClick={() => onPick("document.viewer.filename")}>
+            File name: {v.filename.hidden ? "hidden" : "shown"} — change
+          </Button>{" "}
+          <Button size="sm" onClick={() => onPick("document.viewer.button")}>
+            Button: “{content.document.viewer.button.text}” — change
+          </Button>
         </div>
-      </div>
-    </div>
+      ) : null}
+    </>
+  );
+}
+
+function MenuButtonFields({
+  value,
+  set,
+  menuOpen,
+  onMenuOpen,
+}: {
+  value: PText;
+  set: (f: string, v: unknown) => void;
+  menuOpen: boolean;
+  onMenuOpen: (open: boolean) => void;
+}) {
+  return (
+    <>
+      <p className="text-[12.5px] text-text-muted">
+        On phones the main menu, the quick links and the social icons sit behind this button. A tap opens them under the
+        header; a tap on a link, outside the menu, or on the button again closes it.
+      </p>
+      <Checkbox label="Show the menu open in this preview" checked={menuOpen} onChange={(e) => onMenuOpen(e.target.checked)} />
+      <Field label="Button name" hint="Not printed on the button (it shows ☰); screen readers read it out, e.g. “Menu”.">
+        <Input value={value.text} onChange={(e) => set("text", e.target.value)} />
+      </Field>
+      <VisibleToggle hidden={value.hidden} onChange={(h) => set("hidden", h)} />
+      {value.hidden ? <Alert tone="warn">With the button hidden, phones show no menu at all.</Alert> : null}
+    </>
   );
 }

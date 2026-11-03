@@ -738,6 +738,13 @@
   color: #5f6872;
 }
 
+/* Text the editor lets run over several lines: a line break typed there starts a new line here. */
+.nmp-lead,
+.nmp-disclaimer,
+.nmp-banner.is-missing .nmp-banner-line {
+  white-space: pre-line;
+}
+
 /* Supporting document */
 
 .nmp-viewer-slot {
