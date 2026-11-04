@@ -1,0 +1,1010 @@
+/*
+ * Appo verification page — mobile view.
+ *
+ * Every size is written in pixels of the 360 px wide mobile design: M(n) becomes
+ * calc(var(--mu) * n), where --mu is one design pixel scaled to the phone's width. The page therefore
+ * keeps the mobile design's exact proportions on every phone, from a 320 px one to a large 480 px
+ * one; past 540 px (1.5×) it stops growing and the coloured bands run wider on both sides.
+ *
+ * The public page carries both views; below 768 px this one shows and the desktop one hides.
+ *
+ * SOURCE FILE. Edit this one, then run `npm run build:appo-css` to regenerate verify-mobile.css.
+ */
+
+/* The mobile design is drawn in Roboto and Noto Serif, as phones show it. Both are served with the
+ * app so every phone, iPhones included, shows the same letters. */
+@font-face {
+  font-family: "NMP Roboto";
+  src: url("/appo-assets/fonts/roboto-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "NMP Noto Serif";
+  src: url("/appo-assets/fonts/noto-serif-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------- Which view shows ---------------- */
+
+.apo-switch > .apom {
+  display: none;
+}
+@media (max-width: 767.98px) {
+  .apo-switch > .apo {
+    display: none;
+  }
+  .apo-switch > .apom {
+    display: block;
+  }
+}
+
+/* ---------------- Base ---------------- */
+
+.apom {
+  --mu: calc(min(100vw, 540px) / 360);
+  --m-sans: "NMP Roboto", Roboto, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --m-serif: "NMP Noto Serif", "Noto Serif", Georgia, serif;
+  --m-green: #003d1c;
+  container-type: inline-size;
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #f7faf6;
+  color: #203b2a;
+  font-family: var(--m-sans);
+  font-weight: 400;
+  line-height: 1;
+  text-align: left;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+@supports (width: 1cqw) {
+  .apom {
+    --mu: calc(min(100cqw, 540px) / 360);
+  }
+}
+.apom *,
+.apom *::before,
+.apom *::after {
+  box-sizing: border-box;
+}
+.apom :where(a) {
+  color: inherit;
+  text-decoration: none;
+}
+.apom :where(img) {
+  display: block;
+  max-width: none;
+}
+.apom :where(button) {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.apom :where(h1, h2, p) {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.apom :focus-visible {
+  outline: M(2) solid #8bc34a;
+  outline-offset: M(2);
+}
+.apom-in {
+  position: relative;
+  width: M(360);
+  margin: 0 auto;
+}
+
+/* ---------------- Header ---------------- */
+
+.apom-header {
+  position: relative;
+  z-index: 30;
+  background: #ffffff;
+  border-bottom: M(3) solid #b3c787;
+}
+.apom-header > .apom-in {
+  height: M(91);
+}
+.apom-logo {
+  position: absolute;
+  left: M(13.5);
+  top: M(14.5);
+  width: M(60);
+  height: M(60);
+  display: block;
+}
+.apom-logo > img,
+.apom-logo > svg,
+.apom-cert-logo > img,
+.apom-cert-logo > svg,
+.apom-flogo > img,
+.apom-flogo > svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.apom-brand {
+  position: absolute;
+  left: M(79.1);
+  top: M(30.59);
+  max-width: M(221);
+  color: #003d1c;
+}
+.apom-brand-title {
+  display: block;
+  font-size: M(10.8);
+  font-weight: 700;
+  line-height: 1;
+}
+.apom-brand-sub {
+  display: block;
+  margin-top: M(6.77);
+  font-size: M(10.2);
+  line-height: 1;
+}
+.apom-burger {
+  position: absolute;
+  right: M(19);
+  top: M(27.5);
+  width: M(32);
+  height: M(33);
+  border: M(1) solid #dce5e0;
+  border-radius: M(4);
+  background: #f5f9f6;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+.apom-burger > span {
+  position: absolute;
+  left: M(7);
+  width: M(16);
+  height: M(1.5);
+  border-radius: M(1);
+  background: #1d5739;
+  transition:
+    transform 0.25s ease,
+    opacity 0.2s ease;
+}
+.apom-burger > span:nth-child(1) {
+  top: M(10);
+}
+.apom-burger > span:nth-child(2) {
+  top: M(15.25);
+}
+.apom-burger > span:nth-child(3) {
+  top: M(20.5);
+}
+.apom-burger.is-open {
+  background: #e8f1ec;
+  border-color: #b9cfc2;
+}
+.apom-burger.is-open > span:nth-child(1) {
+  transform: translateY(M(5.25)) rotate(45deg);
+}
+.apom-burger.is-open > span:nth-child(2) {
+  opacity: 0;
+}
+.apom-burger.is-open > span:nth-child(3) {
+  transform: translateY(M(-5.25)) rotate(-45deg);
+}
+
+/* The menu opens under the header, over the page. */
+.apom-drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + M(3));
+  z-index: 31;
+  max-height: calc(100vh - M(94));
+  overflow-y: auto;
+  padding: M(6) M(18) M(22);
+  background: var(--m-green);
+  box-shadow: 0 M(12) M(24) rgba(0, 30, 14, 0.28);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(M(-8));
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease,
+    visibility 0s linear 0.22s;
+}
+.apom-drawer.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease,
+    visibility 0s;
+}
+.apom-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 24, 11, 0.38);
+  cursor: default;
+}
+.apom-menu {
+  display: flex;
+  flex-direction: column;
+}
+.apom-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: M(10);
+  min-height: M(48);
+  padding: M(10) 0;
+  border-bottom: M(1) solid rgba(255, 255, 255, 0.13);
+  color: #ffffff;
+  font-size: M(15);
+  font-weight: 600;
+  line-height: 1.25;
+  transition: color 0.2s ease;
+}
+.apom-menu-item:hover,
+.apom-menu-item:active {
+  color: #d9efb8;
+}
+.apom-menu-icon {
+  flex: none;
+  width: M(17);
+  height: M(17);
+}
+.apom-menu-extra {
+  margin-top: M(18);
+}
+.apom-menu-title {
+  display: block;
+  margin-bottom: M(10);
+  color: #bde89e;
+  font-size: M(10.3);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.apom-menu-links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: M(8);
+}
+.apom-menu-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: M(6);
+  min-height: M(40);
+  padding: M(8) M(11);
+  border: M(1) solid rgba(255, 255, 255, 0.24);
+  border-radius: M(4);
+  color: #e0f1e6;
+  font-size: M(12.5);
+  line-height: 1.25;
+}
+.apom-menu-link:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.apom-menu-link-icon {
+  flex: none;
+  width: M(8);
+  height: M(8);
+}
+.apom-menu-connect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: M(10);
+  margin-top: M(20);
+}
+.apom-menu-connect-text {
+  color: #a9c4b4;
+  font-size: M(11);
+}
+.apom-menu-socials {
+  display: flex;
+  align-items: center;
+  gap: M(18);
+}
+.apom-menu-social {
+  display: block;
+  width: M(17);
+  height: M(17);
+  color: #ffffff;
+}
+.apom-menu-social > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ---------------- Hero ---------------- */
+
+.apom-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(118deg, #003d1c 0%, #024522 17%, #034d2a 33%, #065530 50%, #096038 67%, #1b764b 87%, #1f7d53 100%);
+}
+.apom-hero > .apom-in {
+  min-height: M(481);
+}
+.apom-hero-text {
+  position: relative;
+  z-index: 1;
+  padding: M(21.91) M(18) M(86.27);
+}
+.apom-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  color: #b9d6c3;
+  font-size: M(13.3);
+  font-weight: 700;
+  line-height: M(20);
+  letter-spacing: 0.02em;
+}
+.apom-crumb-sep {
+  margin: 0 M(11.4);
+}
+.apom-eyebrow {
+  display: block;
+  max-width: M(231);
+  margin-top: M(50.36);
+  color: #bfe996;
+  font-size: M(13.2);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.138em;
+}
+.apom-h1 {
+  max-width: M(231);
+  margin-top: M(27.08);
+  color: #ffffff;
+  font-size: M(34);
+  font-weight: 700;
+  line-height: M(36);
+  letter-spacing: -0.04em;
+}
+.apom-h1b {
+  display: block;
+  max-width: M(231);
+  margin-top: M(-0.68);
+  color: #bfe996;
+  font-family: var(--m-serif);
+  font-size: M(33.2);
+  font-weight: 400;
+  line-height: M(36.5);
+  letter-spacing: -0.035em;
+}
+.apom-lead {
+  max-width: M(231);
+  margin-top: M(25.36);
+  color: #d0e4d7;
+  font-size: M(15.85);
+  font-weight: 500;
+  line-height: M(28.5);
+}
+.apom-art {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.apom-ring {
+  position: absolute;
+  left: M(130);
+  top: M(251);
+  width: M(330);
+  height: M(330);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.022) 72.5%, rgba(255, 255, 255, 0.095) 72.9%);
+}
+.apom-disk {
+  position: absolute;
+  left: M(262);
+  top: M(88);
+  width: M(78);
+  height: M(78);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.56);
+}
+.apom-disk::after {
+  content: "";
+  position: absolute;
+  inset: M(9);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, #86b49f 0%, #77a28e 60%, #6f9b87 100%);
+}
+.apom-shieldbox {
+  position: absolute;
+  left: M(277);
+  top: M(103);
+  width: M(48);
+  height: M(48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: M(10);
+  background: #0a5c34;
+  color: #ffffff;
+  box-shadow: 0 M(6) M(14) rgba(6, 70, 38, 0.3);
+}
+.apom-shieldbox > svg {
+  width: M(28);
+  height: M(28);
+}
+
+/* ---------------- Result banner ---------------- */
+
+.apom-main > .apom-in {
+  padding: M(39) M(19) 0 M(18);
+}
+.apom-banner {
+  position: relative;
+  padding: M(25.77) M(24) M(16.42) M(18.2);
+  border: M(1) solid #dce8df;
+  border-left: M(4) solid #237747;
+  border-radius: M(6);
+  background: #f5faf6;
+}
+.apom-banner-title {
+  display: block;
+  color: #3e8b5a;
+  font-size: M(13.2);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.136em;
+}
+.apom-banner-line {
+  margin-top: M(23.11);
+  color: #496052;
+  font-size: M(15.8);
+  line-height: M(26.5);
+  overflow-wrap: anywhere;
+}
+.apom-banner-line strong {
+  font-weight: 700;
+}
+.apom-banner-sep {
+  margin-left: M(3);
+}
+.apom-banner.is-missing {
+  border-left-color: #b54708;
+  border-color: #f4e4d2;
+  background: #fffaf3;
+}
+.apom-banner.is-missing .apom-banner-title {
+  color: #b54708;
+}
+
+/* ---------------- Cards ---------------- */
+
+.apom-card {
+  position: relative;
+  margin-top: M(33);
+  overflow: hidden;
+  border: M(1) solid #dce4df;
+  border-radius: M(10);
+  background: #ffffff;
+  box-shadow: 0 M(3) M(16) rgba(14, 60, 34, 0.06);
+}
+.apom-card-doc {
+  margin-top: M(24);
+}
+.apom-card-head {
+  padding: M(30.65) M(18) M(19.82) M(18);
+  border-bottom: M(1) solid #e3eae5;
+}
+.apom-card-doc .apom-card-head {
+  padding-top: M(28.15);
+  padding-bottom: M(17.5);
+}
+.apom-card-eyebrow {
+  display: block;
+  color: #3e8b5a;
+  font-size: M(10.3);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.12em;
+}
+.apom-card-title {
+  margin-top: M(12.23);
+  color: #064b2b;
+  font-size: M(20.8);
+  font-weight: 700;
+  line-height: M(26);
+}
+.apom-card-doc .apom-card-title {
+  margin-top: M(9.73);
+  color: #173e29;
+}
+.apom-open {
+  display: inline-flex;
+  align-items: center;
+  gap: M(3.5);
+  height: M(41);
+  margin-top: M(18.32);
+  padding: 0 M(13) 0 M(12.4);
+  border: M(1) solid #d1dfd5;
+  border-radius: M(5);
+  color: #075f35;
+  font-size: M(12.9);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+.apom-open:active {
+  background: #f1f8f3;
+  border-color: #9cc4ab;
+}
+.apom-open-icon {
+  width: M(9.5);
+  height: M(9.5);
+}
+.apom-card-body {
+  padding: M(12);
+}
+
+/* Certificate */
+
+.apom-cert {
+  padding: 0 M(12) M(12.45);
+  border: M(1) solid #c8d6c8;
+  background: #fdfefb;
+}
+.apom-cert-head {
+  padding: M(14) 0 M(19.5);
+  border-bottom: M(1) solid #c8d6c8;
+  text-align: center;
+}
+.apom-cert-logo {
+  display: block;
+  width: M(65);
+  height: M(65);
+  margin: 0 auto;
+}
+.apom-cert-title {
+  display: block;
+  margin-top: M(17.44);
+  color: #064b2b;
+  font-family: var(--m-serif);
+  font-size: M(23.6);
+  font-weight: 700;
+  line-height: M(28.5);
+  letter-spacing: 0.068em;
+}
+.apom-cert-sub {
+  display: block;
+  margin-top: M(10.06);
+  color: #43545e;
+  font-size: M(12.2);
+  line-height: M(18);
+}
+.apom-row {
+  position: relative;
+  padding: M(19.8) 0 M(17.74) M(12);
+  border-bottom: M(1) solid #c8d6c8;
+}
+.apom-row-label {
+  display: block;
+  color: #667269;
+  font-size: M(13);
+  line-height: M(18);
+}
+.apom-row-value {
+  display: block;
+  margin-top: M(8.36);
+  color: #203b2a;
+  font-size: M(15.82);
+  font-weight: 600;
+  line-height: M(27.5);
+  overflow-wrap: anywhere;
+}
+.apom-row-officer {
+  padding-top: M(18.3);
+  padding-bottom: M(16.7);
+}
+.apom-officer-text {
+  position: relative;
+  z-index: 1;
+  max-width: M(130);
+}
+.apom-row-officer .apom-row-value {
+  margin-top: M(6.86);
+  font-size: M(15.3);
+  font-weight: 700;
+  line-height: M(25.5);
+}
+.apom-officer-role {
+  display: block;
+  margin-top: M(7.64);
+  color: #667269;
+  font-size: M(13);
+  line-height: M(18);
+}
+.apom-signature {
+  position: absolute;
+  right: M(22);
+  top: M(51);
+  width: M(100);
+  height: M(36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.apom-signature > img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.apom-disclaimer {
+  padding: M(16.55) M(4) 0 M(8);
+  color: #43545e;
+  font-size: M(13);
+  line-height: M(21.5);
+}
+
+/* Text the editor lets run over several lines: a line break typed there starts a new line here. */
+.apom-lead,
+.apom-disclaimer,
+.apom-banner.is-missing .apom-banner-line {
+  white-space: pre-line;
+}
+
+/* Supporting document */
+
+.apom-viewer {
+  min-height: M(840.5);
+  background: #f7f7f7;
+}
+.apom-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: M(365.5);
+}
+.apom-file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: M(36);
+  height: M(36);
+  border-radius: M(4);
+  background: #dcdcdc;
+  color: #f7f7f7;
+  font-size: M(13.5);
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+.apom-file-name {
+  display: block;
+  width: 100%;
+  margin-top: M(14.17);
+  padding: 0 M(1.5);
+  color: #202124;
+  font-size: M(14);
+  line-height: M(20);
+  text-align: center;
+  /* A document's 40-character name has no spaces: it breaks where it must, so it always shows whole. */
+  overflow-wrap: anywhere;
+}
+.apom-file-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: M(48.5);
+  margin-top: M(13.33);
+  border-radius: M(4);
+  background: #1a73e8;
+  color: #ffffff;
+  font-size: M(14);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.apom-file-open:active {
+  background: #1765cc;
+}
+.apom-pages {
+  display: flex;
+  flex-direction: column;
+  gap: M(8);
+  padding: M(8);
+}
+.apom-pages-wait {
+  padding: M(40) 0;
+  color: #5f6368;
+  font-size: M(13);
+  text-align: center;
+}
+.apom-page {
+  position: relative;
+  background: #ffffff;
+  box-shadow: 0 M(1) M(4) rgba(0, 0, 0, 0.18);
+}
+.apom-page > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.apom-pages-open {
+  align-self: center;
+  margin-top: M(6);
+  padding: M(10) M(18);
+  border-radius: M(4);
+  background: #1a73e8;
+  color: #ffffff;
+  font-size: M(14);
+  font-weight: 500;
+}
+
+/* ---------------- Call to action ---------------- */
+
+.apom-cta {
+  margin-top: M(32);
+  padding: M(33.5) 0 M(39.33);
+  border-top: M(1) solid #e3e8e2;
+  text-align: center;
+}
+.apom-cta-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: M(8);
+  min-height: M(54);
+  padding: M(8) M(19.5);
+  border-radius: M(5);
+  background: var(--m-green);
+  color: #ffffff;
+  font-size: M(16);
+  font-weight: 600;
+  line-height: 1.25;
+  transition: background-color 0.2s ease;
+}
+.apom-cta-button:active {
+  background: #0b5a2f;
+}
+.apom-cta-icon {
+  width: M(10);
+  height: M(10);
+}
+.apom-help {
+  margin-top: M(17.67);
+  color: #66796c;
+  font-size: M(14);
+  line-height: M(23);
+}
+
+/* ---------------- Footer ---------------- */
+
+.apom-footer {
+  background: var(--m-green);
+  color: #ffffff;
+}
+.apom-footer > .apom-in {
+  min-height: M(497.5);
+  padding: M(29.67) M(18) M(16.3);
+}
+.apom-ftitle {
+  display: flex;
+  align-items: center;
+  font-size: M(14.16);
+  font-weight: 700;
+  line-height: 1;
+}
+.apom-ftitle::before {
+  content: "";
+  flex: none;
+  width: M(22);
+  height: M(5);
+  margin-right: M(10);
+  background: #ffffff;
+}
+.apom-visit {
+  display: inline-flex;
+  align-items: center;
+  gap: M(12.5);
+  margin: M(17.72) 0 0 M(31.5);
+  color: #c1d5c6;
+  font-size: M(10);
+  line-height: 1;
+}
+.apom-visit-icon {
+  width: M(10);
+  height: M(10);
+}
+.apom-fbrand {
+  display: flex;
+  align-items: flex-start;
+  margin: M(32.11) 0 0 M(-4);
+}
+.apom-flogo {
+  flex: none;
+  display: block;
+  width: M(66);
+  height: M(66);
+}
+.apom-fbrand-text {
+  min-width: 0;
+  margin: M(16.88) 0 0 M(6);
+}
+.apom-fbrand-title {
+  display: block;
+  font-size: M(12.4);
+  font-weight: 700;
+  line-height: 1;
+}
+.apom-fbrand-sub {
+  display: block;
+  margin-top: M(5.73);
+  font-size: M(11.4);
+  line-height: 1;
+}
+.apom-fleft {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: M(16.43);
+  color: #d6e2d8;
+  font-size: M(12.13);
+  line-height: M(23);
+}
+.apom-fleft-link:first-child {
+  color: #c2d5c6;
+}
+.apom-frows {
+  margin-top: M(9.47);
+}
+.apom-frow {
+  display: flex;
+  flex-wrap: wrap;
+  padding: M(9.2) 0;
+  border-bottom: M(1) solid rgba(255, 255, 255, 0.38);
+}
+.apom-frow:last-child {
+  border-bottom: 0;
+}
+.apom-flink {
+  flex: none;
+  color: #d6e2d8;
+  font-size: M(11.4);
+  line-height: M(30.5);
+  white-space: nowrap;
+}
+.apom-flink.is-auto {
+  margin-right: M(24);
+}
+.apom-bottom {
+  background: #f5f5f5;
+}
+.apom-bottom > .apom-in {
+  padding: M(17.84) M(6) M(18) M(18);
+  color: #6e786e;
+  font-size: M(10.33);
+  font-weight: 500;
+  line-height: M(17);
+}
+.apom-copyright,
+.apom-powered {
+  display: block;
+}
+
+/* ---------------- Motion ---------------- */
+
+@keyframes apom-rise {
+  from {
+    opacity: 0;
+    transform: translateY(M(12));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes apom-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 M(6) M(14) rgba(6, 70, 38, 0.3),
+      0 0 0 0 rgba(255, 255, 255, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 M(6) M(14) rgba(6, 70, 38, 0.3),
+      0 0 0 M(6) rgba(255, 255, 255, 0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .apom.apom-anim .apom-hero-text > * {
+    animation: apom-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .apom.apom-anim .apom-hero-text > :nth-child(2) {
+    animation-delay: 0.05s;
+  }
+  .apom.apom-anim .apom-hero-text > :nth-child(3) {
+    animation-delay: 0.1s;
+  }
+  .apom.apom-anim .apom-hero-text > :nth-child(4) {
+    animation-delay: 0.15s;
+  }
+  .apom.apom-anim .apom-hero-text > :nth-child(5) {
+    animation-delay: 0.2s;
+  }
+  .apom.apom-anim .apom-banner,
+  .apom.apom-anim .apom-card {
+    animation: apom-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s both;
+  }
+  .apom.apom-anim .apom-shieldbox {
+    animation: apom-pulse 3.2s ease-in-out infinite;
+  }
+}
+
+@media print {
+  .apom-burger,
+  .apom-drawer,
+  .apom-art,
+  .apom-cta,
+  .apom-footer,
+  .apom-bottom {
+    display: none !important;
+  }
+}
+
+/* ---------------- Editor ---------------- */
+
+.apom.is-editing [data-edit] {
+  cursor: pointer;
+}
+.apom.is-editing [data-edit]:hover {
+  outline: M(1.5) dashed #f59e0b;
+  outline-offset: M(1.5);
+}
+.apom.is-editing [data-edit].is-selected {
+  outline: M(2) solid #f59e0b;
+  outline-offset: M(1.5);
+}
+.apom.is-editing .is-hidden-item {
+  opacity: 0.35;
+  background-image: repeating-linear-gradient(45deg, rgba(245, 158, 11, 0.18) 0 M(4), transparent M(4) M(8));
+}
+.apom.is-editing .apom-art {
+  pointer-events: auto;
+}
+.apom-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: M(20);
+  height: M(20);
+  margin: auto M(4);
+  padding: 0 M(5);
+  border: M(1) dashed #f59e0b;
+  border-radius: M(4);
+  background: rgba(255, 251, 235, 0.92);
+  color: #b45309;
+  font-family: var(--m-sans);
+  font-size: M(11);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  align-self: center;
+}

@@ -50,6 +50,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         can("new_m_domains"),
     },
     { href: "/admin/new-m/page-design", label: "New M page", icon: LayoutTemplate, show: isSuper },
+    {
+      href: "/admin/appo",
+      label: "Appo",
+      icon: FolderOpen,
+      show:
+        isSuper ||
+        can("appo_create") ||
+        can("appo_edit") ||
+        can("appo_delete") ||
+        can("appo_settings") ||
+        can("appo_domains"),
+    },
+    { href: "/admin/appo/page-design", label: "Appo page", icon: LayoutTemplate, show: isSuper },
     { href: "/admin/domains", label: "Domains", icon: Globe, show: true },
     { href: "/admin/storage", label: "Storage", icon: HardDrive, show: isSuper },
     { href: "/admin/search", label: "Search by date", icon: Search, show: isSuper || can("search") },

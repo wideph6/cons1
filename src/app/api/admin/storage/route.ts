@@ -1,6 +1,9 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
+import { getBackgroundSettings as getAppoBackground } from "@/lib/appo";
+import { pageImageKeys as appoPageImageKeys } from "@/lib/appo-page-server";
+import { APPO_PREFIX } from "@/lib/appo-r2";
 import { getBackgroundSettings, isMissingTable } from "@/lib/new-m";
 import { pageImageKeys } from "@/lib/new-m-page-server";
 import { deleteObjects, listAllObjects, MANAGED_PREFIX, NEW_M_PREFIX } from "@/lib/r2";
@@ -55,17 +58,20 @@ interface NewMRowLite {
   domain_hostname: string | null;
 }
 
-/** New M documents carry a PDF and, when an officer was given, a copy of the officer's signature. */
-async function allNewMRows(): Promise<NewMRowLite[]> {
+/**
+ * New M (or Appo) documents carry a PDF and, when an officer was given, a copy of the officer's
+ * signature. view is the system's documents view.
+ */
+async function allNewMRows(view = "new_m_view"): Promise<NewMRowLite[]> {
   const out: NewMRowLite[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db()
-      .from("new_m_view")
+      .from(view)
       .select("id,attestation_number,doc_filename,doc_r2_key,doc_size,officer_signature_r2_key,created_at,domain_hostname")
       .order("id")
       .range(from, from + PAGE - 1);
     if (error) {
-      // New M's tables arrive with supabase/new-m.sql; until it has run New M has nothing stored.
+      // New M's tables arrive with supabase/new-m.sql (Appo's with appo.sql); until then nothing is stored.
       if (isMissingTable(error)) return out;
       throw new ApiError(500, error.message);
     }
@@ -91,6 +97,18 @@ async function newMOfficerKeys(): Promise<string[]> {
   return [...keys, background.background_r2_key, ...pageKeys].filter((k): k is string => Boolean(k));
 }
 
+/** The same for Appo, from its own tables, sticker background and page. */
+async function appoOfficerKeys(): Promise<string[]> {
+  const [officers, background, pageKeys] = await Promise.all([
+    db().from("appo_officers").select("signature_r2_key"),
+    getAppoBackground(),
+    appoPageImageKeys(),
+  ]);
+  if (officers.error && !isMissingTable(officers.error)) throw new ApiError(500, officers.error.message);
+  const keys = (officers.data ?? []).map((o) => o.signature_r2_key as string | null);
+  return [...keys, background.background_r2_key, ...pageKeys].filter((k): k is string => Boolean(k));
+}
+
 /** The top folder of a storage key: "new-m/" for "new-m/docs/<id>/a.pdf". */
 function topFolder(key: string): string {
   const i = key.indexOf("/");
@@ -99,29 +117,36 @@ function topFolder(key: string): string {
 
 /** Compares what the bucket holds with what the database expects to be there. */
 async function buildReport(): Promise<StorageReport> {
-  const [files, newM, rows, mRows, mOfficerKeys] = await Promise.all([
+  const [files, newM, appo, rows, nRows, nOfficerKeys, aRows, aOfficerKeys] = await Promise.all([
     listAllObjects(MANAGED_PREFIX),
     listAllObjects(NEW_M_PREFIX),
+    listAllObjects(APPO_PREFIX),
     allFileRows(),
     allNewMRows(),
     newMOfficerKeys(),
+    allNewMRows("appo_view"),
+    appoOfficerKeys(),
   ]);
+  // New M and Appo documents are told apart only where the report links back to them.
+  const appoIds = new Set(aRows.map((m) => m.id));
+  const mRows = [...nRows, ...aRows];
+  const mOfficerKeys = [...nOfficerKeys, ...aOfficerKeys];
 
   // New M saves under new-m/, but a file stays in the folder it was uploaded to when that folder's name
   // changes later, so every other folder a stored key points into is listed too.
-  const listed = new Set([MANAGED_PREFIX, NEW_M_PREFIX]);
+  const listed = new Set([MANAGED_PREFIX, NEW_M_PREFIX, APPO_PREFIX]);
   const storedKeys = [...mRows.flatMap((m) => [m.doc_r2_key, m.officer_signature_r2_key]), ...mOfficerKeys];
   const earlierFolders = [...new Set(storedKeys.filter((k): k is string => Boolean(k)).map(topFolder))].filter(
     (f) => f && !listed.has(f),
   );
   const earlier = await Promise.all(earlierFolders.map((f) => listAllObjects(f)));
 
-  const objects = [...files.objects, ...newM.objects, ...earlier.flatMap((e) => e.objects)];
-  const truncated = files.truncated || newM.truncated || earlier.some((e) => e.truncated);
+  const objects = [...files.objects, ...newM.objects, ...appo.objects, ...earlier.flatMap((e) => e.objects)];
+  const truncated = files.truncated || newM.truncated || appo.truncated || earlier.some((e) => e.truncated);
 
   const byKey = new Map(objects.map((o) => [o.key, o]));
   const usedKeys = new Set(rows.map((r) => r.r2_key));
-  // New M keys live under new-m/, so they too must be registered or cleanup would call them rubbish.
+  // New M and Appo keys live under new-m/ and appo/, so they too must be registered or cleanup would call them rubbish.
   for (const m of mRows) {
     usedKeys.add(m.doc_r2_key);
     if (m.officer_signature_r2_key) usedKeys.add(m.officer_signature_r2_key);
@@ -171,8 +196,9 @@ async function buildReport(): Promise<StorageReport> {
         size: Number(m.doc_size ?? 0),
         uploaded_at: m.created_at,
         hostname: m.domain_hostname,
-        path: `new-m ${m.attestation_number}`,
-        new_m: true,
+        ...(appoIds.has(m.id)
+          ? { path: `appo ${m.attestation_number}`, appo: true }
+          : { path: `new-m ${m.attestation_number}`, new_m: true }),
       };
       const o = byKey.get(m.doc_r2_key);
       if (!o) missing.push(base);

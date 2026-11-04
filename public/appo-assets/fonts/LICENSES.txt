@@ -1,0 +1,30 @@
+Fonts served with the Appo verification page.
+
+Desktop view — fallbacks used only when the visitor's computer does not have the design's own fonts
+(Segoe UI, Georgia, Arial). Each is metric-compatible with the font it stands in for, so text keeps the
+same widths and line breaks.
+
+selawik-vf.woff2             Selawik (stands in for Segoe UI)
+                             Copyright 2015 Microsoft Corporation. SIL Open Font License 1.1.
+                             Built from https://github.com/microsoft/Selawik (Source files/Glyphs).
+
+gelasio-latin-wght.woff2     Gelasio (stands in for Georgia)
+                             Copyright 2022 The Gelasio Project Authors. SIL Open Font License 1.1.
+                             https://github.com/SorkinType/Gelasio
+
+arimo-latin-wght.woff2       Arimo (stands in for Arial)
+                             Copyright 2020 The Arimo Project Authors. SIL Open Font License 1.1.
+                             https://github.com/googlefonts/arimo
+
+Mobile view — the mobile design's own fonts, always used, so every phone (iPhones included) shows the
+same letters as the design.
+
+roboto-latin-wght.woff2      Roboto (variable weight, Latin)
+                             Copyright 2011 The Roboto Project Authors. SIL Open Font License 1.1.
+                             https://github.com/googlefonts/roboto-3-classic
+
+noto-serif-latin-wght.woff2  Noto Serif (variable weight, Latin)
+                             Copyright 2022 The Noto Project Authors. SIL Open Font License 1.1.
+                             https://github.com/notofonts/latin-greek-cyrillic
+
+SIL Open Font License 1.1: https://openfontlicense.org

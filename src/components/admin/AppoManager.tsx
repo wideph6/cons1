@@ -1,0 +1,518 @@
+"use client";
+
+import {
+  Download,
+  Eye,
+  Globe,
+  Image as ImageIcon,
+  LayoutTemplate,
+  ListChecks,
+  Pencil,
+  Plus,
+  QrCode,
+  RefreshCw,
+  Search,
+  Stamp,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { AppoDomains } from "@/components/admin/AppoDomains";
+import { AppoForm } from "@/components/admin/AppoForm";
+import { AppoQrDialog, QrSvgImage } from "@/components/admin/AppoQr";
+import { AppoSavedValues } from "@/components/admin/AppoSavedValues";
+import { downloadSticker, AppoBackgroundDialog, AppoStickerDialog } from "@/components/admin/AppoSticker";
+import { useSession } from "@/components/SessionProvider";
+import {
+  Alert,
+  Badge,
+  Button,
+  ConfirmDialog,
+  CopyButton,
+  EmptyState,
+  IconButton,
+  Input,
+  Loading,
+  Pagination,
+  Select,
+  errorMessage,
+  useToast,
+} from "@/components/ui";
+import { api, qs } from "@/lib/client";
+import type { Paged } from "@/lib/types";
+import type { AppoDomain, AppoLists, AppoRecord } from "@/lib/appo-types";
+import { formatBytes, formatDateTime, formatIssued } from "@/lib/utils";
+
+const LIMIT = 25;
+
+export function AppoManager() {
+  const { can, isSuper } = useSession();
+  const { toast } = useToast();
+
+  const [page, setPage] = useState<Paged<AppoRecord> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** Appo's own domains with their links; null until loaded. */
+  const [domains, setDomains] = useState<AppoDomain[] | null>(null);
+  const [lists, setLists] = useState<AppoLists | null>(null);
+
+  const [domainId, setDomainId] = useState("");
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [offset, setOffset] = useState(0);
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<AppoRecord | null>(null);
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [domainsOpen, setDomainsOpen] = useState(false);
+  const [qrFor, setQrFor] = useState<AppoRecord | null>(null);
+  const [stickerFor, setStickerFor] = useState<AppoRecord | null>(null);
+  /** The document whose sticker PNG is being made straight from the list. */
+  const [stickerBusy, setStickerBusy] = useState<string | null>(null);
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const [del, setDel] = useState<AppoRecord | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api<Paged<AppoRecord>>(`/api/admin/appo${qs({ domain_id: domainId, q: search, limit: LIMIT, offset })}`);
+      setPage(r);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [domainId, search, offset]);
+
+  const loadLists = useCallback(async () => {
+    try {
+      setLists(await api<AppoLists>("/api/admin/appo/lists"));
+    } catch {
+      // The document list shows the same failure, with the setup hint when tables are missing.
+    }
+  }, []);
+
+  const loadDomains = useCallback(async () => {
+    try {
+      setDomains((await api<{ items: AppoDomain[] }>("/api/admin/appo/domains")).items);
+    } catch {
+      // As above: the document list carries the error.
+      setDomains([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    loadDomains();
+    loadLists();
+  }, [loadDomains, loadLists]);
+
+  // A new search starts from the first page, otherwise an empty page 3 looks like "no results".
+  function runSearch() {
+    setOffset(0);
+    setSearch(query.trim());
+  }
+
+  function clearSearch() {
+    setQuery("");
+    setOffset(0);
+    setSearch("");
+    setDomainId("");
+  }
+
+  async function openPdf(record: AppoRecord, download: boolean) {
+    try {
+      const r = await api<{ url: string }>(`/api/admin/appo/${record.id}/preview${download ? "?download=1" : ""}`);
+      window.open(r.url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    }
+  }
+
+  async function doDelete() {
+    if (!del) return;
+    setBusy(true);
+    try {
+      await api(`/api/admin/appo/${del.id}`, { method: "DELETE" });
+      toast(`${del.attestation_number} deleted`);
+      const goneId = del.id;
+      setDel(null);
+      // Taken out of the page in place; a page left empty is reloaded so the next one moves up.
+      if (page && page.items.length > 1) {
+        setPage({ ...page, items: page.items.filter((r) => r.id !== goneId), total: page.total - 1 });
+      } else {
+        void load();
+      }
+      void loadDomains();
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Puts a saved document straight into the list as the server returned it, instead of reloading the
+   * page. A new one goes to the top when the first, unfiltered page is showing; anywhere else the page
+   * is reloaded so it lands where the search and paging say. Lists and domain counts refresh behind it.
+   */
+  function showSaved(item: AppoRecord, created: boolean, listsChanged: boolean) {
+    if (created) {
+      if (page && offset === 0 && !filtered) {
+        setPage({ ...page, items: [item, ...page.items].slice(0, page.limit), total: page.total + 1 });
+      } else {
+        void load();
+      }
+      void loadDomains();
+    } else if (page) {
+      setPage({ ...page, items: page.items.map((r) => (r.id === item.id ? item : r)) });
+      // A move to another domain or link changes the counts shown under Domains & links.
+      if (editing && (editing.domain_id !== item.domain_id || editing.link_id !== item.link_id)) void loadDomains();
+    }
+    if (listsChanged) void loadLists();
+  }
+
+  async function saveSticker(record: AppoRecord) {
+    setStickerBusy(record.id);
+    try {
+      await downloadSticker(record);
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setStickerBusy(null);
+    }
+  }
+
+  function openForm(record: AppoRecord | null) {
+    setEditing(record);
+    setFormOpen(true);
+  }
+
+  const canCreate = can("appo_create");
+  const canEdit = can("appo_edit");
+  const canDelete = can("appo_delete");
+  const filtered = Boolean(search || domainId);
+  const items = page?.items ?? [];
+  const domainList = domains ?? [];
+  // Uploading needs a domain that has at least one link to build on.
+  const ready = domainList.some((d) => d.links.length > 0);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <div>
+          <h1 className="text-lg font-semibold leading-tight">Appo</h1>
+          <p className="text-text-muted text-sm mt-1">
+            Upload attestation documents one at a time. Each gets an attestation number and a complete link built from
+            its domain&apos;s link, saved with its QR code. The newest upload is always at the top.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            icon={<RefreshCw className="size-4" />}
+            onClick={() => {
+              load();
+              loadLists();
+              loadDomains();
+            }}
+          >
+            Refresh
+          </Button>
+          <Button icon={<Globe className="size-4" />} disabled={!domains} onClick={() => setDomainsOpen(true)}>
+            Domains &amp; links
+          </Button>
+          <Button icon={<ListChecks className="size-4" />} disabled={!lists} onClick={() => setSavedOpen(true)}>
+            Saved values
+          </Button>
+          {isSuper ? (
+            <Button icon={<ImageIcon className="size-4" />} onClick={() => setBackgroundOpen(true)}>
+              Background image
+            </Button>
+          ) : null}
+          {isSuper ? (
+            <Link
+              href="/admin/appo/page-design"
+              className="inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-md border border-line-strong bg-surface text-sm font-medium hover:bg-surface-2"
+            >
+              <LayoutTemplate className="size-4" />
+              Page design
+            </Link>
+          ) : null}
+          {canCreate ? (
+            <Button variant="primary" icon={<Upload className="size-4" />} disabled={!ready || !lists} onClick={() => openForm(null)}>
+              Upload document
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {error ? (
+        <Alert tone="danger" className="mb-4">
+          {error}
+        </Alert>
+      ) : null}
+
+      {domains && !ready ? (
+        <Alert tone="warn" className="mb-4">
+          {domainList.length === 0 ? "Appo has no domains yet." : "None of Appo's domains has a link yet."} Open{" "}
+          <button type="button" className="font-medium underline" onClick={() => setDomainsOpen(true)}>
+            Domains &amp; links
+          </button>{" "}
+          to add a domain and the link documents will be built on.
+        </Alert>
+      ) : null}
+
+      <div className="flex flex-wrap items-end gap-2 mb-3">
+        <div className="flex-1 min-w-[14rem]">
+          <label className="block text-[12px] text-text-muted mb-1">Search all domains</label>
+          <div className="flex gap-2">
+            <Input
+              value={query}
+              placeholder="Attestation number, document type, office, authority, officer, domain, file name or date"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") runSearch();
+              }}
+            />
+            <Button icon={<Search className="size-4" />} onClick={runSearch}>
+              Search
+            </Button>
+          </div>
+        </div>
+        <div className="w-full sm:w-56">
+          <label className="block text-[12px] text-text-muted mb-1">Domain</label>
+          <Select
+            value={domainId}
+            onChange={(e) => {
+              setOffset(0);
+              setDomainId(e.target.value);
+            }}
+          >
+            <option value="">All domains</option>
+            {domainList.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.hostname}
+              </option>
+            ))}
+          </Select>
+        </div>
+        {filtered ? <Button onClick={clearSearch}>Clear</Button> : null}
+      </div>
+
+      {!page && !error ? <Loading /> : null}
+
+      {page && items.length === 0 ? (
+        <EmptyState
+          title={filtered ? "Nothing matches" : "No documents yet"}
+          description={
+            filtered
+              ? "Try a different search term or domain."
+              : "Upload the first document: pick a domain and its link, choose the PDF, and the attestation number, complete link and QR code are made for you."
+          }
+          action={
+            canCreate && ready && !filtered ? (
+              <Button variant="primary" icon={<Plus className="size-4" />} disabled={!lists} onClick={() => openForm(null)}>
+                Upload document
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : null}
+
+      {page && items.length > 0 ? (
+        <div className="bg-surface border rounded-md overflow-hidden">
+          {filtered ? (
+            <div className="px-3 py-2 border-b text-[12.5px] text-text-muted">
+              {page.total} document{page.total === 1 ? "" : "s"} found
+            </div>
+          ) : null}
+          <div className="overflow-x-auto">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th className="w-14">QR</th>
+                  <th>Attestation number</th>
+                  <th>Sticker</th>
+                  <th>Document type</th>
+                  <th>Domain</th>
+                  <th>Date</th>
+                  <th>Issuing office / authority</th>
+                  <th>Approving officer</th>
+                  <th>PDF</th>
+                  <th>Uploaded</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setQrFor(r)}
+                        title="Show the QR code"
+                        aria-label={`Show the QR code for ${r.attestation_number}`}
+                        className="block rounded border hover:border-teal-600"
+                      >
+                        {r.qr_svg ? (
+                          <QrSvgImage svg={r.qr_svg} className="size-11 rounded" />
+                        ) : (
+                          <span className="flex size-11 items-center justify-center text-text-faint">
+                            <QrCode className="size-5" />
+                          </span>
+                        )}
+                      </button>
+                    </td>
+                    <td>
+                      <div className="font-mono text-[13px] font-medium whitespace-nowrap">{r.attestation_number}</div>
+                      <div className="text-[11.5px] text-text-muted truncate max-w-[22rem]" title={r.verify_url}>
+                        {r.verify_url}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="flex flex-col gap-1.5 min-w-[9.5rem]">
+                        <Button size="sm" icon={<Stamp className="size-3.5" />} onClick={() => setStickerFor(r)}>
+                          View sticker
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          icon={<Download className="size-3.5" />}
+                          loading={stickerBusy === r.id}
+                          onClick={() => saveSticker(r)}
+                        >
+                          Download PNG
+                        </Button>
+                      </div>
+                    </td>
+                    <td>{r.document_type || <span className="text-text-faint">—</span>}</td>
+                    <td>
+                      <div className="font-mono text-[12.5px]">{r.domain_hostname}</div>
+                      <div className="text-[12px] text-text-muted">
+                        {r.link_id ? r.link_name || "Untitled link" : <Badge>link removed — kept as saved</Badge>}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap">{formatIssued(r.issue_date)}</td>
+                    <td>
+                      <div>{r.issuing_office || <span className="text-text-faint">—</span>}</div>
+                      <div className="text-[12px] text-text-muted">{r.issuing_authority}</div>
+                    </td>
+                    <td>
+                      {r.officer_name ? (
+                        <>
+                          <div>{r.officer_name}</div>
+                          <div className="text-[12px] text-text-muted">{r.officer_designation}</div>
+                        </>
+                      ) : (
+                        <span className="text-text-faint">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="truncate max-w-[12rem]" title={r.doc_filename}>
+                        {r.doc_filename}
+                      </div>
+                      <div className="text-[11.5px] text-text-muted">{formatBytes(r.doc_size)}</div>
+                    </td>
+                    <td className="whitespace-nowrap text-[12.5px] text-text-muted">
+                      <div>{formatDateTime(r.created_at)}</div>
+                      <div className="text-text-faint">{r.uploader_name || r.uploader_email || "—"}</div>
+                    </td>
+                    <td>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <CopyButton text={r.verify_url} label="Copy link" />
+                        <IconButton label="QR code" onClick={() => setQrFor(r)}>
+                          <QrCode className="size-4" />
+                        </IconButton>
+                        <IconButton label="Open PDF" onClick={() => openPdf(r, false)}>
+                          <Eye className="size-4" />
+                        </IconButton>
+                        <IconButton label="Download PDF" onClick={() => openPdf(r, true)}>
+                          <Download className="size-4" />
+                        </IconButton>
+                        {canEdit ? (
+                          <IconButton label="Edit" onClick={() => openForm(r)} disabled={!lists}>
+                            <Pencil className="size-4" />
+                          </IconButton>
+                        ) : null}
+                        {canDelete ? (
+                          <IconButton label="Delete" tone="danger" onClick={() => setDel(r)}>
+                            <Trash2 className="size-4" />
+                          </IconButton>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination total={page.total} limit={page.limit} offset={page.offset} onChange={setOffset} />
+        </div>
+      ) : null}
+
+      {page && items.length > 0 ? (
+        <p className="text-[12.5px] text-text-muted mt-3">
+          Each link opens the verification page with that document&apos;s values and PDF, once its domain points at this
+          deployment.{isSuper ? " Change the page's wording, links and logos under Page design." : null}
+        </p>
+      ) : null}
+
+      <AppoForm
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        record={editing}
+        domains={domainList}
+        lists={lists}
+        onSaved={showSaved}
+        onListsChanged={loadLists}
+      />
+
+      <AppoDomains
+        open={domainsOpen}
+        onClose={() => setDomainsOpen(false)}
+        domains={domainList}
+        canManage={can("appo_domains")}
+        onChanged={async () => {
+          // A renamed domain or an edited link gives documents new links and QR codes, so the list reloads too.
+          await Promise.all([loadDomains(), load()]);
+        }}
+      />
+
+      <AppoQrDialog record={qrFor} onClose={() => setQrFor(null)} />
+
+      <AppoStickerDialog record={stickerFor} onClose={() => setStickerFor(null)} />
+
+      {isSuper ? (
+        <AppoBackgroundDialog open={backgroundOpen} onClose={() => setBackgroundOpen(false)} sample={items[0] ?? null} />
+      ) : null}
+
+      <AppoSavedValues
+        open={savedOpen}
+        onClose={() => setSavedOpen(false)}
+        lists={lists}
+        canRemove={can("appo_settings")}
+        onChanged={loadLists}
+      />
+
+      <ConfirmDialog
+        open={Boolean(del)}
+        onClose={() => setDel(null)}
+        onConfirm={doDelete}
+        loading={busy}
+        danger
+        title="Delete this document?"
+        confirmLabel="Delete"
+        message={
+          del ? (
+            <>
+              <span className="font-mono">{del.attestation_number}</span> and its PDF are deleted for good, and its
+              verification link stops working.
+            </>
+          ) : null
+        }
+      />
+    </>
+  );
+}

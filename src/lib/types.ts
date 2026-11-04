@@ -190,6 +190,8 @@ export interface StorageMissing {
   path: string | null;
   /** Set on a New M file, so the fix opens New M instead of Old M. */
   new_m?: boolean;
+  /** Set on an Appo file, so the fix opens Appo. */
+  appo?: boolean;
 }
 
 /** A file row whose recorded size does not match the stored object. */

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { matchTemplate as matchAppoTemplate, readDocumentAddress as readAppoAddress } from "@/lib/appo-link";
 import { matchTemplate, readDocumentAddress } from "@/lib/new-m-link";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 
@@ -7,18 +8,26 @@ function requestHost(req: NextRequest): string {
   return raw.split(",")[0].trim().split(":")[0].toLowerCase();
 }
 
-/* ---------------- New M verification links ---------------- */
+/* ---------------- New M and Appo verification links ---------------- */
 
 /**
- * The links of each New M domain, kept briefly so a visit costs no database call most of the time.
- * A domain or link added or edited in the panel answers within this long on every server.
+ * The links of each New M (or Appo) domain, kept briefly so a visit costs no database call most of the
+ * time. A domain or link added or edited in the panel answers within this long on every server.
  */
 const LINKS_TTL_MS = 30_000;
-const linkCache = new Map<string, { at: number; templates: string[] | null }>();
 
-/** The New M links served on a host, or null when the host is not a New M domain. */
-async function newMLinks(host: string): Promise<string[] | null> {
-  const hit = linkCache.get(host);
+/** New M, and Appo — its independent copy — each with their own domains, links and cache. */
+interface LinkSystem {
+  domains: string;
+  links: string;
+  cache: Map<string, { at: number; templates: string[] | null }>;
+}
+const NEW_M: LinkSystem = { domains: "new_m_domains", links: "new_m_link_templates", cache: new Map() };
+const APPO: LinkSystem = { domains: "appo_domains", links: "appo_link_templates", cache: new Map() };
+
+/** The links a system serves on a host, or null when the host is not one of its domains. */
+async function domainLinks(system: LinkSystem, host: string): Promise<string[] | null> {
+  const hit = system.cache.get(host);
   if (hit && Date.now() - hit.at < LINKS_TTL_MS) return hit.templates;
 
   const url = process.env.SUPABASE_URL;
@@ -33,7 +42,7 @@ async function newMLinks(host: string): Promise<string[] | null> {
   let templates: string[] | null = null;
   try {
     const res = await fetch(
-      `${url}/rest/v1/new_m_domains?select=hostname,new_m_link_templates(template)&hostname=in.(${encodeURIComponent(list)})`,
+      `${url}/rest/v1/${system.domains}?select=hostname,${system.links}(template)&hostname=in.(${encodeURIComponent(list)})`,
       {
         headers,
         cache: "no-store",
@@ -41,15 +50,15 @@ async function newMLinks(host: string): Promise<string[] | null> {
       },
     );
     if (!res.ok) return hit?.templates ?? null;
-    const rows = (await res.json()) as Array<{ hostname: string; new_m_link_templates: Array<{ template: string }> | null }>;
+    const rows = (await res.json()) as Array<Record<string, unknown> & { hostname: string }>;
     const row = rows.find((r) => r.hostname === host) ?? rows[0];
-    templates = row ? (row.new_m_link_templates ?? []).map((t) => t.template) : null;
+    templates = row ? ((row[system.links] as Array<{ template: string }> | null) ?? []).map((t) => t.template) : null;
   } catch {
     // An unreachable database must not take the site down; the previous answer stands, if any.
     return hit?.templates ?? null;
   }
-  if (linkCache.size > 500) linkCache.clear();
-  linkCache.set(host, { at: Date.now(), templates });
+  if (system.cache.size > 500) system.cache.clear();
+  system.cache.set(host, { at: Date.now(), templates });
   return templates;
 }
 
@@ -60,19 +69,26 @@ function isAppPath(pathname: string): boolean {
     pathname.startsWith("/api/") ||
     pathname === "/login" ||
     pathname.startsWith("/_next/") ||
-    pathname.startsWith("/nm-assets/")
+    pathname.startsWith("/nm-assets/") ||
+    pathname.startsWith("/appo-assets/")
   );
 }
 
-/** Hands a New M visit to the app's own route for it, with the address the visitor opened. */
-function serveNewM(req: NextRequest, host: string, route: "/nm-view" | "/nm-doc"): NextResponse {
+/** Routes reached only through a New M or Appo address, never by their own. */
+const INTERNAL_ROUTES = ["/nm-view", "/nm-doc", "/appo-view", "/appo-doc"];
+
+/**
+ * Hands a New M or Appo visit to the app's own route for it, with the address the visitor opened in
+ * headers named after the system (x-nm-… or x-appo-…).
+ */
+function serve(req: NextRequest, host: string, route: string, prefix: "x-nm" | "x-appo"): NextResponse {
   const target = req.nextUrl.clone();
   target.pathname = route;
   target.search = "";
   const headers = new Headers(req.headers);
-  headers.set("x-nm-host", host);
-  headers.set("x-nm-path", encodeURIComponent(req.nextUrl.pathname));
-  headers.set("x-nm-search", encodeURIComponent(req.nextUrl.search));
+  headers.set(`${prefix}-host`, host);
+  headers.set(`${prefix}-path`, encodeURIComponent(req.nextUrl.pathname));
+  headers.set(`${prefix}-search`, encodeURIComponent(req.nextUrl.search));
   return NextResponse.rewrite(target, { request: { headers } });
 }
 
@@ -80,9 +96,7 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const host = requestHost(req);
 
-  // The verification page and the document tab are only ever reached through a New M address, never
-  // by their own.
-  if (pathname === "/nm-view" || pathname.startsWith("/nm-view/") || pathname === "/nm-doc" || pathname.startsWith("/nm-doc/")) {
+  if (INTERNAL_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`))) {
     return new NextResponse("Not found", { status: 404 });
   }
 
@@ -94,10 +108,14 @@ export async function middleware(req: NextRequest) {
 
   if (!isAdminArea) {
     if (!isAppPath(pathname)) {
-      const templates = await newMLinks(host);
-      // A document's PDF address (/storage/applications/…/documents/….pdf) on any New M domain.
-      if (templates !== null && readDocumentAddress(pathname)) return serveNewM(req, host, "/nm-doc");
-      if (templates?.some((t) => matchTemplate(t, pathname, req.nextUrl.search))) return serveNewM(req, host, "/nm-view");
+      const search = req.nextUrl.search;
+      const [newM, appo] = await Promise.all([domainLinks(NEW_M, host), domainLinks(APPO, host)]);
+      // A document's PDF address (/storage/applications/…/documents/….pdf) on any New M domain, then a link.
+      if (newM !== null && readDocumentAddress(pathname)) return serve(req, host, "/nm-doc", "x-nm");
+      if (newM?.some((t) => matchTemplate(t, pathname, search))) return serve(req, host, "/nm-view", "x-nm");
+      // The same for Appo's own domains. A host set up in both answers as New M.
+      if (appo !== null && readAppoAddress(pathname)) return serve(req, host, "/appo-doc", "x-appo");
+      if (appo?.some((t) => matchAppoTemplate(t, pathname, search))) return serve(req, host, "/appo-view", "x-appo");
     }
     return NextResponse.next();
   }
@@ -141,5 +159,5 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Every request except the framework's own files and the page's fonts: New M links can be any path.
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|icon\\.svg|nm-assets/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|icon\\.svg|nm-assets/|appo-assets/).*)"],
 };

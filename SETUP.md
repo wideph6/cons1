@@ -902,6 +902,36 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
 
 ---
 
+# Hissa 13A — Appo (New M ki alag copy)
+
+**Appo** bilkul New M jaisa system hai — documents, domains aur links, saved values aur officers, QR code, sticker, verification
+page (desktop + mobile), PDF tab aur page design — lekin **poori tarah alag**: is ki apni files, apne database tables (`appo_*`),
+R2 mein apna folder (`appo/`) aur apni permissions. Appo mein jo bhi badlen, New M par koi asar nahi parta (aur ulta bhi).
+
+**1. Database:** Supabase → **SQL Editor** → **New query** → `supabase/appo.sql` ka poora content paste karen → **Run**.
+Dobara chalana bhi theek hai. Ye New M ki kisi table ko nahi chhuti.
+
+**2. Permissions:** Users → user par **Manage** → **Appo** group:
+
+- `Upload Appo documents`
+- `Edit Appo documents (number, date, details, PDF)`
+- `Delete Appo documents`
+- `Remove saved Appo values and officers`
+- `Add and edit Appo domains and their links`
+
+Jis admin ko in mein se koi bhi permission milegi, sirf usi ko sidebar mein **Appo** tab nazar aayegi aur wohi Appo dekh aur data
+daal sakega (jitni permission di, utna hi). Super admin ko sab milta hai, aur **Appo page** (verification page ka design) sirf super
+admin ke liye hai — bilkul New M ki tarah.
+
+**3. Domains:** Appo → **Domains & links** mein Appo ke apne domains add karen. Har domain ka DNS is app (Vercel) ki taraf aur
+Vercel project mein add hona chahiye (Hissa 7 ki tarah). **Aik domain ya subdomain New M aur Appo dono mein na daalen** — dono mein ho
+to us par New M khulta hai.
+
+Baqi sab kaam (upload, edit, sticker, background image, page design, favicon, PDF ka 40 character naam aur link) Hissa 13 jaisa hai,
+bas New M ki jagah **Appo** tab aur **Appo page** use karen.
+
+---
+
 # Hissa 14 — Database functions sirf server ke liye
 
 Postgres har naye function ko **har kisi (PUBLIC)** ke liye khula rakhta hai, jab tak us se hataya na jaye. Pehle ki SQL sirf `anon` aur

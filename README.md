@@ -204,6 +204,29 @@ older copy than the one stored is refused with a reload hint.
 
 A New M domain still has to point at this deployment (DNS, and attached in Vercel) before its links can answer.
 
+## Appo
+
+Appo is an independent copy of New M — documents, domains & links, saved values and officers, QR codes, stickers, the
+verification page with its PDF tab, and its page editor — kept entirely in its own files, so it can be changed without touching
+New M. Run [`supabase/appo.sql`](supabase/appo.sql) once before using it.
+
+| | New M | Appo |
+|---|---|---|
+| Admin pages | `/admin/new-m`, `/admin/new-m/page-design` | `/admin/appo`, `/admin/appo/page-design` |
+| Admin API | `src/app/api/admin/new-m` | `src/app/api/admin/appo` |
+| Public routes | `src/app/nm-view`, `src/app/nm-doc`, `src/app/api/new-m` | `src/app/appo-view`, `src/app/appo-doc`, `src/app/api/appo` |
+| Code | `src/lib/new-m*.ts`, `src/components/admin/NewM*`, `src/components/new-m-page` | `src/lib/appo*.ts` (with `appo-types.ts`, `appo-r2.ts`), `src/components/admin/Appo*`, `src/components/appo-page` |
+| Page styles | `nmp-` / `nmpm-` / `nmv-` classes, `npm run build:nmp-css` | `apo-` / `apom-` / `apov-` classes, `npm run build:appo-css` |
+| Fonts | `public/nm-assets` | `public/appo-assets` |
+| Database | `new_m_*` tables, views and functions (`supabase/new-m.sql`) | `appo_*` (`supabase/appo.sql`) |
+| R2 | `new-m/` | `appo/` |
+| Permissions | `new_m_create`, `_edit`, `_delete`, `_settings`, `_domains` | `appo_create`, `_edit`, `_delete`, `_settings`, `_domains` |
+
+Only what the whole app shares knows about both: the middleware (it looks a host up in New M's and Appo's domains side by side
+and hands the visit to the system it belongs to — a host set up in both answers as New M, so a domain should be in one of them
+only), the permission list, the admin sidebar, the activity log's wording and the storage report. Appo's tab shows to the super
+admin and to admins given any Appo permission; its page design is the super admin's only, as for New M.
+
 ## Permissions
 
 Super admins can do everything. Admin users get only the boxes ticked for them:
@@ -251,6 +274,8 @@ src/app/nm-doc               A document's /storage/applications/… address: its
 src/lib/*                       auth, permissions, R2, Supabase, Vercel API helpers
 supabase/schema.sql             database schema, views, functions
 supabase/new-m.sql           the New M tables on their own, for adding them to an existing database
+supabase/appo.sql            Appo's tables (an independent copy of New M), run on their own
+src/**/appo*, Appo*          Appo, New M's independent copy (see "Appo" above)
 ```
 
 ## Database functions
