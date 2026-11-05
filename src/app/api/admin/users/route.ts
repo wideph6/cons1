@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
 import { hashPassword, USER_COLUMNS, validatePassword } from "@/lib/auth";
 import { countsFromRows, emptyCounts } from "@/lib/counts";
+import { getBalances } from "@/lib/finance";
 import { sanitizePermissions } from "@/lib/permissions";
 import { db } from "@/lib/supabase";
 import type { CounterRow, User, UserWithCounts } from "@/lib/types";
@@ -26,9 +27,11 @@ export async function GET() {
       byUser.set(row.user_id, arr);
     }
 
+    const balances = await getBalances();
     const items: UserWithCounts[] = ((users ?? []) as User[]).map((u) => ({
       ...u,
       counts: countsFromRows(byUser.get(u.id) ?? []),
+      pending: balances.get(u.id)?.pending ?? 0,
     }));
     return ok({ items });
   });

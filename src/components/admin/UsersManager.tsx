@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "@/components/SessionProvider";
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, Input, Loading, Modal, PageHeader, Select, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
+import { formatMoney } from "@/lib/finance-shared";
 import { ALL_PERMISSIONS, PERMISSIONS, type Permission } from "@/lib/permissions";
 import type { UserWithCounts } from "@/lib/types";
 import { formatDateTime, timeAgo } from "@/lib/utils";
@@ -58,7 +59,10 @@ export function UsersManager() {
                   <th className="text-right">Replaces</th>
                   <th className="text-right">Renames</th>
                   <th className="text-right">Deletes</th>
+                  <th className="text-right">New M</th>
+                  <th className="text-right">Appo</th>
                   <th className="text-right">Total</th>
+                  <th className="text-right">Pending</th>
                   <th>Last sign-in</th>
                   <th></th>
                 </tr>
@@ -80,7 +84,10 @@ export function UsersManager() {
                     <td className="text-right tabular-nums">{u.counts.replace}</td>
                     <td className="text-right tabular-nums">{u.counts.rename}</td>
                     <td className="text-right tabular-nums">{u.counts.delete}</td>
+                    <td className="text-right tabular-nums">{u.counts.create_new_m}</td>
+                    <td className="text-right tabular-nums">{u.counts.create_appo}</td>
                     <td className="text-right tabular-nums font-semibold">{u.counts.total}</td>
+                    <td className="text-right tabular-nums whitespace-nowrap">{u.pending ? formatMoney(u.pending) : <span className="text-text-faint">—</span>}</td>
                     <td className="whitespace-nowrap text-text-muted" title={formatDateTime(u.last_login_at)}>
                       {u.last_login_at ? timeAgo(u.last_login_at) : "never"}
                     </td>

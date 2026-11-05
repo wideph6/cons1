@@ -26,6 +26,8 @@ import {
 } from "@/lib/appo";
 import { resolveLink } from "@/lib/appo-link";
 import { db } from "@/lib/supabase";
+import { previousCounts, sweepReplaced } from "@/lib/file-history";
+import { pendingFor } from "@/lib/pending-edits";
 import type { Paged } from "@/lib/types";
 import type { AppoOptionKind, AppoRecord } from "@/lib/appo-types";
 
@@ -76,7 +78,13 @@ export async function GET(req: NextRequest) {
     const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (error) throw dbError(error);
 
-    const items = await withCurrentQr((data ?? []).map((r) => mapRecord(r as never)));
+    const listed = await withCurrentQr((data ?? []).map((r) => mapRecord(r as never)));
+    // For the super admin: earlier PDFs still kept to compare, and changes waiting for approval.
+    const ids = listed.map((r) => r.id);
+    const [previous, pending] = await Promise.all([previousCounts("appo", ids), pendingFor("appo_pending_edits", ids)]);
+    const items = listed.map((r) => ({ ...r, previous_files: previous.get(r.id) ?? 0, pending_edit: pending.get(r.id) ?? null }));
+    // Kept files whose 15 days are up are deleted from R2 (at most once an hour).
+    after(() => sweepReplaced());
     const paged: Paged<AppoRecord> = { items, total: count ?? items.length, limit, offset };
     return ok(paged);
   });

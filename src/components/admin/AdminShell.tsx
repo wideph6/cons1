@@ -13,6 +13,7 @@ import {
   Search,
   UserCog,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,7 +30,7 @@ interface NavItem {
 }
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
-  const { user, isSuper, can } = useSession();
+  const { user, isSuper, can, financeVisible } = useSession();
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -68,6 +69,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin/search", label: "Search by date", icon: Search, show: isSuper || can("search") },
     { href: "/admin/activity", label: "Activity", icon: Activity, show: isSuper || can("view_activity") },
     { href: "/admin/users", label: "Users", icon: Users, show: isSuper },
+    { href: "/admin/finance", label: "Finance", icon: Wallet, show: financeVisible },
     { href: "/admin/account", label: "My account", icon: UserCog, show: true },
   ];
 

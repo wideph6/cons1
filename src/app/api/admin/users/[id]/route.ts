@@ -3,6 +3,8 @@ import { logActivity } from "@/lib/activity";
 import { ApiError, must, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
 import { hashPassword, USER_COLUMNS, validatePassword } from "@/lib/auth";
 import { countsFromRows } from "@/lib/counts";
+import { getBalances, getRates } from "@/lib/finance";
+import { NO_BALANCE } from "@/lib/finance-shared";
 import { sanitizePermissions } from "@/lib/permissions";
 import { db } from "@/lib/supabase";
 import type { BreakdownRow, CounterRow, User } from "@/lib/types";
@@ -23,12 +25,41 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     const { data: breakdown, error: bErr } = await db().rpc("user_action_breakdown", { p_user_id: id });
     if (bErr) throw new ApiError(500, bErr.message);
 
+    const [rates, balances, history] = await Promise.all([
+      getRates(),
+      getBalances([id]),
+      db()
+        .from("activity_log")
+        .select("id,created_at,details,users(name,email)")
+        .eq("action", "edit_counter")
+        .eq("details->>target_user_id", id)
+        .order("created_at", { ascending: false })
+        .limit(30),
+    ]);
     const rows = (counters ?? []) as CounterRow[];
     return ok({
       item: user,
       counters: rows,
       counts: countsFromRows(rows),
       breakdown: (breakdown ?? []) as BreakdownRow[],
+      // For the count warnings: what a change does to what the user owes.
+      rates,
+      balance: balances.get(id) ?? { ...NO_BALANCE },
+      history: ((history.data ?? []) as unknown as Array<{
+        id: number;
+        created_at: string;
+        details: Record<string, unknown>;
+        users: { name: string | null; email: string | null } | null;
+      }>).map((r) => ({
+        id: r.id,
+        created_at: r.created_at,
+        by: r.users?.name || r.users?.email || null,
+        mode: String(r.details?.mode ?? ""),
+        actions: Array.isArray(r.details?.actions) ? r.details.actions : [],
+        changes: Array.isArray(r.details?.changes) ? r.details.changes : [],
+        amount_change: Number(r.details?.amount_change ?? 0) || 0,
+        remarks: String(r.details?.remarks ?? ""),
+      })),
     });
   });
 }

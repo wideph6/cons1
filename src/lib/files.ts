@@ -1,5 +1,6 @@
 import { logActivity } from "./activity";
 import { ApiError } from "./errors";
+import { keepReplaced } from "./file-history";
 import { deleteObject, headObject, isManagedKey } from "./r2";
 import { db } from "./supabase";
 import type { FileRow, LinkRow, User } from "./types";
@@ -81,7 +82,7 @@ export async function finalizeUpload(input: FinalizeInput): Promise<FileRow> {
   if (input.fileId) {
     const { data: existing, error } = await db()
       .from("files")
-      .select("id,link_id,filename,r2_key,size")
+      .select("id,link_id,filename,r2_key,size,content_type")
       .eq("id", input.fileId)
       .maybeSingle();
     if (error) throw new ApiError(500, error.message);
@@ -101,7 +102,21 @@ export async function finalizeUpload(input: FinalizeInput): Promise<FileRow> {
       .eq("id", existing.id);
     if (upErr) throw new ApiError(500, upErr.message);
 
-    if (existing.r2_key !== input.key) await deleteObject(existing.r2_key);
+    // Visitors get the new file from now on; the old one is kept for 15 days so the super admin can compare.
+    if (existing.r2_key !== input.key) {
+      await keepReplaced({
+        system: "old_m",
+        recordId: existing.id,
+        label: existing.filename,
+        oldKey: existing.r2_key,
+        oldFilename: existing.filename,
+        oldSize: Number(existing.size ?? 0),
+        oldContentType: (existing.content_type as string | null) ?? null,
+        newKey: input.key,
+        newFilename: input.filename,
+        by: input.user.id,
+      });
+    }
 
     await logActivity({
       user_id: input.user.id,

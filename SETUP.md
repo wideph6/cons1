@@ -1025,6 +1025,72 @@ Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote ha
 
 ---
 
+## 13A.6 Background image: view zoom aur size
+
+- **Sticker ka size image ke mutabiq (New M aur Appo dono):** nayi background image chunen to sticker khud usi image ki shakal
+  le leta hai (chorai 958, oonchai image ke tanasub se) aur image poora sticker bhar deti hai. Pehle se save background par
+  **Match the image** dabayen to sticker us image ki shakal le leta hai. Sticker ka size "Sticker 958 × …" mein nazar aata hai
+  aur database mein save hota hai. Download PNG bhi isi shakal mein banta hai.
+
+- **View** (− / + / Fit): sirf editor ki tasveer bari karta hai (100% se 400%). Bari karne par scroll aa jata hai, taake lambi image
+  par bhi har cheez bilkul sahi jagah rakhi ja sake. Sticker ka asal size 958 × 761 hi rehta hai.
+- **Image size**: background image ka sticker par size (pehle "Zoom" kehlata tha).
+- **Size** (Move text & QR mein): jo set chuna ho — koi value apne lafzon ke saath, ungroup kiya hua aadha hissa, QR code,
+  signature ya officer ka naam — usay − / + ya slider se 30% se 300% tak chhota bara karen. **As made** se wapas asal size.
+  Ye bhi database mein save hota hai.
+
+---
+
+# Hissa 15 — Finance khata, count, purani files aur approval
+
+**Pehle:** Supabase → SQL Editor → `supabase/finance.sql` ka poora content paste karen → **Run** (schema.sql, new-m.sql aur
+appo.sql ke baad). Dobara chalana theek hai. Jab tak ye na chale, Finance page yahi batata hai aur baqi app pehle ki tarah chalti hai.
+
+## 15.1 Count (Users → user → Action counts)
+
+- Ab count mein **New M documents** aur **Appo documents** bhi aate hain (Old M uploads, replaces, renames, deletes ke saath).
+- **Edit**: count ko koi number kar dein. **Subtract**: count mein se khas ginti kam karen (0 se neeche nahi jata).
+  **Reset**: count 0.
+- **Remarks lazmi:** Subtract, Reset, aur Edit jo count kam kare — in sab ke saath remarks likhe baghair save nahi hota. Remarks
+  user ke page par **Count changes** table mein (kab, kya badla, kitne rupay, kis ne) nazar aate hain.
+- Har ek par pehle **warning** aati hai: count kitne se kitna hoga, aur us user ki **pending amount kitne rupay kam (ya zyada)**
+  hogi. Reset ki warning mein ye bhi likha hai ke ye wapas nahi hota.
+- Paisa sirf un counts se judta hai jin ki amount set hai: Old M upload, New M document, Appo document — aur sirf admin users ka
+  (super admin ka koi khata charge nahi hota). Count aur pending amount aik saath badalte hain.
+
+## 15.2 Finance (sidebar → Finance)
+
+- **Amount for each new entry**: Old M file upload, New M document aur Appo document — har aik ki amount (Rs) likh kar **Save
+  amounts**. Har nayi entry par us admin ki pending amount itni barh jati hai. Amount badalne se pehle wali entries nahi badaltin.
+- **Users** table: har user ki pending aur paid amount. **Account** se us user ka khata khulta hai (Users → user page par
+  "Finance account").
+- User ke khate mein:
+  - **Let this user see their finance account** — tick karen to user ko sidebar mein **Finance** nazar aata hai: apni pending,
+    paid, history, aur **I paid the super admin** se payment request bhej sakta hai. Tick na ho to user ko kuch nazar nahi aata.
+  - **Record a payment received** — cash mil jaye to amount likh kar record karen; pending se foran kam ho jati hai (pehle warning).
+  - **Payment requests** — user ki bheji hui request **Accept** karen to amount pending se kam ho jati hai, **Turn down** se kuch
+    nahi badalta. Finance page par sab users ki waiting requests aik jagah bhi hain.
+- Ye sab sirf super admin kar sakta hai.
+
+## 15.3 Replace ki hui file 15 din tak rehti hai
+
+- Old M file, New M PDF ya Appo PDF replace ho to visitors ko **hamesha sirf nayi file** milti hai, magar purani file 15 din R2 mein
+  rehti hai.
+- Us record par (sirf super admin ko) **History** ka icon aata hai: purani aur nayi file **isi window mein saath saath** dikhti
+  hain — na nayi tab, na download zaroori. Har file ke saath **Download** bhi hai.
+- 15 din baad purani file R2 se khud mit jati hai (jab bhi admin panel ki list khulti hai, ghante mein aik dafa ye safai hoti hai).
+- Storage page ki cleanup in rakhi hui files ko "rubbish" nahi samajhti.
+
+## 15.4 1 mahine purane case ki edit approval se
+
+- New M ya Appo ka document jis ki **upload date** (attestation date nahi) 1 mahine se purani ho, us mein koi admin badlao kare ya
+  PDF replace kare, to wo **foran live nahi hota**. Form pehle hi batata hai, aur save par "sent for approval" aata hai.
+- Jab tak approve na ho, verification page par document **pehle jaisa** hi dikhta hai.
+- List mein us document par **Change waiting for approval** likha aata hai. Super admin **Review** dabaye: har field pehle/baad mein,
+  aur PDF badli ho to purani aur nayi PDF saath saath. **Approve** se change live, **Turn down** se kuch nahi badalta (bheji hui
+  nayi PDF mit jati hai).
+- Aik document par aik waqt mein aik hi change waiting reh sakta hai. Super admin ke apne changes foran live hote hain.
+
 # Hissa 14 — Database functions sirf server ke liye
 
 Postgres har naye function ko **har kisi (PUBLIC)** ke liye khula rakhta hai, jab tak us se hataya na jaye. Pehle ki SQL sirf `anon` aur

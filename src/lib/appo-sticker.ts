@@ -17,6 +17,32 @@ import { verifyQr } from "./appo-link";
 export const STICKER_W = 958;
 export const STICKER_H = 761;
 
+/**
+ * A sticker's own size, in sticker units. It follows the background image's shape: STICKER_W wide (so the
+ * text keeps its size) and as tall as the image's proportions make it. Saved with the background's position;
+ * a sticker saved before sizes existed is STICKER_W x STICKER_H.
+ */
+export interface StickerSize {
+  width: number;
+  height: number;
+}
+export const DEFAULT_SIZE: StickerSize = { width: STICKER_W, height: STICKER_H };
+/** The narrowest/widest and shortest/tallest a sticker may be, in sticker units. */
+export const MIN_SIDE = 150;
+export const MAX_SIDE = 6000;
+
+/** The sticker for an image of these pixels: STICKER_W wide and as tall as the image's proportions make it. */
+export function sizeForImage(imageWidth: number, imageHeight: number): StickerSize {
+  if (!imageWidth || !imageHeight) return { ...DEFAULT_SIZE };
+  const height = Math.round((STICKER_W * imageHeight) / imageWidth);
+  return { width: STICKER_W, height: Math.min(MAX_SIDE, Math.max(MIN_SIDE, height)) };
+}
+
+/** A placement's sticker size, or the size every sticker had before sizes could change. */
+export function stickerSize(p: { size?: StickerSize } | null | undefined): StickerSize {
+  return p?.size ?? DEFAULT_SIZE;
+}
+
 const FONT_FAMILY = "Georgia, Gelasio, 'Times New Roman', serif";
 /** A value too long for its cell is set smaller rather than run into the next one, down to this size. */
 const MIN_FONT = 10;
@@ -113,14 +139,25 @@ export interface SetOffset {
   dy: number;
 }
 
+/** A half's own move, and its own size (1 = as made), set around its middle. */
+export interface PartLayout extends SetOffset {
+  scale?: number;
+}
+
 /**
- * How one set was moved. dx/dy moves the whole set. Ungrouped (split), its words and its value are
- * moved each on its own, by parts; grouped again, they keep where they were put and move together.
+ * How one set was moved and sized. dx/dy moves the whole set and scale sizes it around its middle
+ * (1 = as made). Ungrouped (split), its words and its value are moved and sized each on its own, by
+ * parts; grouped again, they keep where and how big they were made and move together.
  */
 export interface SetLayout extends SetOffset {
   split?: boolean;
-  parts?: Partial<Record<SetPart, SetOffset>>;
+  scale?: number;
+  parts?: Partial<Record<SetPart, PartLayout>>;
 }
+
+/** The smallest and largest a set or half may be made, against its size as made. */
+export const MIN_SCALE = 0.3;
+export const MAX_SCALE = 3;
 
 /** Only the sets that were moved or ungrouped. */
 export type StickerLayout = Partial<Record<StickerSetId, SetLayout>>;
@@ -335,10 +372,17 @@ export interface BackgroundPlacement {
   layout?: StickerLayout;
   /** The fixed words the super admin reworded, for the sticker only; left out when none were. */
   texts?: StickerTexts;
+  /** The sticker's own size, following the image; left out for the size every sticker had at first (STICKER_W x STICKER_H). */
+  size?: StickerSize;
 }
 
 /** No position saved: the image is stretched over the whole sticker. */
 export const FULL_PLACEMENT: BackgroundPlacement = { x: 0, y: 0, width: STICKER_W, height: STICKER_H };
+
+/** The image stretched over a whole sticker of this size. */
+export function fullPlacement(size: StickerSize = DEFAULT_SIZE): BackgroundPlacement {
+  return { x: 0, y: 0, width: size.width, height: size.height };
+}
 
 /** Cropping always leaves at least this share of the image across and down. */
 export const MIN_KEEP = 0.02;
@@ -346,14 +390,22 @@ export const MIN_KEEP = 0.02;
 const MIN_VISIBLE = 20;
 
 /** The whole image as large as it fits on the sticker, centred, proportions kept. */
-export function fitPlacement(imageWidth: number, imageHeight: number): BackgroundPlacement {
-  const scale = Math.min(STICKER_W / imageWidth, STICKER_H / imageHeight);
+export function fitPlacement(imageWidth: number, imageHeight: number, size: StickerSize = DEFAULT_SIZE): BackgroundPlacement {
+  const scale = Math.min(size.width / imageWidth, size.height / imageHeight);
   const width = imageWidth * scale;
   const height = imageHeight * scale;
-  return { x: (STICKER_W - width) / 2, y: (STICKER_H - height) / 2, width, height };
+  return { x: (size.width - width) / 2, y: (size.height - height) / 2, width, height };
 }
 
-/** The placement with this crop, or with none when nothing is cut off. Any layout and texts are left out. */
+/** The placement with this sticker size, or with none when it is the size every sticker had at first. */
+export function withSize(p: BackgroundPlacement, size: StickerSize): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.size;
+  const same = Math.abs(size.width - STICKER_W) < 0.01 && Math.abs(size.height - STICKER_H) < 0.01;
+  return same ? rest : { ...rest, size: { width: n(size.width), height: n(size.height) } };
+}
+
+/** The placement with this crop, or with none when nothing is cut off. Any layout, texts and size are left out. */
 export function withCrop(p: BackgroundPlacement, crop: BackgroundCrop): BackgroundPlacement {
   const { x, y, width, height } = p;
   const cut = crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0;
@@ -361,15 +413,24 @@ export function withCrop(p: BackgroundPlacement, crop: BackgroundCrop): Backgrou
 }
 
 const moves = (o: SetOffset | undefined): boolean => Boolean(o && (o.dx !== 0 || o.dy !== 0));
+const sized = (o: { scale?: number } | undefined): boolean => Boolean(o && o.scale !== undefined && o.scale !== 1);
+/** Moved or sized: something that changes where or how big it is drawn. */
+const changed = (o: PartLayout | undefined): boolean => moves(o) || sized(o);
 
-/** A set's layout with nothing in it that does nothing, or null when it is left exactly as measured. */
+/** A set's layout with nothing in it that does nothing, or null when it is left exactly as made. */
 function tidySet(o: SetLayout | undefined): SetLayout | null {
   if (!o) return null;
-  const parts = Object.fromEntries(SET_PARTS.filter((p) => moves(o.parts?.[p])).map((p) => [p, { ...o.parts![p]! }]));
+  const parts = Object.fromEntries(
+    SET_PARTS.filter((p) => changed(o.parts?.[p])).map((p) => {
+      const pl = o.parts![p]!;
+      return [p, sized(pl) ? { dx: pl.dx, dy: pl.dy, scale: pl.scale } : { dx: pl.dx, dy: pl.dy }];
+    }),
+  );
   const out: SetLayout = { dx: o.dx, dy: o.dy };
   if (o.split) out.split = true;
+  if (sized(o)) out.scale = o.scale;
   if (Object.keys(parts).length) out.parts = parts;
-  return out.split || out.parts || moves(out) ? out : null;
+  return out.split || out.parts || moves(out) || sized(out) ? out : null;
 }
 
 /** The placement with only the sets that were really moved or ungrouped, or with no layout when none were. */
@@ -399,13 +460,19 @@ const PIECE_IDS: ReadonlySet<string> = new Set(PIECES.map((p) => p.id));
 /** The most a reworded piece may hold. */
 export const MAX_PIECE_TEXT = 200;
 
-/** A move by numbers no larger than the sticker itself, or null when it is not one. */
-function cleanOffset(v: unknown): SetOffset | null {
+/** A move by numbers no larger than the sticker itself, with a sane size if one is given, or null when it is not one. */
+function cleanOffset(v: unknown): PartLayout | null {
   if (!v || typeof v !== "object") return null;
-  const { dx, dy } = v as Record<string, unknown>;
+  const { dx, dy, scale } = v as Record<string, unknown>;
   if (typeof dx !== "number" || typeof dy !== "number" || !Number.isFinite(dx) || !Number.isFinite(dy)) return null;
-  if (Math.abs(dx) > STICKER_W || Math.abs(dy) > STICKER_H) return null;
-  return { dx: n(dx), dy: n(dy) };
+  if (Math.abs(dx) > MAX_SIDE || Math.abs(dy) > MAX_SIDE) return null;
+  const out: PartLayout = { dx: n(dx), dy: n(dy) };
+  if (scale !== undefined) {
+    if (typeof scale !== "number" || !Number.isFinite(scale) || scale < MIN_SCALE - 1e-9 || scale > MAX_SCALE + 1e-9) return null;
+    const s = Math.round(scale * 1000) / 1000;
+    if (s !== 1) out.scale = s;
+  }
+  return out;
 }
 
 /** Known sets, each moved (and its halves moved) by numbers no larger than the sticker itself, or null when it is not that. */
@@ -421,7 +488,7 @@ function cleanLayout(v: unknown): StickerLayout | null {
     if (raw.split === true) entry.split = true;
     if (raw.parts !== undefined && raw.parts !== null) {
       if (typeof raw.parts !== "object" || Array.isArray(raw.parts)) return null;
-      const parts: Partial<Record<SetPart, SetOffset>> = {};
+      const parts: Partial<Record<SetPart, PartLayout>> = {};
       for (const [part, po] of Object.entries(raw.parts as Record<string, unknown>)) {
         const c = cleanOffset(po);
         if (!SET_PARTS.includes(part as SetPart) || !c) return null;
@@ -457,11 +524,20 @@ export function visibleRect(p: BackgroundPlacement): { x: number; y: number; wid
 }
 
 /** Moves a placement back when it was dragged so far that almost none of the cropped image is left on the sticker. */
-export function clampPlacement(p: BackgroundPlacement): BackgroundPlacement {
+export function clampPlacement(p: BackgroundPlacement, size: StickerSize = stickerSize(p)): BackgroundPlacement {
   const v = visibleRect(p);
-  const shift = (start: number, size: number, edge: number) =>
-    start + size < MIN_VISIBLE ? MIN_VISIBLE - (start + size) : start > edge - MIN_VISIBLE ? edge - MIN_VISIBLE - start : 0;
-  return { ...p, x: p.x + shift(v.x, v.width, STICKER_W), y: p.y + shift(v.y, v.height, STICKER_H) };
+  const shift = (start: number, length: number, edge: number) =>
+    start + length < MIN_VISIBLE ? MIN_VISIBLE - (start + length) : start > edge - MIN_VISIBLE ? edge - MIN_VISIBLE - start : 0;
+  return { ...p, x: p.x + shift(v.x, v.width, size.width), y: p.y + shift(v.y, v.height, size.height) };
+}
+
+/** A sticker size sent or saved, or null when it is not a sane one. */
+function cleanSize(v: unknown): StickerSize | null {
+  if (!v || typeof v !== "object") return null;
+  const { width, height } = v as Record<string, unknown>;
+  if (typeof width !== "number" || typeof height !== "number" || !Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width < MIN_SIDE || height < MIN_SIDE || width > MAX_SIDE || height > MAX_SIDE) return null;
+  return { width: n(width), height: n(height) };
 }
 
 /** Four shares between 0 and 1 that leave something of the image, or null when they are not. */
@@ -487,7 +563,13 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
   const nums = [x, y, width, height];
   if (!nums.every((k) => typeof k === "number" && Number.isFinite(k))) return null;
   const p = { x: n(x as number), y: n(y as number), width: n(width as number), height: n(height as number) };
-  if (p.width <= 0 || p.height <= 0 || p.width > 100 * STICKER_W || p.height > 100 * STICKER_H) return null;
+  let size = DEFAULT_SIZE;
+  if (raw.size !== undefined && raw.size !== null) {
+    const sz = cleanSize(raw.size);
+    if (!sz) return null;
+    size = sz;
+  }
+  if (p.width <= 0 || p.height <= 0 || p.width > 100 * size.width || p.height > 100 * size.height) return null;
   let crop = NO_CROP;
   if (raw.crop !== undefined && raw.crop !== null) {
     const c = cleanCrop(raw.crop);
@@ -506,9 +588,9 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     if (!t) return null;
     texts = t;
   }
-  const placed = withTexts(withLayout(withCrop(p, crop), layout), texts);
+  const placed = withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size);
   const s = visibleRect(placed);
-  const onSticker = s.x < STICKER_W && s.y < STICKER_H && s.x + s.width > 0 && s.y + s.height > 0;
+  const onSticker = s.x < size.width && s.y < size.height && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;
 }
 
@@ -552,6 +634,8 @@ export interface StickerContent extends StickerValues {
   drawFrame: boolean;
   /** The sets the super admin moved; the rest stay where a new sticker puts them. */
   layout?: StickerLayout;
+  /** The sticker's size; left out for STICKER_W x STICKER_H. */
+  size?: StickerSize;
   /** The fixed words the super admin reworded; the rest read as a new sticker has them. */
   texts?: StickerTexts;
 }
@@ -563,21 +647,22 @@ export interface StickerInput extends StickerContent {
   placement: BackgroundPlacement | null;
 }
 
-function wrap(body: string): string {
+function wrap(body: string, size: StickerSize): string {
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${STICKER_W}" ` +
-    `height="${STICKER_H}" viewBox="0 0 ${STICKER_W} ${STICKER_H}">${body}</svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${size.width}" ` +
+    `height="${size.height}" viewBox="0 0 ${size.width} ${size.height}">${body}</svg>`
   );
 }
 
 /** The sticker as one self-contained SVG, ready to show or to rasterise to PNG. */
 export function buildStickerSvg(input: StickerInput, measure: Measure): string {
-  return wrap(backgroundEl(input.background, input.placement ?? FULL_PLACEMENT) + contentEl(input, measure));
+  const size = input.size ?? stickerSize(input.placement);
+  return wrap(backgroundEl(input.background, input.placement ?? fullPlacement(size)) + contentEl(input, measure), size);
 }
 
 /** Everything but the background, for the editor that moves the background underneath it. */
 export function buildStickerOverlaySvg(input: StickerContent, measure: Measure): string {
-  return wrap(contentEl(input, measure));
+  return wrap(contentEl(input, measure), input.size ?? DEFAULT_SIZE);
 }
 
 /** How far a set's half is moved in all: the set's own move plus the half's. */
@@ -590,11 +675,38 @@ export function partShift(layout: StickerLayout | undefined, set: StickerSetId, 
 /** The sets drawn in one piece: they have no words of their own to ungroup from. */
 type WholeSet = "officerName";
 
-/** The fixed words, values, signature and QR code, drawn over the background, each set where it was moved to. */
+/**
+ * The SVG transform for a move and a size: the size is set around the middle of r (where the thing is
+ * drawn before this move), then the move is made. Empty when neither changes anything.
+ */
+function transformOf(o: PartLayout | undefined, r: Rect | null): string {
+  if (!o) return "";
+  const steps: string[] = [];
+  if (o.dx || o.dy) steps.push(`translate(${n(o.dx)} ${n(o.dy)})`);
+  const s = o.scale ?? 1;
+  if (s !== 1 && r) {
+    const cx = r.x + r.width / 2;
+    const cy = r.y + r.height / 2;
+    steps.push(`translate(${n(cx)} ${n(cy)}) scale(${s}) translate(${n(-cx)} ${n(-cy)})`);
+  }
+  return steps.join(" ");
+}
+
+function wrapIn(svg: string, transform: string): string {
+  return transform ? `<g transform="${transform}">${svg}</g>` : svg;
+}
+
+/** The fixed words, values, signature and QR code, drawn over the background, each set where it was moved to and as big as it was made. */
 function contentEl(input: StickerContent, measure: Measure): string {
+  // Where each set is drawn before any change: the middle that a size is set around.
+  const boxes = input.layout && Object.keys(input.layout).length ? stickerSetBoxes(input, measure) : {};
   const moved: Mover = (set, part, svg) => {
-    const o = partShift(input.layout, set, part);
-    return svg && (o.dx || o.dy) ? `<g transform="translate(${n(o.dx)} ${n(o.dy)})">${svg}</g>` : svg;
+    const l = input.layout?.[set];
+    if (!svg || !l) return svg;
+    const b = boxes[set];
+    // A half's own move and size first, then the whole set's.
+    const inner = part ? wrapIn(svg, transformOf(l.parts?.[part], b?.parts[part] ?? null)) : svg;
+    return wrapIn(inner, transformOf(l, b ? groupRect(b, l) : null));
   };
   const parts: string[] = [];
   if (input.drawFrame) parts.push(frameEl(moved, input.texts));
@@ -737,16 +849,53 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
  * The area a grouped set is grabbed by: each half where its own move put it, before the set's move.
  * Without moved halves this is the whole set.
  */
+export function scaleRect(r: Rect, s: number | undefined): Rect {
+  const k = s ?? 1;
+  if (k === 1) return r;
+  const cx = r.x + r.width / 2;
+  const cy = r.y + r.height / 2;
+  return { x: cx - (r.width * k) / 2, y: cy - (r.height * k) / 2, width: r.width * k, height: r.height * k };
+}
+
+/** Where a half is drawn after its own move and size, before the whole set's. */
+export function partLocalRect(b: SetBoxes, l: SetLayout | undefined, part: SetPart): Rect | null {
+  const r = b.parts[part];
+  if (!r) return null;
+  const pl = l?.parts?.[part];
+  return shiftRect(scaleRect(r, pl?.scale), pl ?? { dx: 0, dy: 0 });
+}
+
+/** The whole set's own move and size, applied to a rectangle of it (r), around the middle of the set (g). */
+function setTransformRect(r: Rect, g: Rect, l: SetLayout | undefined): Rect {
+  const k = l?.scale ?? 1;
+  const cx = g.x + g.width / 2;
+  const cy = g.y + g.height / 2;
+  const scaled = k === 1 ? r : { x: cx + (r.x - cx) * k, y: cy + (r.y - cy) * k, width: r.width * k, height: r.height * k };
+  return shiftRect(scaled, l ?? { dx: 0, dy: 0 });
+}
+
+/** Where a grouped set is drawn now, every move and size included: what it is grabbed by. */
+export function shownGroupRect(b: SetBoxes, l: SetLayout | undefined): Rect {
+  const g = groupRect(b, l);
+  return setTransformRect(g, g, l);
+}
+
+/** Where one half of an ungrouped set is drawn now, every move and size included. */
+export function shownPartRect(b: SetBoxes, l: SetLayout | undefined, part: SetPart): Rect | null {
+  const r = partLocalRect(b, l, part);
+  return r ? setTransformRect(r, groupRect(b, l), l) : null;
+}
+
 export function groupRect(b: SetBoxes, l: SetLayout | undefined): Rect {
-  const moved = SET_PARTS.filter((p) => b.parts[p] && moves(l?.parts?.[p]));
+  const moved = SET_PARTS.filter((p) => b.parts[p] && changed(l?.parts?.[p]));
   if (!moved.length) return b.whole;
-  return union(SET_PARTS.filter((p) => b.parts[p]).map((p) => shiftRect(b.parts[p]!, l?.parts?.[p] ?? { dx: 0, dy: 0 })));
+  return union(SET_PARTS.map((p) => partLocalRect(b, l, p)).filter((r): r is Rect => Boolean(r)));
 }
 
 /** A move that keeps the set's box on the sticker. */
-export function clampOffset(box: Rect, o: SetOffset): SetOffset {
+export function clampOffset(box: Rect, o: SetOffset, size: StickerSize = DEFAULT_SIZE): SetOffset {
   return {
-    dx: Math.min(Math.max(o.dx, -box.x), STICKER_W - box.x - box.width),
-    dy: Math.min(Math.max(o.dy, -box.y), STICKER_H - box.y - box.height),
+    dx: Math.min(Math.max(o.dx, -box.x), size.width - box.x - box.width),
+    dy: Math.min(Math.max(o.dy, -box.y), size.height - box.y - box.height),
   };
 }

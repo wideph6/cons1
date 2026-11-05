@@ -1,7 +1,7 @@
-import { COUNTED_ACTIONS, type CounterRow, type Counts } from "./types";
+import { COUNTED_ACTIONS, type CountedAction, type CounterRow, type Counts } from "./types";
 
 export function emptyCounts(): Counts {
-  return { upload: 0, replace: 0, rename: 0, delete: 0, total: 0 };
+  return { ...(Object.fromEntries(COUNTED_ACTIONS.map((a) => [a, 0])) as Record<CountedAction, number>), total: 0 };
 }
 
 export function countsFromRows(rows: CounterRow[]): Counts {

@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  Clock,
   Download,
   Eye,
   Globe,
+  History,
   Hash,
   Image as ImageIcon,
   LayoutTemplate,
@@ -18,6 +20,7 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
+import { FileHistoryDialog, PendingReviewDialog } from "@/components/admin/FileHistory";
 import { useCallback, useEffect, useState } from "react";
 import { AppoDomains } from "@/components/admin/AppoDomains";
 import { AppoForm } from "@/components/admin/AppoForm";
@@ -74,6 +77,9 @@ export function AppoManager() {
   const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [prefixOpen, setPrefixOpen] = useState(false);
   const [del, setDel] = useState<AppoRecord | null>(null);
+  /** The document whose earlier and current PDF are being compared, and the one whose waiting change is reviewed. */
+  const [historyFor, setHistoryFor] = useState<AppoRecord | null>(null);
+  const [reviewFor, setReviewFor] = useState<AppoRecord | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -376,6 +382,19 @@ export function AppoManager() {
                     </td>
                     <td>
                       <div className="font-mono text-[13px] font-medium whitespace-nowrap">{r.attestation_number}</div>
+                      {r.pending_edit ? (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <Badge tone="warn">
+                            <Clock className="size-3 mr-1" />
+                            Change waiting for approval
+                          </Badge>
+                          {isSuper ? (
+                            <button type="button" className="text-[12px] font-medium text-teal-700 hover:underline" onClick={() => setReviewFor(r)}>
+                              Review
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div className="text-[11.5px] text-text-muted truncate max-w-[22rem]" title={r.verify_url}>
                         {r.verify_url}
                       </div>
@@ -445,6 +464,11 @@ export function AppoManager() {
                         <IconButton label="Download PDF" onClick={() => openPdf(r, true)}>
                           <Download className="size-4" />
                         </IconButton>
+                        {isSuper && r.previous_files ? (
+                          <IconButton label="Earlier PDF — compare with the current one" onClick={() => setHistoryFor(r)}>
+                            <History className="size-4" />
+                          </IconButton>
+                        ) : null}
                         {canEdit ? (
                           <IconButton label="Edit" onClick={() => openForm(r)} disabled={!lists}>
                             <Pencil className="size-4" />
@@ -495,6 +519,19 @@ export function AppoManager() {
       />
 
       <AppoQrDialog record={qrFor} onClose={() => setQrFor(null)} />
+
+      <FileHistoryDialog system="appo" recordId={historyFor?.id ?? null} title={historyFor?.attestation_number ?? ""} onClose={() => setHistoryFor(null)} />
+
+      <PendingReviewDialog<AppoRecord>
+        system="appo"
+        recordId={reviewFor?.id ?? null}
+        onClose={() => setReviewFor(null)}
+        onDecided={(item) => {
+          setPage((p) => (p ? { ...p, items: p.items.map((x) => (x.id === item.id ? { ...x, ...item, pending_edit: null } : x)) } : p));
+          // An approved change may replace the PDF, which leaves an earlier one to compare.
+          void load();
+        }}
+      />
 
       <AppoStickerDialog record={stickerFor} onClose={() => setStickerFor(null)} />
 

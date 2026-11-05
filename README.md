@@ -257,6 +257,28 @@ Both stickers let the super admin **ungroup** a set in the background editor, mo
 by piece id) are saved inside `*_settings.background_placement`, so New M needs no database change for it; the placement travels
 to the browser URI-encoded in the `x-background-placement` header.
 
+## Finance, counts, kept files and approvals
+
+Run [`supabase/finance.sql`](supabase/finance.sql) after the other SQL files. Until then the app works as before and the Finance
+page says so.
+
+- **Counts** now include New M and Appo documents (`create_new_m`, `create_appo`); `schema.sql` and `finance.sql` define the
+  same `user_action_counts` / `user_action_breakdown`. A count can be set, lowered (`mode: "subtract"`) or reset; for an admin,
+  a count that costs money moves what they owe by the change × the rate now in force, in one database step
+  (`finance_set_counts`). The user page shows the exact amount before anything is changed.
+- **Finance** (super admin): `finance_settings` holds the amount per Old M upload, New M document and Appo document. A trigger on
+  `activity_log` charges each new entry by an admin at the rate then (`finance_entries`, one charge per activity row). Payments are
+  recorded by the super admin or asked for by the user (`finance_requests`, accepted once by `finance_decide_request`).
+  `finance_accounts.visible` decides whether an admin sees their own account (the Finance tab, `/api/admin/finance/me`).
+  Code: `src/lib/finance*.ts`, `src/app/api/admin/finance`, `src/components/admin/FinanceAccount.tsx`.
+- **Kept files**: a replaced Old M file or New M / Appo PDF is recorded in `replaced_files` and kept in R2 for 15 days
+  (`src/lib/file-history.ts`); list endpoints sweep expired ones at most hourly. The super admin compares the earlier and current
+  file side by side (`/api/admin/file-history`, `FileHistory.tsx`). The storage report counts kept files and PDFs waiting for
+  approval as in use.
+- **Approvals**: an admin's edit of a New M / Appo document uploaded more than 30 days ago is saved to
+  `new_m_pending_edits` / `appo_pending_edits` instead (`src/lib/*-edit.ts`, which the PATCH route and the approval share).
+  `/api/admin/{new-m,appo}/:id/pending` shows it and approves (re-running the edit as its requester) or turns it down.
+
 ## Permissions
 
 Super admins can do everything. Admin users get only the boxes ticked for them:

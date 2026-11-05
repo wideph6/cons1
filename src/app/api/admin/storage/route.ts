@@ -4,6 +4,7 @@ import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/l
 import { getBackgroundSettings as getAppoBackground } from "@/lib/appo";
 import { pageImageKeys as appoPageImageKeys } from "@/lib/appo-page-server";
 import { APPO_PREFIX } from "@/lib/appo-r2";
+import { heldKeys } from "@/lib/file-history";
 import { getBackgroundSettings, isMissingTable } from "@/lib/new-m";
 import { pageImageKeys } from "@/lib/new-m-page-server";
 import { deleteObjects, listAllObjects, MANAGED_PREFIX, NEW_M_PREFIX } from "@/lib/r2";
@@ -117,7 +118,7 @@ function topFolder(key: string): string {
 
 /** Compares what the bucket holds with what the database expects to be there. */
 async function buildReport(): Promise<StorageReport> {
-  const [files, newM, appo, rows, nRows, nOfficerKeys, aRows, aOfficerKeys] = await Promise.all([
+  const [files, newM, appo, rows, nRows, nOfficerKeys, aRows, aOfficerKeys, held] = await Promise.all([
     listAllObjects(MANAGED_PREFIX),
     listAllObjects(NEW_M_PREFIX),
     listAllObjects(APPO_PREFIX),
@@ -126,6 +127,7 @@ async function buildReport(): Promise<StorageReport> {
     newMOfficerKeys(),
     allNewMRows("appo_view"),
     appoOfficerKeys(),
+    heldKeys(),
   ]);
   // New M and Appo documents are told apart only where the report links back to them.
   const appoIds = new Set(aRows.map((m) => m.id));
@@ -152,6 +154,8 @@ async function buildReport(): Promise<StorageReport> {
     if (m.officer_signature_r2_key) usedKeys.add(m.officer_signature_r2_key);
   }
   for (const k of mOfficerKeys) usedKeys.add(k);
+  // Replaced files kept for 15 days, and PDFs sent with edits waiting for approval, are in use too.
+  for (const k of held) usedKeys.add(k);
 
   const now = Date.now();
 

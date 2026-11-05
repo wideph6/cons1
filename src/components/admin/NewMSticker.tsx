@@ -12,7 +12,13 @@ import {
   clampPlacement,
   cleanPlacement,
   fitPlacement,
+  DEFAULT_SIZE,
   FULL_PLACEMENT,
+  fullPlacement,
+  sizeForImage,
+  stickerSize,
+  withSize,
+  type StickerSize,
   groupRect,
   MAX_PIECE_TEXT,
   MIN_KEEP,
@@ -303,6 +309,9 @@ function box(p: BackgroundPlacement): BackgroundPlacement {
 function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean {
   const ca = a.crop ?? NO_CROP;
   const cb = b.crop ?? NO_CROP;
+  const sa = stickerSize(a);
+  const sb = stickerSize(b);
+  if (Math.abs(sa.width - sb.width) >= 0.01 || Math.abs(sa.height - sb.height) >= 0.01) return false;
   const close = (u: number, v: number, by: number) => Math.abs(u - v) < by;
   return (
     close(a.x, b.x, 0.01) &&
@@ -345,12 +354,12 @@ function setMove(l: SetLayout | undefined): SetOffset {
 }
 
 /** A placement as CSS on the editor's image, in percentages of the sticker. */
-function boxStyle(p: BackgroundPlacement) {
+function boxStyle(p: BackgroundPlacement, sz: StickerSize) {
   return {
-    left: `${(p.x / STICKER_W) * 100}%`,
-    top: `${(p.y / STICKER_H) * 100}%`,
-    width: `${(p.width / STICKER_W) * 100}%`,
-    height: `${(p.height / STICKER_H) * 100}%`,
+    left: `${(p.x / sz.width) * 100}%`,
+    top: `${(p.y / sz.height) * 100}%`,
+    width: `${(p.width / sz.width) * 100}%`,
+    height: `${(p.height / sz.height) * 100}%`,
   };
 }
 
@@ -379,6 +388,8 @@ export function NewMBackgroundDialog({
   const [saved, setSaved] = useState<EditorImage | null>(null);
   const [image, setImage] = useState<EditorImage | null>(null);
   const [placement, setPlacement] = useState<BackgroundPlacement>(FULL_PLACEMENT);
+  /** The sticker's own size: it follows the image's shape (see sizeForImage). */
+  const [size, setSize] = useState<StickerSize>(DEFAULT_SIZE);
   const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
   /** Showing the crop handles and the cut-off parts. */
   const [cropping, setCropping] = useState(false);
@@ -400,7 +411,8 @@ export function NewMBackgroundDialog({
   const setDrag = useRef<{ id: number; set: StickerSetId; part: SetPart | null; x: number; y: number; from: SetOffset } | null>(null);
 
   function showSaved(p: BackgroundPlacement | null) {
-    setPlacement(box(p ?? FULL_PLACEMENT));
+    setPlacement(box(p ?? fullPlacement(stickerSize(p))));
+    setSize(stickerSize(p));
     setCrop(p?.crop ?? NO_CROP);
     setLayout(p?.layout ?? {});
     setTexts(p?.texts ?? {});
@@ -462,8 +474,8 @@ export function NewMBackgroundDialog({
   // dragging the image only moves it underneath.
   const overlay = useMemo(() => {
     if (!open) return null;
-    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, ...values }, measure));
-  }, [open, values, hasFrame, layout, texts]);
+    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, size, ...values }, measure));
+  }, [open, values, hasFrame, layout, texts, size]);
 
   /** Where each set (and each half of it) is drawn before it is moved, for grabbing it. */
   const setBoxes = useMemo(
@@ -477,10 +489,13 @@ export function NewMBackgroundDialog({
     if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return setError("Choose a JPG, PNG or WebP image.");
     if (file.size > 4 * 1024 * 1024) return setError("The background image must be 4 MB or smaller.");
     const dataUri = await blobToDataUri(file);
-    const size = await imageSize(dataUri);
-    if (!size.width || !size.height) return setError("That image could not be opened.");
-    setImage({ dataUri, ...size, file });
-    setPlacement(fitPlacement(size.width, size.height));
+    const px = await imageSize(dataUri);
+    if (!px.width || !px.height) return setError("That image could not be opened.");
+    // The sticker takes the image's shape, and the image fills it.
+    const next = sizeForImage(px.width, px.height);
+    setImage({ dataUri, ...px, file });
+    setSize(next);
+    setPlacement(fitPlacement(px.width, px.height, next));
     setCrop(NO_CROP);
     setCropping(false);
     setHasFrame(false);
@@ -500,7 +515,7 @@ export function NewMBackgroundDialog({
     if (!image) return;
     setBusy(true);
     try {
-      const sent = withTexts(withLayout(withCrop(placement, crop), layout), texts);
+      const sent = withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size);
       let next: BackgroundInfo;
       if (image.file) {
         const form = new FormData();
@@ -538,20 +553,20 @@ export function NewMBackgroundDialog({
 
   /** Keeps some of the cropped image on the sticker. */
   function kept(p: BackgroundPlacement, c: BackgroundCrop = crop): BackgroundPlacement {
-    return box(clampPlacement(withCrop(p, c)));
+    return box(clampPlacement(withCrop(p, c), size));
   }
 
-  const zoom = placement.width / STICKER_W;
+  const zoom = placement.width / size.width;
 
   function zoomTo(z: number) {
     if (!image) return;
     const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
     // The point at the sticker's centre stays where it is.
-    const fx = (STICKER_W / 2 - placement.x) / placement.width;
-    const fy = (STICKER_H / 2 - placement.y) / placement.height;
-    const width = STICKER_W * next;
+    const fx = (size.width / 2 - placement.x) / placement.width;
+    const fy = (size.height / 2 - placement.y) / placement.height;
+    const width = size.width * next;
     const height = (width * image.height) / image.width;
-    setPlacement(kept({ x: STICKER_W / 2 - fx * width, y: STICKER_H / 2 - fy * height, width, height }));
+    setPlacement(kept({ x: size.width / 2 - fx * width, y: size.height / 2 - fy * height, width, height }));
   }
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -566,7 +581,7 @@ export function NewMBackgroundDialog({
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     // Screen pixels to sticker units; the preview keeps the sticker's proportions, so one factor serves both.
-    const unit = STICKER_W / e.currentTarget.clientWidth;
+    const unit = size.width / e.currentTarget.clientWidth;
     setPlacement(kept({ ...d.from, x: d.from.x + (e.clientX - d.x) * unit, y: d.from.y + (e.clientY - d.y) * unit }));
   }
 
@@ -600,10 +615,10 @@ export function NewMBackgroundDialog({
     if (!b) return;
     setLayout((l) => {
       const cur = l[set];
-      if (!part) return { ...l, [set]: { ...cur, ...clampOffset(groupRect(b, cur), to(setMove(cur))) } };
+      if (!part) return { ...l, [set]: { ...cur, ...clampOffset(groupRect(b, cur), to(setMove(cur)), size) } };
       const r = b.parts[part];
       if (!r) return l;
-      const next = clampOffset(shiftRect(r, setMove(cur)), to(cur?.parts?.[part] ?? STILL));
+      const next = clampOffset(shiftRect(r, setMove(cur)), to(cur?.parts?.[part] ?? STILL), size);
       return { ...l, [set]: { ...setMove(cur), ...cur, parts: { ...cur?.parts, [part]: next } } };
     });
   }
@@ -626,7 +641,7 @@ export function NewMBackgroundDialog({
     const d = setDrag.current;
     const frame = frameRef.current;
     if (!d || d.id !== e.pointerId || !frame) return;
-    const unit = STICKER_W / frame.clientWidth;
+    const unit = size.width / frame.clientWidth;
     movePicked(d, () => ({ dx: d.from.dx + (e.clientX - d.x) * unit, dy: d.from.dy + (e.clientY - d.y) * unit }));
   }
 
@@ -693,8 +708,8 @@ export function NewMBackgroundDialog({
     if (!d || d.id !== e.pointerId || !frame) return;
     const r = frame.getBoundingClientRect();
     // Where the pointer is across and down the image, as a share of it.
-    const fx = (((e.clientX - r.left) * STICKER_W) / r.width - placement.x) / placement.width;
-    const fy = (((e.clientY - r.top) * STICKER_H) / r.height - placement.y) / placement.height;
+    const fx = (((e.clientX - r.left) * size.width) / r.width - placement.x) / placement.width;
+    const fy = (((e.clientY - r.top) * size.height) / r.height - placement.y) / placement.height;
     const within = (v: number, max: number) => Math.min(Math.max(v, 0), max);
     setCrop((c) => {
       if (d.side === "left") return { ...c, left: within(fx, 1 - c.right - MIN_KEEP) };
@@ -710,8 +725,8 @@ export function NewMBackgroundDialog({
 
   // The crop's outline and handles, kept to the part of it that is on the sticker.
   const shown = visibleRect(withCrop(placement, crop));
-  const onX = (v: number) => Math.min(Math.max(v, 0), STICKER_W);
-  const onY = (v: number) => Math.min(Math.max(v, 0), STICKER_H);
+  const onX = (v: number) => Math.min(Math.max(v, 0), size.width);
+  const onY = (v: number) => Math.min(Math.max(v, 0), size.height);
   const outline = { x1: onX(shown.x), x2: onX(shown.x + shown.width), y1: onY(shown.y), y2: onY(shown.y + shown.height) };
   const midX = (outline.x1 + outline.x2) / 2;
   const midY = (outline.y1 + outline.y2) / 2;
@@ -727,11 +742,14 @@ export function NewMBackgroundDialog({
     image &&
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
-        !samePlacement(withTexts(withLayout(withCrop(placement, crop), layout), texts), info?.placement ?? FULL_PLACEMENT)),
+        !samePlacement(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), info?.placement ?? FULL_PLACEMENT)),
   );
   // The layout is measured on a 958 x 761 sheet; an image of other proportions needs moving and cropping to fit.
-  const ratioOff = image ? Math.abs(image.width / image.height / (STICKER_W / STICKER_H) - 1) > 0.015 : false;
-  const stretched = samePlacement(placement, FULL_PLACEMENT);
+  const ratioOff = image ? Math.abs(image.width / image.height / (size.width / size.height) - 1) > 0.015 : false;
+  const stretched = samePlacement(withSize(placement, size), withSize(fullPlacement(size), size));
+  const imageShape = image ? sizeForImage(image.width, image.height) : null;
+  /** The sticker already has the image's shape. */
+  const matchesImage = imageShape ? Math.abs(imageShape.height - size.height) < 1 && Math.abs(imageShape.width - size.width) < 1 : true;
 
   return (
     <Modal
@@ -784,7 +802,7 @@ export function NewMBackgroundDialog({
           <Alert tone={ratioOff ? "warn" : "info"}>
             New image: {image.file.name} ({image.width} × {image.height}).{" "}
             {ratioOff
-              ? `Its proportions differ from the sticker (${STICKER_W} × ${STICKER_H}) — move, zoom and crop it to fit.`
+              ? `Its proportions differ from the sticker (${size.width} × ${size.height}) — move, zoom and crop it to fit.`
               : "Line it up below, then press Use this background. It takes the current image's place."}
           </Alert>
         ) : info && !info.uploaded && !loading ? (
@@ -811,7 +829,7 @@ export function NewMBackgroundDialog({
               role="group"
               aria-label="Background position: drag to move, arrow keys to nudge"
               className="relative w-full overflow-hidden border rounded bg-white select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
-              style={{ aspectRatio: `${STICKER_W} / ${STICKER_H}` }}
+              style={{ aspectRatio: `${size.width} / ${size.height}` }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -824,7 +842,7 @@ export function NewMBackgroundDialog({
                   alt=""
                   draggable={false}
                   className="absolute max-w-none pointer-events-none opacity-30"
-                  style={boxStyle(placement)}
+                  style={boxStyle(placement, size)}
                 />
               ) : null}
               <img
@@ -833,7 +851,7 @@ export function NewMBackgroundDialog({
                 draggable={false}
                 className="absolute max-w-none pointer-events-none"
                 style={{
-                  ...boxStyle(placement),
+                  ...boxStyle(placement, size),
                   clipPath: `inset(${crop.top * 100}% ${crop.right * 100}% ${crop.bottom * 100}% ${crop.left * 100}%)`,
                 }}
               />
@@ -845,10 +863,10 @@ export function NewMBackgroundDialog({
                   <div
                     className="absolute border-2 border-dashed border-teal-600 pointer-events-none"
                     style={{
-                      left: `${(outline.x1 / STICKER_W) * 100}%`,
-                      top: `${(outline.y1 / STICKER_H) * 100}%`,
-                      width: `${((outline.x2 - outline.x1) / STICKER_W) * 100}%`,
-                      height: `${((outline.y2 - outline.y1) / STICKER_H) * 100}%`,
+                      left: `${(outline.x1 / size.width) * 100}%`,
+                      top: `${(outline.y1 / size.height) * 100}%`,
+                      width: `${((outline.x2 - outline.x1) / size.width) * 100}%`,
+                      height: `${((outline.y2 - outline.y1) / size.height) * 100}%`,
                     }}
                   />
                   {handles.map((h) => {
@@ -860,8 +878,8 @@ export function NewMBackgroundDialog({
                         className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-teal-600 bg-white shadow touch-none"
                         style={{
                           // Kept a few pixels inside the preview, so an edge at the sticker's border can still be grabbed.
-                          left: `clamp(7px, ${(h.x / STICKER_W) * 100}%, calc(100% - 7px))`,
-                          top: `clamp(7px, ${(h.y / STICKER_H) * 100}%, calc(100% - 7px))`,
+                          left: `clamp(7px, ${(h.x / size.width) * 100}%, calc(100% - 7px))`,
+                          top: `clamp(7px, ${(h.y / size.height) * 100}%, calc(100% - 7px))`,
                           width: across ? 12 : 40,
                           height: across ? 40 : 12,
                           cursor: across ? "ew-resize" : "ns-resize",
@@ -894,10 +912,10 @@ export function NewMBackgroundDialog({
                               : "border border-dashed border-teal-600 bg-teal-600/5 hover:bg-teal-600/15"
                         }`}
                         style={{
-                          left: `${((b.x - SET_PAD) / STICKER_W) * 100}%`,
-                          top: `${((b.y - SET_PAD) / STICKER_H) * 100}%`,
-                          width: `${((b.width + 2 * SET_PAD) / STICKER_W) * 100}%`,
-                          height: `${((b.height + 2 * SET_PAD) / STICKER_H) * 100}%`,
+                          left: `${((b.x - SET_PAD) / size.width) * 100}%`,
+                          top: `${((b.y - SET_PAD) / size.height) * 100}%`,
+                          width: `${((b.width + 2 * SET_PAD) / size.width) * 100}%`,
+                          height: `${((b.height + 2 * SET_PAD) / size.height) * 100}%`,
                         }}
                         onPointerDown={(e) => onSetDown(picked, e)}
                         onPointerMove={onSetMove}
@@ -933,12 +951,28 @@ export function NewMBackgroundDialog({
                 size="sm"
                 icon={<RotateCcw className="size-3.5" />}
                 disabled={busy}
-                onClick={() => setPlacement(kept(fitPlacement(image.width, image.height)))}
+                onClick={() => setPlacement(kept(fitPlacement(image.width, image.height, size)))}
               >
                 Reset position
               </Button>
+              {!matchesImage && imageShape ? (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  title="Make the sticker the image's shape, with the image filling it"
+                  onClick={() => {
+                    setSize(imageShape);
+                    setPlacement(kept(fitPlacement(image.width, image.height, imageShape)));
+                  }}
+                >
+                  Match the image ({imageShape.width} × {imageShape.height})
+                </Button>
+              ) : null}
+              <span className="tabular-nums" title="The sticker's size, in sticker units. It follows the background image's shape.">
+                Sticker {Math.round(size.width)} × {Math.round(size.height)}
+              </span>
               {ratioOff ? (
-                <Button size="sm" disabled={busy || stretched} onClick={() => setPlacement(kept(FULL_PLACEMENT))}>
+                <Button size="sm" disabled={busy || stretched} onClick={() => setPlacement(kept(fullPlacement(size)))}>
                   Stretch to fit
                 </Button>
               ) : null}

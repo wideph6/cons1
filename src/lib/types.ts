@@ -1,7 +1,13 @@
+import type { PendingEditInfo } from "./pending-shared";
+
 export type Role = "superadmin" | "admin";
 
-export type CountedAction = "upload" | "replace" | "rename" | "delete";
-export const COUNTED_ACTIONS: CountedAction[] = ["upload", "replace", "rename", "delete"];
+/**
+ * What each user's counts are made of: Old M uploads, replaces, renames and deletes, and the New M and Appo
+ * documents they upload.
+ */
+export type CountedAction = "upload" | "replace" | "rename" | "delete" | "create_new_m" | "create_appo";
+export const COUNTED_ACTIONS: CountedAction[] = ["upload", "replace", "rename", "delete", "create_new_m", "create_appo"];
 
 export interface User {
   id: string;
@@ -102,6 +108,8 @@ export interface Domain {
 
 export interface FileRow {
   id: string;
+  /** Earlier versions still kept after a replace, for the super admin to compare (15 days each). */
+  previous_files?: number;
   link_id: string;
   filename: string;
   r2_key: string;
@@ -142,6 +150,18 @@ export interface CounterRow {
   total: number;
 }
 
+/** One count change made to a user by the super admin, with its remarks. */
+export interface CountChange {
+  id: number;
+  created_at: string;
+  by: string | null;
+  mode: string;
+  actions: string[];
+  changes: Array<{ action: CountedAction; before: number; after: number }>;
+  amount_change: number;
+  remarks: string;
+}
+
 export interface BreakdownRow {
   action: CountedAction;
   domain_id: string | null;
@@ -155,6 +175,8 @@ export type Counts = Record<CountedAction, number> & { total: number };
 
 export interface UserWithCounts extends User {
   counts: Counts;
+  /** What the user owes now (0 before supabase/finance.sql). */
+  pending?: number;
 }
 
 export interface DashboardStats {
@@ -328,4 +350,8 @@ export interface NewMRecord {
   uploader_email: string | null;
   /** The complete link, built by the server from the domain, its link and the document's values. */
   verify_url: string;
+  /** Earlier PDFs still kept after a replace, for the super admin to compare (15 days each). */
+  previous_files?: number;
+  /** An edit waiting for the super admin's approval (documents uploaded more than a month ago). */
+  pending_edit?: PendingEditInfo | null;
 }

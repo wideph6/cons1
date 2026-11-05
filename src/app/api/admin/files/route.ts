@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { ApiError, intParam, ok, requirePermission, requireUser, run } from "@/lib/api";
+import { previousCounts, sweepReplaced } from "@/lib/file-history";
 import { FILE_SELECT, mapFile } from "@/lib/files";
 import { db } from "@/lib/supabase";
 
@@ -51,6 +52,11 @@ export async function GET(req: NextRequest) {
     const { data, error, count } = await q;
     if (error) throw new ApiError(500, error.message);
 
-    return ok({ items: (data ?? []).map((f) => mapFile(f as never)), total: count ?? 0, limit, offset });
+    const files = (data ?? []).map((f) => mapFile(f as never));
+    // Earlier versions still kept after a replace, for the super admin to compare.
+    const previous = await previousCounts("old_m", files.map((f) => f.id));
+    const items = files.map((f) => ({ ...f, previous_files: previous.get(f.id) ?? 0 }));
+    after(() => sweepReplaced());
+    return ok({ items, total: count ?? 0, limit, offset });
   });
 }

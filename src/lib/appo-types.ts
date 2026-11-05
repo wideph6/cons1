@@ -1,3 +1,5 @@
+import type { PendingEditInfo } from "./pending-shared";
+
 /* ---------------- Appo ---------------- */
 
 /**
@@ -120,4 +122,8 @@ export interface AppoRecord {
   uploader_email: string | null;
   /** The complete link, built by the server from the domain, its link and the document's values. */
   verify_url: string;
+  /** Earlier PDFs still kept after a replace, for the super admin to compare (15 days each). */
+  previous_files?: number;
+  /** An edit waiting for the super admin's approval (documents uploaded more than a month ago). */
+  pending_edit?: PendingEditInfo | null;
 }

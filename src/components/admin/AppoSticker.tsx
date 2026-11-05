@@ -1,6 +1,6 @@
 "use client";
 
-import { Crop, Download, FileCode, Group, ImageUp, Move, RotateCcw, Ungroup } from "lucide-react";
+import { Crop, Download, FileCode, Group, ImageUp, Minus, Move, Plus, RotateCcw, Ungroup, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Checkbox, Field, Input, Loading, Modal, errorMessage, useToast } from "@/components/ui";
 import { api, downloadSvgAsPng, downloadSvgFile } from "@/lib/client";
@@ -12,9 +12,19 @@ import {
   clampPlacement,
   cleanPlacement,
   fitPlacement,
+  DEFAULT_SIZE,
   FULL_PLACEMENT,
-  groupRect,
+  fullPlacement,
+  sizeForImage,
+  stickerSize,
+  withSize,
+  type StickerSize,
   MAX_PIECE_TEXT,
+  MAX_SCALE,
+  MIN_SCALE,
+  scaleRect,
+  shownGroupRect,
+  shownPartRect,
   MIN_KEEP,
   NO_CROP,
   PIECES,
@@ -309,6 +319,9 @@ function box(p: BackgroundPlacement): BackgroundPlacement {
 function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean {
   const ca = a.crop ?? NO_CROP;
   const cb = b.crop ?? NO_CROP;
+  const sa = stickerSize(a);
+  const sb = stickerSize(b);
+  if (Math.abs(sa.width - sb.width) >= 0.01 || Math.abs(sa.height - sb.height) >= 0.01) return false;
   const close = (u: number, v: number, by: number) => Math.abs(u - v) < by;
   return (
     close(a.x, b.x, 0.01) &&
@@ -323,12 +336,18 @@ function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean 
 
 function sameSet(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
   const close = (u: number, v: number) => Math.abs(u - v) < 0.01;
-  const same = (u: SetOffset | undefined, v: SetOffset | undefined) =>
-    close(u?.dx ?? 0, v?.dx ?? 0) && close(u?.dy ?? 0, v?.dy ?? 0);
+  const same = (u: (SetOffset & { scale?: number }) | undefined, v: (SetOffset & { scale?: number }) | undefined) =>
+    close(u?.dx ?? 0, v?.dx ?? 0) && close(u?.dy ?? 0, v?.dy ?? 0) && Math.abs((u?.scale ?? 1) - (v?.scale ?? 1)) < 0.001;
   return same(a, b) && Boolean(a?.split) === Boolean(b?.split) && SET_PARTS.every((p) => same(a?.parts?.[p], b?.parts?.[p]));
 }
 
 const STILL: SetOffset = { dx: 0, dy: 0 };
+
+/**
+ * How much bigger the editor shows the sticker, to place things precisely. It only magnifies the view
+ * (scrollbars appear); the sticker itself stays 958 x 761.
+ */
+const VIEW_ZOOMS = [1, 1.5, 2, 3, 4];
 /** Breathing room round a set's box in the editor, in sticker units. */
 const SET_PAD = 3;
 
@@ -351,12 +370,12 @@ function setMove(l: SetLayout | undefined): SetOffset {
 }
 
 /** A placement as CSS on the editor's image, in percentages of the sticker. */
-function boxStyle(p: BackgroundPlacement) {
+function boxStyle(p: BackgroundPlacement, sz: StickerSize) {
   return {
-    left: `${(p.x / STICKER_W) * 100}%`,
-    top: `${(p.y / STICKER_H) * 100}%`,
-    width: `${(p.width / STICKER_W) * 100}%`,
-    height: `${(p.height / STICKER_H) * 100}%`,
+    left: `${(p.x / sz.width) * 100}%`,
+    top: `${(p.y / sz.height) * 100}%`,
+    width: `${(p.width / sz.width) * 100}%`,
+    height: `${(p.height / sz.height) * 100}%`,
   };
 }
 
@@ -386,6 +405,8 @@ export function AppoBackgroundDialog({
   const [saved, setSaved] = useState<EditorImage | null>(null);
   const [image, setImage] = useState<EditorImage | null>(null);
   const [placement, setPlacement] = useState<BackgroundPlacement>(FULL_PLACEMENT);
+  /** The sticker's own size: it follows the image's shape (see sizeForImage). */
+  const [size, setSize] = useState<StickerSize>(DEFAULT_SIZE);
   const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
   /** Showing the crop handles and the cut-off parts. */
   const [cropping, setCropping] = useState(false);
@@ -396,6 +417,8 @@ export function AppoBackgroundDialog({
   const [selected, setSelected] = useState<Picked | null>(null);
   /** The fixed words reworded for the sticker. */
   const [texts, setTexts] = useState<StickerTexts>({});
+  /** How much the editor magnifies the sticker (not the sticker's own size). */
+  const [viewZoom, setViewZoom] = useState(1);
   const [hasFrame, setHasFrame] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -407,7 +430,8 @@ export function AppoBackgroundDialog({
   const setDrag = useRef<{ id: number; set: StickerSetId; part: SetPart | null; x: number; y: number; from: SetOffset } | null>(null);
 
   function showSaved(p: BackgroundPlacement | null) {
-    setPlacement(box(p ?? FULL_PLACEMENT));
+    setPlacement(box(p ?? fullPlacement(stickerSize(p))));
+    setSize(stickerSize(p));
     setCrop(p?.crop ?? NO_CROP);
     setLayout(p?.layout ?? {});
     setTexts(p?.texts ?? {});
@@ -421,6 +445,7 @@ export function AppoBackgroundDialog({
     setCropping(false);
     setArranging(false);
     setSelected(null);
+    setViewZoom(1);
     setError(null);
     setLoading(true);
     let cancelled = false;
@@ -469,8 +494,8 @@ export function AppoBackgroundDialog({
   // dragging the image only moves it underneath.
   const overlay = useMemo(() => {
     if (!open) return null;
-    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, ...values }, measure));
-  }, [open, values, hasFrame, layout, texts]);
+    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, size, ...values }, measure));
+  }, [open, values, hasFrame, layout, texts, size]);
 
   /** Where each set (and each half of it) is drawn before it is moved, for grabbing it. */
   const setBoxes = useMemo(
@@ -484,10 +509,13 @@ export function AppoBackgroundDialog({
     if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return setError("Choose a JPG, PNG or WebP image.");
     if (file.size > 4 * 1024 * 1024) return setError("The background image must be 4 MB or smaller.");
     const dataUri = await blobToDataUri(file);
-    const size = await imageSize(dataUri);
-    if (!size.width || !size.height) return setError("That image could not be opened.");
-    setImage({ dataUri, ...size, file });
-    setPlacement(fitPlacement(size.width, size.height));
+    const px = await imageSize(dataUri);
+    if (!px.width || !px.height) return setError("That image could not be opened.");
+    // The sticker takes the image's shape, and the image fills it.
+    const next = sizeForImage(px.width, px.height);
+    setImage({ dataUri, ...px, file });
+    setSize(next);
+    setPlacement(fitPlacement(px.width, px.height, next));
     setCrop(NO_CROP);
     setCropping(false);
     setHasFrame(false);
@@ -507,7 +535,7 @@ export function AppoBackgroundDialog({
     if (!image) return;
     setBusy(true);
     try {
-      const sent = withTexts(withLayout(withCrop(placement, crop), layout), texts);
+      const sent = withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size);
       let next: BackgroundInfo;
       if (image.file) {
         const form = new FormData();
@@ -545,20 +573,20 @@ export function AppoBackgroundDialog({
 
   /** Keeps some of the cropped image on the sticker. */
   function kept(p: BackgroundPlacement, c: BackgroundCrop = crop): BackgroundPlacement {
-    return box(clampPlacement(withCrop(p, c)));
+    return box(clampPlacement(withCrop(p, c), size));
   }
 
-  const zoom = placement.width / STICKER_W;
+  const zoom = placement.width / size.width;
 
   function zoomTo(z: number) {
     if (!image) return;
     const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
     // The point at the sticker's centre stays where it is.
-    const fx = (STICKER_W / 2 - placement.x) / placement.width;
-    const fy = (STICKER_H / 2 - placement.y) / placement.height;
-    const width = STICKER_W * next;
+    const fx = (size.width / 2 - placement.x) / placement.width;
+    const fy = (size.height / 2 - placement.y) / placement.height;
+    const width = size.width * next;
     const height = (width * image.height) / image.width;
-    setPlacement(kept({ x: STICKER_W / 2 - fx * width, y: STICKER_H / 2 - fy * height, width, height }));
+    setPlacement(kept({ x: size.width / 2 - fx * width, y: size.height / 2 - fy * height, width, height }));
   }
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -573,7 +601,7 @@ export function AppoBackgroundDialog({
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     // Screen pixels to sticker units; the preview keeps the sticker's proportions, so one factor serves both.
-    const unit = STICKER_W / e.currentTarget.clientWidth;
+    const unit = size.width / e.currentTarget.clientWidth;
     setPlacement(kept({ ...d.from, x: d.from.x + (e.clientX - d.x) * unit, y: d.from.y + (e.clientY - d.y) * unit }));
   }
 
@@ -607,11 +635,12 @@ export function AppoBackgroundDialog({
     if (!b) return;
     setLayout((l) => {
       const cur = l[set];
-      if (!part) return { ...l, [set]: { ...cur, ...clampOffset(groupRect(b, cur), to(setMove(cur))) } };
+      if (!part) return { ...l, [set]: { ...cur, ...clampOffset(shownGroupRect(b, { ...cur, dx: 0, dy: 0 }), to(setMove(cur)), size) } };
       const r = b.parts[part];
       if (!r) return l;
-      const next = clampOffset(shiftRect(r, setMove(cur)), to(cur?.parts?.[part] ?? STILL));
-      return { ...l, [set]: { ...setMove(cur), ...cur, parts: { ...cur?.parts, [part]: next } } };
+      const pl = cur?.parts?.[part];
+      const next = clampOffset(shiftRect(scaleRect(r, pl?.scale), setMove(cur)), to(pl ?? STILL), size);
+      return { ...l, [set]: { ...setMove(cur), ...cur, parts: { ...cur?.parts, [part]: { ...pl, ...next } } } };
     });
   }
 
@@ -633,8 +662,32 @@ export function AppoBackgroundDialog({
     const d = setDrag.current;
     const frame = frameRef.current;
     if (!d || d.id !== e.pointerId || !frame) return;
-    const unit = STICKER_W / frame.clientWidth;
+    // A half inside a set made bigger or smaller moves by that much less or more, to follow the pointer.
+    const unit = size.width / frame.clientWidth / (d.part ? (layout[d.set]?.scale ?? 1) : 1);
     movePicked(d, () => ({ dx: d.from.dx + (e.clientX - d.x) * unit, dy: d.from.dy + (e.clientY - d.y) * unit }));
+  }
+
+  /** The size of the picked set or half (1 = as made). */
+  function pickedScale({ set, part }: Picked): number {
+    const cur = layout[set];
+    return (part ? cur?.parts?.[part]?.scale : cur?.scale) ?? 1;
+  }
+
+  /** Makes the picked set (or half) bigger or smaller, around its middle. */
+  function setPickedScale({ set, part }: Picked, value: number) {
+    const s = Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, value)) * 1000) / 1000;
+    setLayout((l) => {
+      const cur = { ...setMove(l[set]), ...l[set] };
+      if (!part) {
+        if (s === 1) delete cur.scale;
+        else cur.scale = s;
+        return { ...l, [set]: cur };
+      }
+      const pl = { ...STILL, ...cur.parts?.[part] };
+      if (s === 1) delete pl.scale;
+      else pl.scale = s;
+      return { ...l, [set]: { ...cur, parts: { ...cur.parts, [part]: pl } } };
+    });
   }
 
   function onSetUp(e: PointerEvent<HTMLDivElement>) {
@@ -677,11 +730,10 @@ export function AppoBackgroundDialog({
     const b = setBoxes[id];
     if (!b) return [];
     const l = layout[id];
-    const off = setMove(l);
     if (isSplit(id)) {
-      return SET_PARTS.map((part) => ({ picked: { set: id, part }, rect: shiftRect(shiftRect(b.parts[part]!, l?.parts?.[part] ?? STILL), off) }));
+      return SET_PARTS.map((part) => ({ picked: { set: id, part }, rect: shownPartRect(b, l, part) ?? b.whole }));
     }
-    return [{ picked: { set: id, part: null }, rect: shiftRect(groupRect(b, l), off) }];
+    return [{ picked: { set: id, part: null }, rect: shownGroupRect(b, l) }];
   });
 
   /* ----- Cropping ----- */
@@ -700,8 +752,8 @@ export function AppoBackgroundDialog({
     if (!d || d.id !== e.pointerId || !frame) return;
     const r = frame.getBoundingClientRect();
     // Where the pointer is across and down the image, as a share of it.
-    const fx = (((e.clientX - r.left) * STICKER_W) / r.width - placement.x) / placement.width;
-    const fy = (((e.clientY - r.top) * STICKER_H) / r.height - placement.y) / placement.height;
+    const fx = (((e.clientX - r.left) * size.width) / r.width - placement.x) / placement.width;
+    const fy = (((e.clientY - r.top) * size.height) / r.height - placement.y) / placement.height;
     const within = (v: number, max: number) => Math.min(Math.max(v, 0), max);
     setCrop((c) => {
       if (d.side === "left") return { ...c, left: within(fx, 1 - c.right - MIN_KEEP) };
@@ -717,8 +769,8 @@ export function AppoBackgroundDialog({
 
   // The crop's outline and handles, kept to the part of it that is on the sticker.
   const shown = visibleRect(withCrop(placement, crop));
-  const onX = (v: number) => Math.min(Math.max(v, 0), STICKER_W);
-  const onY = (v: number) => Math.min(Math.max(v, 0), STICKER_H);
+  const onX = (v: number) => Math.min(Math.max(v, 0), size.width);
+  const onY = (v: number) => Math.min(Math.max(v, 0), size.height);
   const outline = { x1: onX(shown.x), x2: onX(shown.x + shown.width), y1: onY(shown.y), y2: onY(shown.y + shown.height) };
   const midX = (outline.x1 + outline.x2) / 2;
   const midY = (outline.y1 + outline.y2) / 2;
@@ -734,11 +786,14 @@ export function AppoBackgroundDialog({
     image &&
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
-        !samePlacement(withTexts(withLayout(withCrop(placement, crop), layout), texts), info?.placement ?? FULL_PLACEMENT)),
+        !samePlacement(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), info?.placement ?? FULL_PLACEMENT)),
   );
   // The layout is measured on a 958 x 761 sheet; an image of other proportions needs moving and cropping to fit.
-  const ratioOff = image ? Math.abs(image.width / image.height / (STICKER_W / STICKER_H) - 1) > 0.015 : false;
-  const stretched = samePlacement(placement, FULL_PLACEMENT);
+  const ratioOff = image ? Math.abs(image.width / image.height / (size.width / size.height) - 1) > 0.015 : false;
+  const stretched = samePlacement(withSize(placement, size), withSize(fullPlacement(size), size));
+  const imageShape = image ? sizeForImage(image.width, image.height) : null;
+  /** The sticker already has the image's shape. */
+  const matchesImage = imageShape ? Math.abs(imageShape.height - size.height) < 1 && Math.abs(imageShape.width - size.width) < 1 : true;
 
   return (
     <Modal
@@ -791,7 +846,7 @@ export function AppoBackgroundDialog({
           <Alert tone={ratioOff ? "warn" : "info"}>
             New image: {image.file.name} ({image.width} × {image.height}).{" "}
             {ratioOff
-              ? `Its proportions differ from the sticker (${STICKER_W} × ${STICKER_H}) — move, zoom and crop it to fit.`
+              ? `Its proportions differ from the sticker (${size.width} × ${size.height}) — move, zoom and crop it to fit.`
               : "Line it up below, then press Use this background. It takes the current image's place."}
           </Alert>
         ) : info && !info.uploaded && !loading ? (
@@ -812,13 +867,40 @@ export function AppoBackgroundDialog({
               disabled={busy}
               onChange={(e) => setHasFrame(e.target.checked)}
             />
+            <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-text-muted">
+              <span>View</span>
+              <Button
+                size="sm"
+                icon={<ZoomOut className="size-3.5" />}
+                disabled={busy || viewZoom <= VIEW_ZOOMS[0]}
+                title="Show the sticker smaller"
+                onClick={() => setViewZoom((z) => [...VIEW_ZOOMS].reverse().find((v) => v < z) ?? VIEW_ZOOMS[0])}
+              />
+              <span className="tabular-nums w-11 text-center">{Math.round(viewZoom * 100)}%</span>
+              <Button
+                size="sm"
+                icon={<ZoomIn className="size-3.5" />}
+                disabled={busy || viewZoom >= VIEW_ZOOMS[VIEW_ZOOMS.length - 1]}
+                title="Show the sticker bigger"
+                onClick={() => setViewZoom((z) => VIEW_ZOOMS.find((v) => v > z) ?? z)}
+              />
+              {viewZoom !== 1 ? (
+                <Button size="sm" disabled={busy} onClick={() => setViewZoom(1)}>
+                  Fit
+                </Button>
+              ) : null}
+              <span className="text-text-faint">
+                Only magnifies this view — scroll to move around. The sticker itself stays {size.width} × {size.height}.
+              </span>
+            </div>
+            <div className="max-h-[70vh] overflow-auto border rounded bg-surface-2">
             <div
               ref={frameRef}
               tabIndex={0}
               role="group"
               aria-label="Background position: drag to move, arrow keys to nudge"
-              className="relative w-full overflow-hidden border rounded bg-white select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
-              style={{ aspectRatio: `${STICKER_W} / ${STICKER_H}` }}
+              className="relative overflow-hidden bg-white select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+              style={{ aspectRatio: `${size.width} / ${size.height}`, width: `${viewZoom * 100}%` }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -831,7 +913,7 @@ export function AppoBackgroundDialog({
                   alt=""
                   draggable={false}
                   className="absolute max-w-none pointer-events-none opacity-30"
-                  style={boxStyle(placement)}
+                  style={boxStyle(placement, size)}
                 />
               ) : null}
               <img
@@ -840,7 +922,7 @@ export function AppoBackgroundDialog({
                 draggable={false}
                 className="absolute max-w-none pointer-events-none"
                 style={{
-                  ...boxStyle(placement),
+                  ...boxStyle(placement, size),
                   clipPath: `inset(${crop.top * 100}% ${crop.right * 100}% ${crop.bottom * 100}% ${crop.left * 100}%)`,
                 }}
               />
@@ -852,10 +934,10 @@ export function AppoBackgroundDialog({
                   <div
                     className="absolute border-2 border-dashed border-teal-600 pointer-events-none"
                     style={{
-                      left: `${(outline.x1 / STICKER_W) * 100}%`,
-                      top: `${(outline.y1 / STICKER_H) * 100}%`,
-                      width: `${((outline.x2 - outline.x1) / STICKER_W) * 100}%`,
-                      height: `${((outline.y2 - outline.y1) / STICKER_H) * 100}%`,
+                      left: `${(outline.x1 / size.width) * 100}%`,
+                      top: `${(outline.y1 / size.height) * 100}%`,
+                      width: `${((outline.x2 - outline.x1) / size.width) * 100}%`,
+                      height: `${((outline.y2 - outline.y1) / size.height) * 100}%`,
                     }}
                   />
                   {handles.map((h) => {
@@ -867,8 +949,8 @@ export function AppoBackgroundDialog({
                         className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-teal-600 bg-white shadow touch-none"
                         style={{
                           // Kept a few pixels inside the preview, so an edge at the sticker's border can still be grabbed.
-                          left: `clamp(7px, ${(h.x / STICKER_W) * 100}%, calc(100% - 7px))`,
-                          top: `clamp(7px, ${(h.y / STICKER_H) * 100}%, calc(100% - 7px))`,
+                          left: `clamp(7px, ${(h.x / size.width) * 100}%, calc(100% - 7px))`,
+                          top: `clamp(7px, ${(h.y / size.height) * 100}%, calc(100% - 7px))`,
                           width: across ? 12 : 40,
                           height: across ? 40 : 12,
                           cursor: across ? "ew-resize" : "ns-resize",
@@ -901,10 +983,10 @@ export function AppoBackgroundDialog({
                               : "border border-dashed border-teal-600 bg-teal-600/5 hover:bg-teal-600/15"
                         }`}
                         style={{
-                          left: `${((b.x - SET_PAD) / STICKER_W) * 100}%`,
-                          top: `${((b.y - SET_PAD) / STICKER_H) * 100}%`,
-                          width: `${((b.width + 2 * SET_PAD) / STICKER_W) * 100}%`,
-                          height: `${((b.height + 2 * SET_PAD) / STICKER_H) * 100}%`,
+                          left: `${((b.x - SET_PAD) / size.width) * 100}%`,
+                          top: `${((b.y - SET_PAD) / size.height) * 100}%`,
+                          width: `${((b.width + 2 * SET_PAD) / size.width) * 100}%`,
+                          height: `${((b.height + 2 * SET_PAD) / size.height) * 100}%`,
                         }}
                         onPointerDown={(e) => onSetDown(picked, e)}
                         onPointerMove={onSetMove}
@@ -921,9 +1003,10 @@ export function AppoBackgroundDialog({
                   })
                 : null}
             </div>
+            </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[12.5px] text-text-muted">
-              <label className="inline-flex items-center gap-2">
-                Zoom
+              <label className="inline-flex items-center gap-2" title="The background image's size on the sticker">
+                Image size
                 <input
                   type="range"
                   min={MIN_ZOOM}
@@ -940,12 +1023,28 @@ export function AppoBackgroundDialog({
                 size="sm"
                 icon={<RotateCcw className="size-3.5" />}
                 disabled={busy}
-                onClick={() => setPlacement(kept(fitPlacement(image.width, image.height)))}
+                onClick={() => setPlacement(kept(fitPlacement(image.width, image.height, size)))}
               >
                 Reset position
               </Button>
+              {!matchesImage && imageShape ? (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  title="Make the sticker the image's shape, with the image filling it"
+                  onClick={() => {
+                    setSize(imageShape);
+                    setPlacement(kept(fitPlacement(image.width, image.height, imageShape)));
+                  }}
+                >
+                  Match the image ({imageShape.width} × {imageShape.height})
+                </Button>
+              ) : null}
+              <span className="tabular-nums" title="The sticker's size, in sticker units. It follows the background image's shape.">
+                Sticker {Math.round(size.width)} × {Math.round(size.height)}
+              </span>
               {ratioOff ? (
-                <Button size="sm" disabled={busy || stretched} onClick={() => setPlacement(kept(FULL_PLACEMENT))}>
+                <Button size="sm" disabled={busy || stretched} onClick={() => setPlacement(kept(fullPlacement(size)))}>
                   Stretch to fit
                 </Button>
               ) : null}
@@ -980,6 +1079,42 @@ export function AppoBackgroundDialog({
               >
                 {arranging ? "Done moving" : "Move text & QR"}
               </Button>
+              {arranging && selected ? (
+                <span className="inline-flex items-center gap-1.5" title={`Size of ${pickedName(selected)}`}>
+                  <span>Size</span>
+                  <Button
+                    size="sm"
+                    icon={<Minus className="size-3.5" />}
+                    disabled={busy || pickedScale(selected) <= MIN_SCALE}
+                    title="Smaller (5%)"
+                    onClick={() => setPickedScale(selected, pickedScale(selected) - 0.05)}
+                  />
+                  <input
+                    type="range"
+                    min={MIN_SCALE}
+                    max={MAX_SCALE}
+                    step={0.01}
+                    value={pickedScale(selected)}
+                    disabled={busy}
+                    onChange={(e) => setPickedScale(selected, Number(e.target.value))}
+                    className="w-28 accent-teal-600"
+                    aria-label={`Size of ${pickedName(selected)}`}
+                  />
+                  <Button
+                    size="sm"
+                    icon={<Plus className="size-3.5" />}
+                    disabled={busy || pickedScale(selected) >= MAX_SCALE}
+                    title="Bigger (5%)"
+                    onClick={() => setPickedScale(selected, pickedScale(selected) + 0.05)}
+                  />
+                  <span className="tabular-nums w-11">{Math.round(pickedScale(selected) * 100)}%</span>
+                  {pickedScale(selected) !== 1 ? (
+                    <Button size="sm" disabled={busy} onClick={() => setPickedScale(selected, 1)}>
+                      As made
+                    </Button>
+                  ) : null}
+                </span>
+              ) : null}
               {arranging && selected && canSplit(selected.set) ? (
                 isSplit(selected.set) ? (
                   <Button size="sm" icon={<Group className="size-3.5" />} disabled={busy} onClick={() => setSplit(selected.set, false)}>

@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, KeyRound, RotateCcw, Save } from "lucide-react";
+import { ArrowLeft, KeyRound, Minus, RotateCcw, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PermissionGrid, generatePassword } from "@/components/admin/UsersManager";
 import { actionTone, describeActivity } from "@/components/admin/ActivityLog";
+import { UserFinance } from "@/components/admin/FinanceAccount";
 import { useSession } from "@/components/SessionProvider";
 import {
   Alert,
@@ -20,11 +21,14 @@ import {
   Modal,
   PageHeader,
   Select,
+  Textarea,
   errorMessage,
   useToast,
 } from "@/components/ui";
 import { api } from "@/lib/client";
-import { COUNTED_ACTIONS, type Activity, type BreakdownRow, type CountedAction, type CounterRow, type Counts, type Paged, type User } from "@/lib/types";
+import { emptyCounts } from "@/lib/counts";
+import { BILLED_ACTIONS, countChangeAmount, formatMoney, NO_BALANCE, NO_RATES, type FinanceBalance, type FinanceRates } from "@/lib/finance-shared";
+import { COUNTED_ACTIONS, type Activity, type BreakdownRow, type CountChange, type CountedAction, type CounterRow, type Counts, type Paged, type User } from "@/lib/types";
 import { ACTION_LABELS, displayPath, formatDateTime } from "@/lib/utils";
 
 interface DetailResponse {
@@ -32,14 +36,23 @@ interface DetailResponse {
   counters: CounterRow[];
   counts: Counts;
   breakdown: BreakdownRow[];
+  /** What a count change does to what the user owes (missing before finance.sql). */
+  rates?: FinanceRates;
+  balance?: FinanceBalance;
+  /** The latest count changes, with their remarks (from the counters endpoint). */
+  history?: CountChange[];
 }
 
 const ACTION_TITLES: Record<CountedAction, string> = {
-  upload: "Uploads",
+  upload: "Old M uploads",
   replace: "Replaces",
   rename: "Renames",
   delete: "Deletes",
+  create_new_m: "New M documents",
+  create_appo: "Appo documents",
 };
+
+type CounterMode = "set" | "reset" | "subtract";
 
 export function UserDetail({ id }: { id: string }) {
   const { user: me } = useSession();
@@ -59,8 +72,12 @@ export function UserDetail({ id }: { id: string }) {
 
   const [pwOpen, setPwOpen] = useState(false);
   const [newPw, setNewPw] = useState("");
-  const [counterEdit, setCounterEdit] = useState<{ action: CountedAction | "all"; mode: "set" | "reset" } | null>(null);
+  const [counterEdit, setCounterEdit] = useState<{ action: CountedAction | "all"; mode: CounterMode } | null>(null);
+  /** Bumped after a count change, so the finance account below reloads with what it did. */
+  const [financeKey, setFinanceKey] = useState(0);
   const [counterValue, setCounterValue] = useState("0");
+  /** Why a count is lowered or reset; required for those. */
+  const [remarks, setRemarks] = useState("");
   const [delOpen, setDelOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -116,13 +133,21 @@ export function UserDetail({ id }: { id: string }) {
     if (!counterEdit) return;
     setBusy(true);
     try {
-      const r = await api<{ counters: CounterRow[]; counts: Counts; breakdown: BreakdownRow[] }>(`/api/admin/users/${id}/counters`, {
+      const r = await api<Omit<DetailResponse, "item">>(`/api/admin/users/${id}/counters`, {
         method: "PATCH",
-        json: { action: counterEdit.action, mode: counterEdit.mode, value: counterEdit.mode === "set" ? Number(counterValue) : undefined },
+        json: { action: counterEdit.action, mode: counterEdit.mode, value: counterEdit.mode === "reset" ? undefined : Number(counterValue), remarks },
       });
       setData((prev) => prev && { ...prev, ...r });
-      toast(counterEdit.mode === "reset" ? "Counter reset to 0" : `Counter set to ${counterValue}`);
+      toast(
+        counterEdit.mode === "reset"
+          ? "Counter reset to 0"
+          : counterEdit.mode === "subtract"
+            ? `${counterValue} taken off the count`
+            : `Counter set to ${counterValue}`,
+      );
       setCounterEdit(null);
+      setRemarks("");
+      setFinanceKey((k) => k + 1);
     } catch (e) {
       toast(errorMessage(e), "danger");
     } finally {
@@ -150,7 +175,7 @@ export function UserDetail({ id }: { id: string }) {
       const host = row.domain_hostname ?? "(deleted domain)";
       const dom = map.get(host) ?? { hostname: host, domain_id: row.domain_id, links: new Map() };
       const pathKey = row.link_path ?? "";
-      const link = dom.links.get(pathKey) ?? { path: pathKey, link_id: row.link_id, counts: { upload: 0, replace: 0, rename: 0, delete: 0, total: 0 } };
+      const link = dom.links.get(pathKey) ?? { path: pathKey, link_id: row.link_id, counts: emptyCounts() };
       link.counts[row.action] += Number(row.cnt);
       link.counts.total += Number(row.cnt);
       dom.links.set(pathKey, link);
@@ -163,6 +188,25 @@ export function UserDetail({ id }: { id: string }) {
   if (!data) return <Loading />;
   const u = data.item;
   const countedSince = data.counters.reduce<string | null>((min, c) => (c.counted_from > "1971" && (!min || c.counted_from < min) ? c.counted_from : min), null);
+  const rates = data.rates ?? NO_RATES;
+  const balance = data.balance ?? NO_BALANCE;
+
+  /** What the open count change would do: each count before and after, and the money it moves. */
+  const plan = (() => {
+    if (!counterEdit) return null;
+    const actions = counterEdit.action === "all" ? COUNTED_ACTIONS : [counterEdit.action];
+    const n = Number(counterValue);
+    const valid = counterEdit.mode === "reset" || (Number.isInteger(n) && n >= 0 && (counterEdit.mode !== "subtract" || n > 0));
+    const rows = actions.map((a) => {
+      const before = data.counts[a];
+      const after = counterEdit.mode === "reset" ? 0 : counterEdit.mode === "set" ? Math.max(0, n || 0) : Math.max(0, before - (n || 0));
+      return { action: a, before, after, money: countChangeAmount(a, after - before, rates, u.role) };
+    });
+    const lowers = rows.some((r) => r.after < r.before);
+    // Lowering or resetting a count needs remarks saying why.
+    const needsRemarks = counterEdit.mode !== "set" || lowers;
+    return { valid: valid && (!needsRemarks || remarks.trim().length >= 3), needsRemarks, rows, money: rows.reduce((sum, r) => sum + r.money, 0) };
+  })();
 
   return (
     <>
@@ -198,7 +242,7 @@ export function UserDetail({ id }: { id: string }) {
           </Button>
         }
       >
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
           {COUNTED_ACTIONS.map((a) => {
             const row = data.counters.find((c) => c.action === a);
             return (
@@ -206,7 +250,10 @@ export function UserDetail({ id }: { id: string }) {
                 <div className="text-[12px] text-text-muted">{ACTION_TITLES[a]}</div>
                 <div className="text-2xl font-semibold tabular-nums mt-0.5">{data.counts[a]}</div>
                 {row && row.base > 0 ? <div className="text-[11.5px] text-text-faint">includes manual base of {row.base}</div> : null}
-                <div className="flex gap-1 mt-2">
+                {BILLED_ACTIONS[a] && u.role === "admin" ? (
+                  <div className="text-[11.5px] text-text-muted">{formatMoney(rates[BILLED_ACTIONS[a]!])} each</div>
+                ) : null}
+                <div className="flex flex-wrap gap-1 mt-2">
                   <Button
                     size="sm"
                     variant="ghost"
@@ -216,6 +263,18 @@ export function UserDetail({ id }: { id: string }) {
                     }}
                   >
                     Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Minus className="size-3.5" />}
+                    disabled={data.counts[a] === 0}
+                    onClick={() => {
+                      setCounterValue("1");
+                      setCounterEdit({ action: a, mode: "subtract" });
+                    }}
+                  >
+                    Subtract
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setCounterEdit({ action: a, mode: "reset" })}>
                     Reset
@@ -233,6 +292,45 @@ export function UserDetail({ id }: { id: string }) {
           </div>
         </div>
 
+        {data.history?.length ? (
+          <>
+            <h3 className="text-sm font-semibold mt-5 mb-2">Count changes</h3>
+            <div className="overflow-x-auto border rounded-md max-h-64 overflow-y-auto">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Change</th>
+                    <th className="text-right">Amount</th>
+                    <th>Remarks</th>
+                    <th>By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.history.map((h) => (
+                    <tr key={h.id}>
+                      <td className="whitespace-nowrap text-[12.5px] text-text-muted">{formatDateTime(h.created_at)}</td>
+                      <td className="text-[12.5px]">
+                        {h.changes.length
+                          ? h.changes
+                              .filter((c) => c.before !== c.after || h.changes.length === 1)
+                              .map((c) => `${ACTION_TITLES[c.action] ?? c.action}: ${c.before} → ${c.after}`)
+                              .join(", ") || "No change"
+                          : `${h.mode} ${h.actions.join(", ")}`}
+                      </td>
+                      <td className="text-right tabular-nums whitespace-nowrap">
+                        {h.amount_change ? `${h.amount_change < 0 ? "−" : "+"}${formatMoney(Math.abs(h.amount_change))}` : "—"}
+                      </td>
+                      <td className="text-[12.5px]">{h.remarks || <span className="text-text-faint">—</span>}</td>
+                      <td className="text-[12.5px] text-text-muted">{h.by ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+
         <h3 className="text-sm font-semibold mt-5 mb-2">Where these actions happened</h3>
         {grouped.length === 0 ? (
           <p className="text-sm text-text-muted">No counted actions since the last reset.</p>
@@ -247,6 +345,8 @@ export function UserDetail({ id }: { id: string }) {
                   <th className="text-right">Replaces</th>
                   <th className="text-right">Renames</th>
                   <th className="text-right">Deletes</th>
+                  <th className="text-right">New M</th>
+                  <th className="text-right">Appo</th>
                   <th className="text-right">Total</th>
                 </tr>
               </thead>
@@ -260,14 +360,18 @@ export function UserDetail({ id }: { id: string }) {
                           <Link href={`/admin/old-m?link=${l.link_id}`} className="hover:text-teal-700">
                             {displayPath(l.path)}
                           </Link>
-                        ) : (
+                        ) : l.path ? (
                           <span className="text-text-muted">{displayPath(l.path)} (deleted)</span>
+                        ) : (
+                          <span className="text-text-muted">New M / Appo documents</span>
                         )}
                       </td>
                       <td className="text-right tabular-nums">{l.counts.upload}</td>
                       <td className="text-right tabular-nums">{l.counts.replace}</td>
                       <td className="text-right tabular-nums">{l.counts.rename}</td>
                       <td className="text-right tabular-nums">{l.counts.delete}</td>
+                      <td className="text-right tabular-nums">{l.counts.create_new_m}</td>
+                      <td className="text-right tabular-nums">{l.counts.create_appo}</td>
                       <td className="text-right tabular-nums font-semibold">{l.counts.total}</td>
                     </tr>
                   )),
@@ -277,6 +381,8 @@ export function UserDetail({ id }: { id: string }) {
           </div>
         )}
       </Card>
+
+      <UserFinance key={financeKey} userId={u.id} onChanged={() => void load()} />
 
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         {/* Profile + permissions */}
@@ -388,33 +494,94 @@ export function UserDetail({ id }: { id: string }) {
 
       <Modal
         open={Boolean(counterEdit)}
-        onClose={() => setCounterEdit(null)}
+        onClose={() => {
+          if (busy) return;
+          setCounterEdit(null);
+          setRemarks("");
+        }}
         title={
           counterEdit?.mode === "reset"
             ? `Reset ${counterEdit.action === "all" ? "all counters" : ACTION_TITLES[counterEdit.action].toLowerCase()} to 0?`
-            : `Set ${counterEdit ? ACTION_TITLES[counterEdit.action as CountedAction].toLowerCase() : ""} count`
+            : counterEdit?.mode === "subtract"
+              ? `Subtract from ${ACTION_TITLES[counterEdit.action as CountedAction].toLowerCase()}`
+              : `Set ${counterEdit ? ACTION_TITLES[counterEdit.action as CountedAction].toLowerCase() : ""} count`
         }
         width="max-w-md"
         footer={
           <>
-            <Button onClick={() => setCounterEdit(null)} disabled={busy}>
+            <Button
+              onClick={() => {
+                setCounterEdit(null);
+                setRemarks("");
+              }}
+              disabled={busy}
+            >
               Cancel
             </Button>
-            <Button variant="primary" loading={busy} onClick={applyCounter}>
-              {counterEdit?.mode === "reset" ? "Reset to 0" : "Save count"}
+            <Button
+              variant={counterEdit?.mode === "set" ? "primary" : "danger"}
+              loading={busy}
+              disabled={!plan?.valid}
+              onClick={applyCounter}
+            >
+              {counterEdit?.mode === "reset" ? "Yes, reset to 0" : counterEdit?.mode === "subtract" ? "Yes, subtract" : "Save count"}
             </Button>
           </>
         }
       >
-        {counterEdit?.mode === "set" ? (
-          <Field label="New value" hint="Future actions add on top of this number.">
-            <Input type="number" min={0} step={1} value={counterValue} onChange={(e) => setCounterValue(e.target.value)} autoFocus />
-          </Field>
-        ) : (
-          <p className="text-sm">
-            The count starts again from zero now. The activity history is kept — only the counter changes.
-          </p>
-        )}
+        <div className="space-y-3">
+          {counterEdit?.mode === "set" ? (
+            <Field label="New value" hint="Future actions add on top of this number.">
+              <Input type="number" min={0} step={1} value={counterValue} onChange={(e) => setCounterValue(e.target.value)} autoFocus />
+            </Field>
+          ) : null}
+          {counterEdit?.mode === "subtract" ? (
+            <Field label="How many to take off" hint={`The count is ${data.counts[counterEdit.action as CountedAction]} now; it never goes below 0.`}>
+              <Input type="number" min={1} step={1} value={counterValue} onChange={(e) => setCounterValue(e.target.value)} autoFocus />
+            </Field>
+          ) : null}
+          {plan?.needsRemarks ? (
+            <Field label="Remarks (required)" hint="Why the count is lowered or reset. Kept with the change and shown in its history.">
+              <Textarea rows={2} maxLength={300} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. 3 entries were uploaded by mistake" />
+            </Field>
+          ) : null}
+          {plan ? (
+            <Alert tone={counterEdit?.mode === "set" ? "info" : "warn"}>
+              <div className="space-y-1">
+                {plan.rows
+                  .filter((r) => r.before !== r.after || plan.rows.length === 1)
+                  .map((r) => (
+                    <div key={r.action}>
+                      {ACTION_TITLES[r.action]}: <b>{r.before}</b> → <b>{r.after}</b>
+                      {r.money ? (
+                        <span>
+                          {" "}
+                          ({r.money < 0 ? "−" : "+"}
+                          {formatMoney(Math.abs(r.money))})
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                {plan.money < 0 ? (
+                  <p className="font-medium pt-1">
+                    Doing this takes {formatMoney(-plan.money)} off {u.name || u.email}&apos;s pending amount: from{" "}
+                    {formatMoney(balance.pending)} to {formatMoney(balance.pending + plan.money)}.
+                  </p>
+                ) : plan.money > 0 ? (
+                  <p className="font-medium pt-1">
+                    Doing this adds {formatMoney(plan.money)} to {u.name || u.email}&apos;s pending amount: from {formatMoney(balance.pending)}{" "}
+                    to {formatMoney(balance.pending + plan.money)}.
+                  </p>
+                ) : u.role === "admin" && plan.rows.some((r) => BILLED_ACTIONS[r.action] && r.before !== r.after) ? (
+                  <p className="pt-1">No amount is set for these entries, so the pending amount does not change.</p>
+                ) : null}
+                {counterEdit?.mode === "reset" ? (
+                  <p className="pt-1">The count starts again from zero now. The activity history is kept. This cannot be undone.</p>
+                ) : null}
+              </div>
+            </Alert>
+          ) : null}
+        </div>
       </Modal>
 
       <ConfirmDialog

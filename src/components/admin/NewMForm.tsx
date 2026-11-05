@@ -3,7 +3,9 @@
 import { FileUp, ImageUp, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LinkQrPreview } from "@/components/admin/NewMQr";
+import { useSession } from "@/components/SessionProvider";
 import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } from "@/components/ui";
+import { needsApproval, type PendingEditInfo } from "@/lib/pending-shared";
 import { api } from "@/lib/client";
 import { uploadNewMFile, type UploadedObject } from "@/lib/new-m-client";
 import { NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber } from "@/lib/new-m-link";
@@ -80,6 +82,7 @@ export function NewMForm({
   onListsChanged: () => Promise<void> | void;
 }) {
   const { toast } = useToast();
+  const { user: me } = useSession();
   const editing = Boolean(record);
 
   const [draft, setDraft] = useState<Draft>({
@@ -301,9 +304,13 @@ export function NewMForm({
       });
 
       const r = editing && record
-        ? await api<{ item: NewMRecord }>(`/api/admin/new-m/${record.id}`, { method: "PATCH", json: payload })
-        : await api<{ item: NewMRecord }>("/api/admin/new-m", { json: payload });
-      toast(`${r.item.attestation_number} ${editing ? "updated" : "uploaded"}`);
+        ? await api<{ item: NewMRecord; pending?: PendingEditInfo | null }>(`/api/admin/new-m/${record.id}`, { method: "PATCH", json: payload })
+        : await api<{ item: NewMRecord; pending?: PendingEditInfo | null }>("/api/admin/new-m", { json: payload });
+      toast(
+        r.pending
+          ? `${r.item.attestation_number}: change sent for approval. It goes live once the super admin approves it.`
+          : `${r.item.attestation_number} ${editing ? "updated" : "uploaded"}`,
+      );
       // The list takes the saved document as returned, so the form closes without waiting for a reload.
       onSaved(r.item, !editing, listsChanged);
       onClose();
@@ -334,6 +341,17 @@ export function NewMForm({
     >
       <div className="space-y-4">
         {error ? <Alert tone="danger">{error}</Alert> : null}
+        {record?.pending_edit ? (
+          <Alert tone="warn">
+            A change to this document is already waiting for the super admin&apos;s approval. Another one can be sent once it is
+            approved or turned down.
+          </Alert>
+        ) : record && needsApproval(me.role, record.created_at) ? (
+          <Alert tone="info">
+            This document was uploaded more than a month ago, so your changes (and a replaced PDF) go live only after the super
+            admin approves them. Until then the verification page shows it as it is now.
+          </Alert>
+        ) : null}
         {domains.length === 0 ? (
           <Alert tone="warn">Add a domain first, under Domains &amp; links — the verification link is built on it.</Alert>
         ) : null}

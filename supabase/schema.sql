@@ -123,7 +123,8 @@ as $$
    where id = file_uuid;
 $$;
 
--- Counts per user per action (upload/replace/rename/delete) honoring edits/resets.
+-- Counts per user per action honoring edits/resets: Old M uploads, replaces, renames and deletes, and the
+-- New M and Appo documents a user uploads (the same as in finance.sql).
 create or replace function public.user_action_counts(p_user_id uuid default null)
 returns table (
   user_id uuid,
@@ -138,7 +139,7 @@ stable
 set search_path = public
 as $$
   with a as (
-    select unnest(array['upload', 'replace', 'rename', 'delete']) as action
+    select unnest(array['upload', 'replace', 'rename', 'delete', 'create_new_m', 'create_appo']) as action
   ),
   u as (
     select id from public.users where p_user_id is null or id = p_user_id
@@ -183,7 +184,7 @@ as $$
   from public.activity_log l
   left join public.user_counters uc on uc.user_id = l.user_id and uc.action = l.action
   where l.user_id = p_user_id
-    and l.action in ('upload', 'replace', 'rename', 'delete')
+    and l.action in ('upload', 'replace', 'rename', 'delete', 'create_new_m', 'create_appo')
     and l.created_at >= coalesce(uc.counted_from, '1970-01-01'::timestamptz)
   group by l.action, l.domain_id, l.domain_hostname, l.link_id, l.link_path
   order by l.domain_hostname, l.link_path, l.action;

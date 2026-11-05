@@ -9,6 +9,7 @@ import {
   FolderPlus,
   FolderTree,
   Globe,
+  History,
   Link2,
   Pencil,
   Plus,
@@ -22,6 +23,7 @@ import {
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileHistoryDialog } from "@/components/admin/FileHistory";
 import { FilePreview } from "@/components/admin/FilePreview";
 import { LinkCheck } from "@/components/admin/LinkCheck";
 import { useSession } from "@/components/SessionProvider";
@@ -52,7 +54,7 @@ const SERVER_FALLBACK_LIMIT = 4 * 1024 * 1024;
 type SortKey = "filename" | "size" | "uploaded_at" | "updated_at" | "download_count";
 
 export function FileManager() {
-  const { can } = useSession();
+  const { can, isSuper } = useSession();
   const { toast } = useToast();
   const router = useRouter();
   const sp = useSearchParams();
@@ -75,6 +77,8 @@ export function FileManager() {
   const [deleteTargets, setDeleteTargets] = useState<FileRow[] | null>(null);
   const [preview, setPreview] = useState<FileRow | null>(null);
   const [checkTarget, setCheckTarget] = useState<FileRow | null>(null);
+  /** The file whose earlier version (kept 15 days after a replace) is compared with the current one. */
+  const [historyTarget, setHistoryTarget] = useState<FileRow | null>(null);
   const [newLinkDomain, setNewLinkDomain] = useState<Domain | null>(null);
   const [editLink, setEditLink] = useState<LinkRow | null>(null);
   const [deleteLink, setDeleteLink] = useState<LinkRow | null>(null);
@@ -572,6 +576,11 @@ export function FileManager() {
                                   <Repeat className="size-3.5" />
                                 </IconButton>
                               ) : null}
+                              {isSuper && f.previous_files ? (
+                                <IconButton label="Earlier version — compare with the current file" onClick={() => setHistoryTarget(f)}>
+                                  <History className="size-3.5" />
+                                </IconButton>
+                              ) : null}
                               {can("delete") ? (
                                 <IconButton label="Delete" tone="danger" onClick={() => setDeleteTargets([f])}>
                                   <Trash2 className="size-3.5" />
@@ -675,6 +684,7 @@ export function FileManager() {
       />
 
       <FilePreview file={preview} onClose={() => setPreview(null)} />
+      <FileHistoryDialog system="old_m" recordId={historyTarget?.id ?? null} title={historyTarget?.filename ?? ""} onClose={() => setHistoryTarget(null)} />
       <LinkCheck file={checkTarget} onClose={() => setCheckTarget(null)} />
     </div>
   );
