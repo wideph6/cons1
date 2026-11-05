@@ -716,6 +716,49 @@
 .apo-row.is-inline .apo-row-value {
   margin-top: 0;
 }
+/*
+ * Each set of text in an entry is as wide as its text (never wider than the box), so it can be grabbed and
+ * moved on its own; an entry set to the centre or the right places it there by its margins.
+ */
+.apo-row .apo-row-label,
+.apo-row .apo-row-value,
+.apo-officer-text > * {
+  width: fit-content;
+  max-width: 100%;
+}
+.apo-row.is-center .apo-row-label,
+.apo-row.is-center .apo-row-value,
+.apo-row.is-center .apo-officer-text > * {
+  margin-right: auto;
+  margin-left: auto;
+}
+.apo-row.is-right .apo-row-label,
+.apo-row.is-right .apo-row-value,
+.apo-row.is-right .apo-officer-text > * {
+  margin-left: auto;
+}
+.apo-row.is-center .apo-officer-text {
+  margin-right: auto;
+  margin-left: auto;
+}
+.apo-row.is-right .apo-officer-text {
+  margin-left: auto;
+}
+/* Two lines with the value on top: the space between the lines moves to the words. */
+.apo-row.is-reversed .apo-row-value {
+  margin-top: 0;
+}
+.apo-row.is-reversed .apo-row-label {
+  margin-top: U(6);
+}
+/* In the editor, the text of the picked entry can be dragged to move it within its box. */
+.apo.is-editing .is-selected [data-move],
+.apo.is-editing .is-selected[data-move] {
+  cursor: move;
+  outline: U(1) dashed rgba(13, 148, 136, 0.7);
+  outline-offset: U(2);
+  touch-action: none;
+}
 .apo-row-officer .apo-row-num {
   top: U(13.35);
 }

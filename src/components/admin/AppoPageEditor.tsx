@@ -44,6 +44,10 @@ import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
 import {
   CERTIFICATE_BORDER_SIDES,
   CERTIFICATE_FONTS,
+  DATE_FORMATS,
+  MAX_MOVE,
+  ROW_ALIGNS,
+  rowParts,
   cleanDesktop,
   cleanMobile,
   DEFAULT_CERTIFICATE,
@@ -82,9 +86,13 @@ import {
   type CertificateBorderSides,
   type CertificateFont,
   type CertificateStyle,
+  type DateFormat,
+  type PartMove,
   type RecordRow,
   type RecordRowId,
+  type RowAlign,
   type RowLayout,
+  type RowPart,
   type SocialIcon,
   type ViewerTool,
 } from "@/lib/appo-page";
@@ -523,6 +531,24 @@ export function AppoPageEditor() {
 
   const update = useCallback((path: string, value: unknown) => edit(view, (c) => setAt(c, path, value)), [edit, view]);
 
+  /** Remembers the view as it is, so a drag that follows is one step for Undo. */
+  const checkpoint = useCallback((v: PageView) => {
+    setDocs((d) => {
+      if (!d) return d;
+      const cur = d[v] as ViewDoc<AnyContent>;
+      return { ...d, [v]: { ...cur, past: [...cur.past.slice(-99), cur.content], future: [] } } as Docs;
+    });
+  }, []);
+
+  /** Changes a view while something is being dragged, without a step for Undo each time the pointer moves. */
+  const liveEdit = useCallback((v: PageView, fn: (c: AnyContent) => AnyContent) => {
+    setDocs((d) => {
+      if (!d) return d;
+      const cur = d[v] as ViewDoc<AnyContent>;
+      return { ...d, [v]: { ...cur, content: fn(cur.content) } } as Docs;
+    });
+  }, []);
+
   function undo() {
     setDocs((d) => {
       if (!d) return d;
@@ -718,7 +744,88 @@ export function AppoPageEditor() {
 
   const menuOpen = view === "mobile" && (menuPinned || Boolean(selected?.startsWith("menu.")));
 
+  /** A drag of a set of text inside the picked record entry, under way. */
+  const textDrag = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    /** Screen pixels in one design pixel of the view. */
+    unitPx: number;
+    rowPath: string;
+    part: RowPart;
+    from: PartMove;
+    moved: boolean;
+  } | null>(null);
+  /** Set when a drag ends, so the click that follows does not pick something else. */
+  const dragEnded = useRef(false);
+
+  /**
+   * Pressing on the number, the words or the value (or the officer's designation or signature) of the
+   * record entry open in the side panel starts moving it within its box. The move is in the view's
+   * design pixels, like the rest of the page, so it keeps its place at every window or phone width.
+   */
+  function onPreviewPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0 || !docs) return;
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-move]");
+    if (!el) return;
+    const [rowId, part] = (el.dataset.move as string).split(":") as [string, RowPart];
+    const rowPath = `record.rows.${rowId}`;
+    if (selected !== rowPath) return;
+    const row = getAt(docs[view].content, rowPath) as RecordRow | undefined;
+    const box = el.closest<HTMLElement>(`[data-edit="${rowPath}"]`);
+    if (!row || !box) return;
+    // One design pixel of this view, measured where the entry is drawn.
+    const probe = document.createElement("span");
+    probe.style.cssText = `position:absolute;visibility:hidden;width:calc(var(${view === "mobile" ? "--mu" : "--u"}) * 100)`;
+    box.appendChild(probe);
+    const unitPx = probe.getBoundingClientRect().width / 100 || 1;
+    probe.remove();
+    e.preventDefault();
+    textDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, unitPx, rowPath, part, from: row.moves[part] ?? { x: 0, y: 0 }, moved: false };
+    const v = view;
+
+    const onMove = (ev: PointerEvent) => {
+      const d = textDrag.current;
+      if (!d || ev.pointerId !== d.id) return;
+      const sx = ev.clientX - d.x;
+      const sy = ev.clientY - d.y;
+      if (!d.moved) {
+        if (Math.abs(sx) < 3 && Math.abs(sy) < 3) return;
+        d.moved = true;
+        checkpoint(v);
+      }
+      const clamp = (n: number) => Math.round(Math.min(MAX_MOVE, Math.max(-MAX_MOVE, n)) * 10) / 10;
+      const next = { x: clamp(d.from.x + sx / d.unitPx), y: clamp(d.from.y + sy / d.unitPx) };
+      liveEdit(v, (c) => {
+        const r = getAt(c, d.rowPath) as RecordRow;
+        const moves = { ...r.moves };
+        if (next.x === 0 && next.y === 0) delete moves[d.part];
+        else moves[d.part] = next;
+        return setAt(c, `${d.rowPath}.moves`, moves);
+      });
+    };
+    const onUp = (ev: PointerEvent) => {
+      const d = textDrag.current;
+      if (!d || ev.pointerId !== d.id) return;
+      if (d.moved) dragEnded.current = true;
+      textDrag.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
   function onPreviewClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (dragEnded.current) {
+      // The end of a drag, not a click: nothing else is picked.
+      dragEnded.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const target = e.target as HTMLElement;
     const add = target.closest<HTMLElement>("[data-add]");
     const hit = target.closest<HTMLElement>("[data-edit]");
@@ -883,7 +990,12 @@ export function AppoPageEditor() {
               <MousePointer2 className="size-3.5" />
               Click anything to edit it · hidden pieces are striped · <span className="font-medium text-text">+</span> adds an item to a list
             </div>
-            <div ref={previewRef} className="max-h-[calc(100vh-14rem)] overflow-y-auto" onClickCapture={onPreviewClick}>
+            <div
+              ref={previewRef}
+              className="max-h-[calc(100vh-14rem)] overflow-y-auto"
+              onClickCapture={onPreviewClick}
+              onPointerDownCapture={onPreviewPointerDown}
+            >
               <VerifyPage content={desktop} record={shownRecord} assets={assets} editor={{ selected }} />
             </div>
           </div>
@@ -927,6 +1039,7 @@ export function AppoPageEditor() {
                 <div
                   ref={previewRef}
                   onClickCapture={onPreviewClick}
+                  onPointerDownCapture={onPreviewPointerDown}
                   className="overflow-y-auto overflow-x-hidden bg-white rounded-[1.6rem] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   style={{ width: phone, height: "max(32rem, calc(100vh - 17rem))" }}
                 >
@@ -1395,6 +1508,17 @@ function RowFields({ row, set }: { row: RecordRow; set: (f: string, v: unknown) 
           <Input value={row.value} onChange={(e) => set("value", e.target.value)} />
         </Field>
       ) : null}
+      {row.id === "issue_date" ? (
+        <Field label="Date format" hint="How the document's date is written in this entry. The banner and the sticker keep their own.">
+          <Select value={row.format} onChange={(e) => set("format", e.target.value as DateFormat)}>
+            {DATE_FORMATS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
       {row.id !== "officer" ? (
         <Field label="Layout">
           <Select value={row.layout} onChange={(e) => set("layout", e.target.value as RowLayout)}>
@@ -1406,6 +1530,8 @@ function RowFields({ row, set }: { row: RecordRow; set: (f: string, v: unknown) 
           </Select>
         </Field>
       ) : null}
+      <AlignField value={row.align} onChange={(a) => set("align", a)} />
+      <PartMoves row={row} set={set} />
       <VisibleToggle hidden={row.hidden} onChange={(h) => set("hidden", h)} />
       <Alert tone="info">
         The value {row.id === "country" ? "is" : "shown is"} {ROW_SOURCE[row.id]}.{" "}
@@ -1413,6 +1539,120 @@ function RowFields({ row, set }: { row: RecordRow; set: (f: string, v: unknown) 
         page&apos;s own; the sticker has its own, set under Appo → Background image.
       </Alert>
     </>
+  );
+}
+
+/** Where an entry's text sits across its box. */
+function AlignField({ value, onChange }: { value: RowAlign; onChange: (a: RowAlign) => void }) {
+  return (
+    <Field label="Text across the box">
+      <div className="inline-flex rounded-md border overflow-hidden">
+        {ROW_ALIGNS.map((a) => (
+          <button
+            key={a.value}
+            type="button"
+            onClick={() => onChange(a.value)}
+            className={cx("px-3 h-8 text-[13px] border-r last:border-r-0", value === a.value ? "bg-teal-600 text-white" : "bg-surface hover:bg-surface-2")}
+            aria-pressed={value === a.value}
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+    </Field>
+  );
+}
+
+/** What each set of text in a box is called here. */
+function partName(row: RecordRow, part: RowPart): string {
+  if (part === "number") return "Number";
+  if (part === "words") return row.id === "certificate" ? "Text" : "Words";
+  if (part === "value") return row.id === "officer" ? "Officer's name" : "Value";
+  return part === "designation" ? "Designation" : "Signature";
+}
+
+/**
+ * Moves each set of text of an entry within its box, by design pixels: typed in, nudged with the
+ * arrows (Shift: 10 at a time), or dragged on the page itself while the entry is open here.
+ */
+function PartMoves({ row, set }: { row: RecordRow; set: (f: string, v: unknown) => void }) {
+  const parts = rowParts(row);
+  const at = (part: RowPart): PartMove => row.moves[part] ?? { x: 0, y: 0 };
+  const put = (part: RowPart, m: PartMove) => {
+    const clamp = (n: number) => Math.round(Math.min(MAX_MOVE, Math.max(-MAX_MOVE, n)) * 10) / 10;
+    const next = { ...row.moves };
+    const c = { x: clamp(m.x), y: clamp(m.y) };
+    if (c.x === 0 && c.y === 0) delete next[part];
+    else next[part] = c;
+    set("moves", next);
+  };
+  const anyMoved = parts.some((part) => row.moves[part]);
+  return (
+    <div className="rounded-md border bg-surface-2 p-2.5 space-y-2">
+      <div>
+        <div className="text-[13px] font-medium">Position of the text in the box</div>
+        <p className="text-[12px] text-text-muted mt-0.5">
+          Drag the dashed text on the page, or move it here (design pixels; Shift + arrow moves 10). The rest of the
+          box stays where it is.
+        </p>
+      </div>
+      {parts.map((part) => {
+        const m = at(part);
+        const nudge = (dx: number, dy: number) => (e: React.MouseEvent) => {
+          const step = e.shiftKey ? 10 : 1;
+          put(part, { x: m.x + dx * step, y: m.y + dy * step });
+        };
+        return (
+          <div key={part} className="flex flex-wrap items-center gap-1.5">
+            <span className="w-24 text-[12.5px] font-medium truncate">{partName(row, part)}</span>
+            <label className="inline-flex items-center gap-1 text-[12px] text-text-muted">
+              X
+              <Input
+                type="number"
+                step={1}
+                value={m.x}
+                className="w-16 h-7 py-0 text-[12.5px]"
+                onChange={(e) => e.target.value !== "" && put(part, { ...m, x: Number(e.target.value) })}
+              />
+            </label>
+            <label className="inline-flex items-center gap-1 text-[12px] text-text-muted">
+              Y
+              <Input
+                type="number"
+                step={1}
+                value={m.y}
+                className="w-16 h-7 py-0 text-[12.5px]"
+                onChange={(e) => e.target.value !== "" && put(part, { ...m, y: Number(e.target.value) })}
+              />
+            </label>
+            <span className="inline-flex">
+              <button type="button" className="px-1.5 h-7 border rounded-l-md hover:bg-surface" title="Left" onClick={nudge(-1, 0)}>
+                ←
+              </button>
+              <button type="button" className="px-1.5 h-7 border-y hover:bg-surface" title="Up" onClick={nudge(0, -1)}>
+                ↑
+              </button>
+              <button type="button" className="px-1.5 h-7 border-y border-l hover:bg-surface" title="Down" onClick={nudge(0, 1)}>
+                ↓
+              </button>
+              <button type="button" className="px-1.5 h-7 border rounded-r-md hover:bg-surface" title="Right" onClick={nudge(1, 0)}>
+                →
+              </button>
+            </span>
+            {row.moves[part] ? (
+              <button type="button" className="text-[12px] text-teal-700 hover:underline" onClick={() => put(part, { x: 0, y: 0 })}>
+                Put back
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
+      {anyMoved ? (
+        <Button size="sm" icon={<RotateCcw className="size-3.5" />} onClick={() => set("moves", {})}>
+          Put all text back
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -1566,6 +1806,8 @@ function CertificateFields({
           </Field>
         ) : null}
       </div>
+      <AlignField value={row.align} onChange={(a) => set("align", a)} />
+      <PartMoves row={row} set={set} />
       <VisibleToggle hidden={row.hidden} onChange={(h) => set("hidden", h)} />
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" icon={<RotateCcw className="size-3.5" />} onClick={onResetStyle}>

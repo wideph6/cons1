@@ -256,11 +256,44 @@ export const RECORD_ROWS = [
 export type RecordRowId = (typeof RECORD_ROWS)[number];
 
 /** stacked: the words on one line and the value on the next. inline: the value right after the words, wrapping on narrow screens. */
-export type RowLayout = "stacked" | "inline";
+export type RowLayout = "stacked" | "inline" | "reversed";
 export const ROW_LAYOUTS: { value: RowLayout; label: string }[] = [
   { value: "stacked", label: "Two lines — the value under the words" },
+  { value: "reversed", label: "Two lines — the value above the words" },
   { value: "inline", label: "One line — the value after the words (wraps on phones)" },
 ];
+
+/** Where an entry's text sits across its box. */
+export type RowAlign = "left" | "center" | "right";
+export const ROW_ALIGNS: { value: RowAlign; label: string }[] = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Centre" },
+  { value: "right", label: "Right" },
+];
+
+/** How the Date entry writes the document's date. */
+export type DateFormat = "long" | "short";
+export const DATE_FORMATS: { value: DateFormat; label: string }[] = [
+  { value: "long", label: "29th of October 2026" },
+  { value: "short", label: "29 Oct 2026" },
+];
+
+/**
+ * The sets of text inside an entry's box that can be moved on their own: the number, the words, the
+ * value, and in the approving officer's box the designation and the signature. In the certificate box
+ * "words" is its text.
+ */
+export type RowPart = "number" | "words" | "value" | "designation" | "signature";
+export const ROW_PARTS: RowPart[] = ["number", "words", "value", "designation", "signature"];
+
+/** How far a set of text was moved from its place in the box, in the view's design pixels. */
+export interface PartMove {
+  x: number;
+  y: number;
+}
+
+/** The furthest a set of text may be moved, in design pixels either way. */
+export const MAX_MOVE = 600;
 
 /** One entry of the verification record. */
 export interface RecordRow {
@@ -272,7 +305,21 @@ export interface RecordRow {
   /** Country's value ("Pakistan"), fixed on the page. Every other entry shows the document's own value. */
   value: string;
   layout: RowLayout;
+  /** Where the text sits across the box. */
+  align: RowAlign;
+  /** The Date entry's format; the other entries keep "long" and do not use it. */
+  format: DateFormat;
+  /** The sets of text moved within the box; only the ones moved. */
+  moves: Partial<Record<RowPart, PartMove>>;
   hidden: boolean;
+}
+
+/** The sets of text an entry's box holds, in the order the editor lists them. */
+export function rowParts(row: RecordRow): RowPart[] {
+  if (row.id === "certificate") return ["words"];
+  const number: RowPart[] = row.number.trim() ? ["number"] : [];
+  if (row.id === "officer") return [...number, "words", "value", "designation", "signature"];
+  return [...number, "words", "value"];
 }
 
 export type CertificateFont = "serif" | "sans" | "arial";
@@ -330,7 +377,7 @@ function social(id: string, icon: SocialIcon, label: string): PSocial {
 }
 
 function row(id: RecordRowId, number: string, text: string, layout: RowLayout = "stacked", value = ""): RecordRow {
-  return { id, number, text, value, layout, hidden: false };
+  return { id, number, text, value, layout, align: id === "certificate" ? "center" : "left", format: "long", moves: {}, hidden: false };
 }
 
 /** The entries as the super admin first described them; every word can be changed under Page design. */
@@ -806,13 +853,30 @@ function cleanResult(result: Record<string, unknown>, d: Result): Result {
 }
 
 /** One entry, checked. Only Country keeps a value of its own; the rest show the document's. */
+/** Moves of known sets of text, each within reach and rounded; sets left where they were are dropped. */
+function cleanMoves(v: unknown): Partial<Record<RowPart, PartMove>> {
+  const o = obj(v);
+  const out: Partial<Record<RowPart, PartMove>> = {};
+  for (const part of ROW_PARTS) {
+    const m = obj(o[part]);
+    const x = between(m.x, 0, -MAX_MOVE, MAX_MOVE);
+    const y = between(m.y, 0, -MAX_MOVE, MAX_MOVE);
+    const r = (n: number) => Math.round(n * 10) / 10;
+    if (r(x) !== 0 || r(y) !== 0) out[part] = { x: r(x), y: r(y) };
+  }
+  return out;
+}
+
 function cleanRow(o: Record<string, unknown>, d: RecordRow): RecordRow {
   return {
     id: d.id,
     number: str(o.number, d.number, 12).replace(/\n/g, " "),
     text: str(o.text, d.text),
     value: d.id === "country" ? str(o.value, d.value, 200).replace(/\n/g, " ") : "",
-    layout: o.layout === "inline" || o.layout === "stacked" ? o.layout : d.layout,
+    layout: ROW_LAYOUTS.some((l) => l.value === o.layout) ? (o.layout as RowLayout) : d.layout,
+    align: ROW_ALIGNS.some((a) => a.value === o.align) ? (o.align as RowAlign) : d.align,
+    format: d.id === "issue_date" && DATE_FORMATS.some((f) => f.value === o.format) ? (o.format as DateFormat) : d.format,
+    moves: cleanMoves(o.moves),
     hidden: bool(o.hidden, d.hidden),
   };
 }
@@ -1133,7 +1197,7 @@ export function rowValue(row: RecordRow, r: PageRecord): string {
     case "office_city":
       return r.office_city;
     case "issue_date":
-      return r.issue_date_long;
+      return row.format === "short" ? r.issue_date : r.issue_date_long;
     case "office_name":
       return r.office_name;
     case "attestation_number":

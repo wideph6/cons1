@@ -1,7 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
-import { certificateStyle, rowValue, type MobileContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText } from "@/lib/appo-page";
+import type { MobileContent, PageRecord, PImage, PLink, PLinkText, PText } from "@/lib/appo-page";
 import { MobileMenu } from "./MobileMenu";
 import { MobilePdf } from "./MobilePdf";
+import { hasNumbers, RecordRows } from "./RecordRows";
 import { ArrowNE, Emblem, ShieldTick, Social } from "./icons";
 import "./verify-page.css";
 import "./verify-mobile.css";
@@ -156,7 +157,7 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
   const r = record;
   const animated = c.meta.animations && !editing && !preview;
   // The entries keep a gutter for their numbers only while any entry shown has one.
-  const numbered = rec.rows.some((row) => visible(row) && row.id !== "certificate" && row.number.trim() !== "");
+  const numbered = hasNumbers(rec.rows, visible);
 
   return (
     <div className={cx("apom", animated && "apom-anim", editing && "is-editing")}>
@@ -304,53 +305,17 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                       {text(rec.cert_title, "record.cert_title", "apom-cert-title")}
                       {text(rec.cert_subtitle, "record.cert_subtitle", "apom-cert-sub")}
                     </div>
-                    {rec.rows.map((row) => {
-                      if (!visible(row)) return null;
-                      const path = `record.rows.${row.id}`;
-                      const num = row.number.trim() ? <span className="apom-row-num">{row.number}</span> : null;
-                      if (row.id === "certificate") {
-                        return (
-                          <div key={row.id} {...ed(path, row.hidden, "apom-certrow")}>
-                            <span className="apom-certbox" style={certificateStyle(rec.certificate, m, FONTS)}>
-                              {row.text}
-                            </span>
-                          </div>
-                        );
-                      }
-                      if (row.id === "officer") {
-                        return (
-                          <div key={row.id} {...ed(path, row.hidden, "apom-row apom-row-officer")}>
-                            {num}
-                            <div className="apom-officer-text">
-                              <span className="apom-row-label">{row.text}</span>
-                              <span className="apom-row-value">{dash(r.officer_name)}</span>
-                              {visible(rec.designation) && r.officer_designation ? (
-                                <span {...ed("record.designation", rec.designation.hidden, "apom-officer-role")}>{r.officer_designation}</span>
-                              ) : null}
-                            </div>
-                            {visible(rec.signature) && (r.signature_url || editing) ? (
-                              <span {...ed("record.signature", rec.signature.hidden, "apom-signature")}>
-                                {r.signature_url ? (
-                                  // Signatures are signed R2 links that expire.
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={r.signature_url} alt={`Signature of ${r.officer_name || "the approving officer"}`} />
-                                ) : (
-                                  <SampleSignature />
-                                )}
-                              </span>
-                            ) : null}
-                          </div>
-                        );
-                      }
-                      return (
-                        <div key={row.id} {...ed(path, row.hidden, cx("apom-row", row.layout === "inline" && "is-inline"))}>
-                          {num}
-                          <span className="apom-row-label">{row.text}</span>
-                          {row.layout === "inline" ? " " : null}
-                          <span className="apom-row-value">{dash(rowValue(row, r))}</span>
-                        </div>
-                      );
-                    })}
+                    <RecordRows
+                      p="apom"
+                      rec={rec}
+                      r={r}
+                      unit={m}
+                      fonts={FONTS}
+                      ed={ed}
+                      visible={visible}
+                      editing={editing}
+                      sampleSignature={<SampleSignature />}
+                    />
                     {visible(rec.disclaimer) ? <p {...ed("record.disclaimer", rec.disclaimer.hidden, "apom-disclaimer")}>{rec.disclaimer.text}</p> : null}
                   </div>
                 </div>

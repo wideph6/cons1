@@ -643,6 +643,49 @@
   margin-top: 0;
   line-height: calc(var(--mu) * 18);
 }
+/*
+ * Each set of text in an entry is as wide as its text (never wider than the box), so it can be grabbed and
+ * moved on its own; an entry set to the centre or the right places it there by its margins.
+ */
+.apom-row .apom-row-label,
+.apom-row .apom-row-value,
+.apom-officer-text > * {
+  width: fit-content;
+  max-width: 100%;
+}
+.apom-row.is-center .apom-row-label,
+.apom-row.is-center .apom-row-value,
+.apom-row.is-center .apom-officer-text > * {
+  margin-right: auto;
+  margin-left: auto;
+}
+.apom-row.is-right .apom-row-label,
+.apom-row.is-right .apom-row-value,
+.apom-row.is-right .apom-officer-text > * {
+  margin-left: auto;
+}
+.apom-row.is-center .apom-officer-text {
+  margin-right: auto;
+  margin-left: auto;
+}
+.apom-row.is-right .apom-officer-text {
+  margin-left: auto;
+}
+/* Two lines with the value on top: the space between the lines moves to the words. */
+.apom-row.is-reversed .apom-row-value {
+  margin-top: 0;
+}
+.apom-row.is-reversed .apom-row-label {
+  margin-top: calc(var(--mu) * 6);
+}
+/* In the editor, the text of the picked entry can be dragged to move it within its box. */
+.apom.is-editing .is-selected [data-move],
+.apom.is-editing .is-selected[data-move] {
+  cursor: move;
+  outline: calc(var(--mu) * 1) dashed rgba(13, 148, 136, 0.7);
+  outline-offset: calc(var(--mu) * 2);
+  touch-action: none;
+}
 .apom-row-officer .apom-row-num {
   top: calc(var(--mu) * 18.3);
 }

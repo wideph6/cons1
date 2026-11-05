@@ -1002,7 +1002,15 @@ text aur value alag alag rakhen, aur lafz badlen (Hissa 13.5b mein tareeqa). Ye 
 Page design → kisi bhi entry par click karen (ya "Everything on the page" list mein **Verification record** ke neeche):
 
 - **Number** (jaise 2; khali = koi number nahi), **Words** (jaise "Previously signed by"), aur Country ke liye **Value** (Pakistan).
-- **Layout:** *Two lines* (value neeche) ya *One line* (value lafzon ke foran baad — phone par jitna na samaye agli line par).
+- **Layout:** *Two lines* (value neeche), *Two lines — value oopar* (value pehle, lafz neeche) ya *One line* (value lafzon ke foran
+  baad — phone par jitna na samaye agli line par).
+- **Date format** (sirf Date wali entry): **29th of October 2026** ya **29 Oct 2026** — jo chunen wohi page par aata hai. Banner aur
+  sticker apna apna format rakhte hain.
+- **Text across the box:** Left / Centre / Right — box ke andar text kis taraf ho.
+- **Position of the text in the box:** har box ke andar number, lafz aur value (officer ke box mein naam, designation aur signature;
+  certificate box mein us ka text) alag alag hilayen — X/Y likh kar, teer (←↑↓→, Shift ke saath 10) se, ya entry chun kar page par
+  dashed text ko **mouse se ghaseet** kar. Baqi box apni jagah rehta hai. **Put back** / **Put all text back** se wapas. Desktop aur
+  mobile ki jagah alag alag set hoti hai.
 - **Earlier / Later** se entry ko list mein oper neeche karen (position badalna). **Hide from the page** se chhupayen.
 - **Certificate box** (4 aur 5 ke darmiyan, sirf page par — sticker par nahi): text, font, size, bold/italic, CAPITAL, letter
   spacing, chorai (%), oonchai, kone, aur **text / background / border ke rang** (border: oopar-neeche line ya chaaron taraf).

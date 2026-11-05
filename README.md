@@ -244,7 +244,10 @@ Where Appo differs from New M:
   Appo → Number prefix (`/api/admin/appo/settings`). Any three capital letters are accepted as a number, so documents made
   under an earlier prefix keep working; a new or changed number must use the prefix in use.
 - **Verification record.** `record.rows` in the page content: Country (fixed value), Document Type, 2–4, a certificate box, 5–8
-  and the approving officer, each with its own number, words, one/two-line layout, order and visibility; `record.certificate`
+  and the approving officer, each with its own number, words, layout (value under, above or after the words), alignment, order,
+  visibility and moves of its number, words and value within its box (`moves`, in the view's design pixels; dragged in the editor
+  or typed in); the Date entry also picks its format (`29th of October 2026` or `29 Oct 2026`). Drawn by `RecordRows.tsx` for both
+  views. `record.certificate`
   is the box's look per view. All of it is page content in `appo_page_settings`.
 - **Sticker.** Its own sets (`appo-sticker.ts`): two-line Country, Document Type and 2–4; one-line 5–8 (a value starts where its
   words end); "Date:"; the signature with the officer's name under it; the QR code with no border.
