@@ -50,6 +50,8 @@ import {
   type StickerSetId,
   type StickerTexts,
   type StickerValues,
+  VALUE_FONT_NAME,
+  VALUE_FONT_URL,
 } from "@/lib/appo-sticker";
 import type { AppoRecord } from "@/lib/appo-types";
 import { formatDateTime } from "@/lib/utils";
@@ -99,6 +101,31 @@ interface Background {
 
 /** Fetched once per page and reused for every sticker, until a new background is set. */
 let backgroundCache: Promise<Background> | null = null;
+
+/** Poppins SemiBold for the values, fetched once per page. */
+let valueFontCache: Promise<string | null> | null = null;
+
+/**
+ * The values' font: added to the page under VALUE_FONT_NAME, so widths are measured with the very font that
+ * draws them, and returned as a data: URI for the sticker to carry. Null if it cannot be had (the values
+ * then fall back to a similar system font).
+ */
+function loadValueFont(): Promise<string | null> {
+  valueFontCache ??= (async () => {
+    try {
+      const res = await fetch(VALUE_FONT_URL);
+      if (!res.ok) return null;
+      const dataUri = await blobToDataUri(new Blob([await res.arrayBuffer()], { type: "font/woff2" }));
+      const face = new FontFace(VALUE_FONT_NAME, `url(${dataUri}) format("woff2")`, { weight: "600", style: "normal" });
+      await face.load();
+      document.fonts.add(face);
+      return dataUri;
+    } catch {
+      return null;
+    }
+  })();
+  return valueFontCache;
+}
 
 export function forgetBackground() {
   backgroundCache = null;
@@ -167,7 +194,7 @@ function recordValues(record: AppoRecord, signature: string | null): StickerValu
 
 /** One document's sticker, built from its current values, its officer's signature and its saved QR code. */
 export async function renderSticker(record: AppoRecord): Promise<{ svg: string; scale: number }> {
-  const [bg, signature] = await Promise.all([loadBackground(), recordSignature(record)]);
+  const [bg, signature, valueFont] = await Promise.all([loadBackground(), recordSignature(record), loadValueFont()]);
   const svg = buildStickerSvg(
     {
       background: bg.dataUri,
@@ -176,6 +203,7 @@ export async function renderSticker(record: AppoRecord): Promise<{ svg: string; 
       layout: bg.placement?.layout,
       texts: bg.placement?.texts,
       ...recordValues(record, signature),
+      valueFont,
     },
     measure,
   );
@@ -419,6 +447,18 @@ export function AppoBackgroundDialog({
   const [texts, setTexts] = useState<StickerTexts>({});
   /** How much the editor magnifies the sticker (not the sticker's own size). */
   const [viewZoom, setViewZoom] = useState(1);
+  /** The values' font, once loaded: the overlay carries it, and the grab boxes are measured with it. */
+  const [valueFont, setValueFont] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void loadValueFont().then((f) => {
+      if (!cancelled) setValueFont(f);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
   const [hasFrame, setHasFrame] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -494,13 +534,15 @@ export function AppoBackgroundDialog({
   // dragging the image only moves it underneath.
   const overlay = useMemo(() => {
     if (!open) return null;
-    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, size, ...values }, measure));
-  }, [open, values, hasFrame, layout, texts, size]);
+    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, size, valueFont, ...values }, measure));
+  }, [open, values, hasFrame, layout, texts, size, valueFont]);
 
   /** Where each set (and each half of it) is drawn before it is moved, for grabbing it. */
   const setBoxes = useMemo(
     () => (open ? stickerSetBoxes({ drawFrame: !hasFrame, texts, ...values }, measure) : {}),
-    [open, values, hasFrame, texts],
+    // Measured again once the values' font has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [open, values, hasFrame, texts, valueFont],
   );
 
   async function choose(file: File | null) {

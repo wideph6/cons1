@@ -27,4 +27,10 @@ noto-serif-latin-wght.woff2  Noto Serif (variable weight, Latin)
                              Copyright 2022 The Noto Project Authors. SIL Open Font License 1.1.
                              https://github.com/notofonts/latin-greek-cyrillic
 
+Sticker — the values each document writes on its Appo sticker (not its labels or dates).
+
+poppins-semibold-latin.woff2 Poppins SemiBold (600, Latin)
+                             Copyright 2020 The Poppins Project Authors. SIL Open Font License 1.1.
+                             https://github.com/itfoundry/Poppins (via @fontsource/poppins 5.0.8)
+
 SIL Open Font License 1.1: https://openfontlicense.org

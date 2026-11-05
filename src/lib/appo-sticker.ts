@@ -6,8 +6,8 @@ import { verifyQr } from "./appo-link";
  * admin uploads carries the title bar, the table lines and any pattern; the app draws the rest so it
  * prints sharp at any size: the fixed words (numbers and labels), each document's values, the
  * officer's signature with their name under it, and the QR code (on white, with no line round it).
- * Text is Georgia, black: regular 19 px for the fixed words, bold 19 px for values, regular 16 px for
- * the name under the signature.
+ * Text is black: the fixed words Georgia regular 19 px, the dates Georgia bold 19 px (as on New M's
+ * sticker), and every other value (the name under the signature too) Poppins SemiBold.
  *
  * Every part starts at the place below and can be moved by the super admin to fit the background:
  * a value with its words as a set, or each on its own once the set is ungrouped. The fixed words can
@@ -44,6 +44,17 @@ export function stickerSize(p: { size?: StickerSize } | null | undefined): Stick
 }
 
 const FONT_FAMILY = "Georgia, Gelasio, 'Times New Roman', serif";
+
+/**
+ * Each document's values are written in Poppins SemiBold; the fixed words and the two dates keep New M's
+ * Georgia (the dates bold, as on New M's sticker). The sticker is shown and saved as an image, which cannot
+ * fetch fonts, so the font travels inside each sticker (valueFont: the file as a data: URI). The editor
+ * also loads it into the page under this name, so values are measured exactly as they are drawn.
+ */
+export const VALUE_FONT_NAME = "Appo Poppins";
+export const VALUE_FONT_URL = "/appo-assets/fonts/poppins-semibold-latin.woff2";
+const VALUE_FAMILY = `'${VALUE_FONT_NAME}', Poppins, 'Segoe UI', Arial, sans-serif`;
+const VALUE_WEIGHT = "600";
 /** A value too long for its cell is set smaller rather than run into the next one, down to this size. */
 const MIN_FONT = 10;
 /** Room between a set's words and a value written on the same line after them. */
@@ -55,6 +66,8 @@ interface TextSlot {
   y: number;
   size: number;
   weight: "bold" | "normal";
+  /** Georgia for the dates (as on New M's sticker); every other value is Poppins SemiBold. */
+  georgia?: boolean;
   anchor: "start" | "middle";
   /** Room before the cell's edge. */
   maxWidth: number;
@@ -79,13 +92,13 @@ export const SLOTS = {
   /** After "5 office City". */
   officeCity: { x: 107, y: 422, size: 19, weight: "bold", anchor: "start", maxWidth: 575, after: "officeCity.label" },
   /** After "6 date", as "29th of October 2026". */
-  dateLong: { x: 107, y: 464, size: 19, weight: "bold", anchor: "start", maxWidth: 575, after: "dateLong.label" },
+  dateLong: { x: 107, y: 464, size: 19, weight: "bold", anchor: "start", maxWidth: 575, after: "dateLong.label", georgia: true },
   /** After "7 office Name". */
   officeName: { x: 107, y: 506, size: 19, weight: "bold", anchor: "start", maxWidth: 575, after: "officeName.label" },
   /** After "8 No", as APN-XXXX-XXXX-XXXX. */
   number: { x: 107, y: 548, size: 19, weight: "bold", anchor: "start", maxWidth: 575, after: "number.label" },
   /** After "Date:", as "29 Oct 2026". */
-  dateShort: { x: 86, y: 604, size: 19, weight: "bold", anchor: "start", maxWidth: 470, after: "dateShort.label" },
+  dateShort: { x: 86, y: 604, size: 19, weight: "bold", anchor: "start", maxWidth: 470, after: "dateShort.label", georgia: true },
   /** Centred under the signature: the approving officer's name. */
   officerName: { x: 730, y: 662, size: 16, weight: "normal", anchor: "middle", maxWidth: 380 },
 } satisfies Record<string, TextSlot>;
@@ -254,6 +267,7 @@ function esc(s: string): string {
 }
 
 export function fontFor(slot: TextSlot, size = slot.size): string {
+  if (!slot.georgia) return `${VALUE_WEIGHT} ${size}px ${VALUE_FAMILY}`;
   return `${slot.weight === "bold" ? "bold" : "normal"} ${size}px ${FONT_FAMILY}`;
 }
 
@@ -280,13 +294,13 @@ function text(
   y: number,
   value: string,
   size: number,
-  weight: "bold" | "normal",
-  opts: { anchor?: string; fill?: string; outline?: number } = {},
+  weight: "bold" | "normal" | "600",
+  opts: { anchor?: string; fill?: string; outline?: number; family?: string } = {},
 ): string {
   const fill = opts.fill ?? "#000000";
   const outline = opts.outline ? ` stroke="${fill}" stroke-width="${opts.outline}" stroke-linejoin="round"` : "";
   return (
-    `<text x="${x}" y="${y}" font-family="${esc(FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}" ` +
+    `<text x="${x}" y="${y}" font-family="${esc(opts.family ?? FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}" ` +
     `fill="${fill}"${outline} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
   );
 }
@@ -296,7 +310,18 @@ function valueEl(slot: TextSlot, value: string, measure: Measure): string {
   if (!t) return "";
   const width = measure(t, fontFor(slot));
   const size = width > slot.maxWidth ? Math.max(MIN_FONT, (slot.size * slot.maxWidth) / width) : slot.size;
-  return text(slot.x, slot.y, t, size, slot.weight, { anchor: slot.anchor });
+  return slot.georgia
+    ? text(slot.x, slot.y, t, size, slot.weight, { anchor: slot.anchor })
+    : text(slot.x, slot.y, t, size, VALUE_WEIGHT, { anchor: slot.anchor, family: VALUE_FAMILY });
+}
+
+/** The values' font carried inside the sticker, so the image shows it wherever it is opened. */
+function valueFontEl(dataUri: string | null | undefined): string {
+  if (!dataUri || !/^data:[\w/+.-]+;base64,[A-Za-z0-9+/=]+$/.test(dataUri)) return "";
+  return (
+    `<defs><style>@font-face{font-family:'${VALUE_FONT_NAME}';src:url(${dataUri}) format('woff2');` +
+    `font-weight:${VALUE_WEIGHT};font-style:normal;}</style></defs>`
+  );
 }
 
 /** Wraps a set's drawing (or one half of it) in its move, when it was moved. */
@@ -634,6 +659,8 @@ export interface StickerContent extends StickerValues {
   drawFrame: boolean;
   /** The sets the super admin moved; the rest stay where a new sticker puts them. */
   layout?: StickerLayout;
+  /** Poppins SemiBold as a data: URI, carried inside the sticker for its values. */
+  valueFont?: string | null;
   /** The sticker's size; left out for STICKER_W x STICKER_H. */
   size?: StickerSize;
   /** The fixed words the super admin reworded; the rest read as a new sticker has them. */
@@ -708,7 +735,7 @@ function contentEl(input: StickerContent, measure: Measure): string {
     const inner = part ? wrapIn(svg, transformOf(l.parts?.[part], b?.parts[part] ?? null)) : svg;
     return wrapIn(inner, transformOf(l, b ? groupRect(b, l) : null));
   };
-  const parts: string[] = [];
+  const parts: string[] = [valueFontEl(input.valueFont)];
   if (input.drawFrame) parts.push(frameEl(moved, input.texts));
 
   for (const [set, value] of valueTexts(input)) {

@@ -991,7 +991,10 @@ jata hai.
 
 ## 13A.4 Appo ka sticker
 
-Appo ka sticker New M jaisa banta hai magar apni entries ke saath (oper ki table). QR code ke gird **koi border line nahi** — sirf
+Appo ka sticker New M jaisa banta hai magar apni entries ke saath (oper ki table). **Font:** har document ki values (document type,
+naam, office, APN number, signature ke neeche officer ka naam) **Poppins SemiBold** mein; dono dates ("29th of October 2026" aur
+"29 Oct 2026") bilkul New M jaisi **Georgia Bold** mein; fix lafz (numbers, labels, "Pakistan") Georgia mein. Font sticker ke andar
+hi shamil hota hai, is liye PNG har jagah aik jaisa banta hai. QR code ke gird **koi border line nahi** — sirf
 safed chokor par QR. Signature ke neeche officer ka **naam** aata hai. Labels sticker par chhote harf se shuru hote hain
 ("previously signed by", "office City", "date") aur "No" bara. Har cheez ki pehli jagah aik andaze se rakhi gayi hai — apni
 background image upload kar ke **Move text & QR** se har set ko us ki jagah par le aayen; zarurat ho to **Ungroup** kar ke fix
