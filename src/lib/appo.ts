@@ -2,9 +2,11 @@ import { issuedToIso, pad2, parseIssuedOn, todayIso } from "./dates";
 import { ApiError } from "./errors";
 import {
   cleanTemplate,
+  DEFAULT_NUMBER_PREFIX,
   hashNameFromKey,
-  NUMBER_EXAMPLE,
   NUMBER_RE,
+  numberExample,
+  PREFIX_RE,
   randomNumber,
   resolveLink,
   tidyNumber,
@@ -16,7 +18,7 @@ import { deleteObject, getObjectBytes, headObject, presignDownload } from "./r2"
 import { isAppoKey } from "./appo-r2";
 import { db } from "./supabase";
 import type { User } from "./types";
-import type { AppoLists, AppoOfficer, AppoOption, AppoOptionKind, AppoRecord } from "./appo-types";
+import { APPO_FIELDS, type AppoLists, type AppoOfficer, type AppoOption, type AppoOptionKind, type AppoRecord } from "./appo-types";
 import { cleanFilename, fileExtension, guessContentType } from "./utils";
 
 /* ---------------- Access ---------------- */
@@ -68,13 +70,35 @@ export function dbError(error: { code?: string; message: string }): ApiError {
 
 /* ---------------- Numbers ---------------- */
 
-export function normalizeNumber(input: unknown): string {
+/**
+ * The three letters every new attestation number starts with, as the super admin set them (APN unless
+ * changed). Read as APN while appo.sql has not added the setting yet.
+ */
+export async function getNumberPrefix(): Promise<string> {
+  const { data, error } = await db().from("appo_settings").select("number_prefix").eq("id", true).maybeSingle();
+  if (error) {
+    // 42703: the column arrives with a later appo.sql.
+    if (error.code === "42703" || isMissingTable(error)) return DEFAULT_NUMBER_PREFIX;
+    throw dbError(error);
+  }
+  const prefix = (data as { number_prefix?: unknown } | null)?.number_prefix;
+  return typeof prefix === "string" && PREFIX_RE.test(prefix) ? prefix : DEFAULT_NUMBER_PREFIX;
+}
+
+/**
+ * A typed number, tidied and checked. A number being given to a document (a new one, or a changed
+ * one) must start with the prefix in use; prefix is left out only to read a number already saved.
+ */
+export function normalizeNumber(input: unknown, prefix?: string): string {
   const n = tidyNumber(String(input ?? ""));
   if (!NUMBER_RE.test(n)) {
     throw new ApiError(
       400,
-      `Attestation number must look like ${NUMBER_EXAMPLE}: GEN, then three groups of four capital English letters`,
+      `Attestation number must look like ${numberExample(prefix)}: ${prefix ?? "three capital letters"}, then three groups of four capital English letters`,
     );
+  }
+  if (prefix && !n.startsWith(`${prefix}-`)) {
+    throw new ApiError(400, `Attestation numbers now start with ${prefix}, e.g. ${numberExample(prefix)}`);
   }
   return n;
 }
@@ -89,9 +113,9 @@ export async function numberTaken(number: string, exceptId?: string): Promise<bo
 }
 
 /** Tries fresh numbers until one is free, so a collision costs a retry instead of an error. */
-export async function uniqueNumber(attempts = 8): Promise<string> {
+export async function uniqueNumber(prefix: string, attempts = 8): Promise<string> {
   for (let i = 0; i < attempts; i++) {
-    const candidate = randomNumber();
+    const candidate = randomNumber(prefix);
     if (!(await numberTaken(candidate))) return candidate;
   }
   throw new ApiError(500, "Could not generate a free attestation number. Please try again.");
@@ -134,13 +158,10 @@ export function searchDate(q: string): string | null {
 
 /* ---------------- Text fields and saved values ---------------- */
 
-export const OPTION_KINDS: AppoOptionKind[] = ["document_type", "issuing_office", "issuing_authority"];
+export const OPTION_KINDS: AppoOptionKind[] = APPO_FIELDS.map((f) => f.kind);
 
-export const OPTION_LABELS: Record<AppoOptionKind, string> = {
-  document_type: "Document type",
-  issuing_office: "Issuing office",
-  issuing_authority: "Issuing authority",
-};
+/** What each value is called in the admin panel. */
+export const OPTION_LABELS = Object.fromEntries(APPO_FIELDS.map((f) => [f.kind, f.label])) as Record<AppoOptionKind, string>;
 
 const MAX_TEXT = 200;
 
@@ -297,17 +318,18 @@ export async function getBackgroundSettings(): Promise<BackgroundSettings> {
 /* ---------------- Saved lists ---------------- */
 
 export async function getLists(): Promise<AppoLists> {
-  const [opts, offs] = await Promise.all([
+  const [opts, offs, prefix] = await Promise.all([
     db().from("appo_options").select("id,kind,value").order("value"),
     db().from("appo_officers").select(OFFICER_COLUMNS).order("name"),
+    getNumberPrefix(),
   ]);
   if (opts.error) throw dbError(opts.error);
   if (offs.error) throw dbError(offs.error);
 
-  const options: AppoLists["options"] = { document_type: [], issuing_office: [], issuing_authority: [] };
+  const options = Object.fromEntries(OPTION_KINDS.map((k) => [k, []])) as unknown as AppoLists["options"];
   for (const o of (opts.data ?? []) as AppoOption[]) options[o.kind]?.push(o);
   const officers = await Promise.all(((offs.data ?? []) as OfficerRow[]).map(withSignature));
-  return { options, officers };
+  return { options, officers, number_prefix: prefix };
 }
 
 /* ---------------- Documents ---------------- */
@@ -544,8 +566,11 @@ export async function refreshQrWhere(column: "domain_id" | "link_id", id: string
 export const SEARCH_COLUMNS = [
   "attestation_number",
   "document_type",
-  "issuing_office",
-  "issuing_authority",
+  "signed_by",
+  "signed_capacity",
+  "seal_stamp",
+  "office_city",
+  "office_name",
   "officer_name",
   "officer_designation",
   "doc_filename",

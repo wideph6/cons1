@@ -836,6 +836,24 @@ export function mobileFromDesktop(desk: DesktopContent, mob: MobileContent): Mob
   });
 }
 
+/**
+ * The part of the verification record that is New M's alone: its entries (the labels, the officer's
+ * designation and signature) and the note under them. Copying Appo's page design leaves it as it is,
+ * since Appo's record has its own; everything else on the page is shared.
+ */
+export function keepRecordEntries<T extends DesktopContent | MobileContent>(copied: T, own: T): T {
+  return {
+    ...copied,
+    record: {
+      ...copied.record,
+      labels: Object.fromEntries(Object.entries(own.record.labels).map(([k, v]) => [k, { ...v }])) as T["record"]["labels"],
+      designation: { ...own.record.designation },
+      signature: { ...own.record.signature },
+      disclaimer: { ...own.record.disclaimer },
+    },
+  };
+}
+
 /* ---------------- Addressing pieces of the page (the editor) ---------------- */
 
 /**

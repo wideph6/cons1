@@ -4,13 +4,9 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Alert, ConfirmDialog, IconButton, Modal, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
-import type { AppoLists, AppoOfficer, AppoOption, AppoOptionKind } from "@/lib/appo-types";
+import { APPO_FIELDS, type AppoLists, type AppoOfficer, type AppoOption, type AppoOptionKind } from "@/lib/appo-types";
 
-const SECTIONS: Array<{ kind: AppoOptionKind; title: string }> = [
-  { kind: "document_type", title: "Document types" },
-  { kind: "issuing_office", title: "Issuing offices" },
-  { kind: "issuing_authority", title: "Issuing authorities" },
-];
+const SECTIONS: Array<{ kind: AppoOptionKind; title: string }> = APPO_FIELDS.map((f) => ({ kind: f.kind, title: f.list }));
 
 type Removal = { what: "option"; item: AppoOption } | { what: "officer"; item: AppoOfficer };
 

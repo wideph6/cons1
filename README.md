@@ -230,7 +230,29 @@ admin and to admins given any Appo permission; its page design is the super admi
 Appo's page starts from the design's defaults. **Copy New M's design** in Appo's page editor brings in New M's page as it is
 saved now — both views, with every text, link and logo, the favicon and the PDF tab's favicon — as unsaved changes to check,
 then Save (or Undo). Its logos and favicons are copied in R2 to `appo/page/`, so the two pages never share a file. This is the
-one place Appo reads New M's data (`new_m_page_settings` and `new-m/page/`); it never writes or deletes any of it.
+one place Appo reads New M's data (`new_m_page_settings` and `new-m/page/`); it never writes or deletes any of it. New M's page
+editor has the mirror, **Copy Appo's design** (`/api/admin/new-m/page/from-appo`, copying into `new-m/page/`). Neither copies the
+verification record's entries (`keepRecordEntries` in each `*-page.ts`): New M keeps its labels, Appo its rows and certificate box,
+and each keeps its officer's designation and signature settings and the note under the record (`record.disclaimer`).
+
+Where Appo differs from New M:
+
+- **Values.** Each document has `document_type`, `signed_by`, `signed_capacity`, `seal_stamp`, `office_city` and `office_name`
+  (the last two were `issuing_office` / `issuing_authority`; `appo.sql` renames them and their saved-value lists). The admin
+  panel names come from `APPO_FIELDS` in `appo-types.ts`.
+- **Numbers.** `APN-XXXX-XXXX-XXXX`: the prefix is `appo_settings.number_prefix` (APN by default), set by the super admin under
+  Appo → Number prefix (`/api/admin/appo/settings`). Any three capital letters are accepted as a number, so documents made
+  under an earlier prefix keep working; a new or changed number must use the prefix in use.
+- **Verification record.** `record.rows` in the page content: Country (fixed value), Document Type, 2–4, a certificate box, 5–8
+  and the approving officer, each with its own number, words, one/two-line layout, order and visibility; `record.certificate`
+  is the box's look per view. All of it is page content in `appo_page_settings`.
+- **Sticker.** Its own sets (`appo-sticker.ts`): two-line Country, Document Type and 2–4; one-line 5–8 (a value starts where its
+  words end); "Date:"; the signature with the officer's name under it; the QR code with no border.
+
+Both stickers let the super admin **ungroup** a set in the background editor, moving its words and its value on their own, and
+**reword** the fixed words for the sticker only. Moves (`layout`, with `split` and per-half `parts`) and reworded words (`texts`,
+by piece id) are saved inside `*_settings.background_placement`, so New M needs no database change for it; the placement travels
+to the browser URI-encoded in the `x-background-placement` header.
 
 ## Permissions
 

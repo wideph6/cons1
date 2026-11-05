@@ -9,6 +9,8 @@
  * No server imports: the editor, the public page and the API all read and check content with this file.
  */
 
+import type { CSSProperties } from "react";
+
 export type PageView = "desktop" | "mobile";
 export const PAGE_VIEWS: PageView[] = ["desktop", "mobile"];
 
@@ -150,14 +152,13 @@ export interface DesktopContent {
     logo: PImage;
     cert_title: PText;
     cert_subtitle: PText;
-    labels: {
-      attestation_number: PText;
-      issue_date: PText;
-      document_type: PText;
-      issuing_office: PText;
-      issuing_authority: PText;
-      officer: PText;
-    };
+    /**
+     * Appo's own entries, in the order the page shows them; the super admin rewords, renumbers, reorders
+     * and hides them. Saved in the database with the rest of the page, never in the code.
+     */
+    rows: RecordRow[];
+    /** How the certificate box (the "certificate" row) looks. */
+    certificate: CertificateStyle;
     designation: { hidden: boolean };
     signature: { hidden: boolean };
     disclaimer: PText;
@@ -235,15 +236,80 @@ export interface MobileContent {
   note: string;
 }
 
-export const RECORD_FIELDS = [
-  "attestation_number",
-  "issue_date",
+/**
+ * The verification record's entries, as they start. Each document fills in its own value; Country's
+ * value is fixed text set on the page. The certificate box sits between 4 and 5 and has no value.
+ */
+export const RECORD_ROWS = [
+  "country",
   "document_type",
-  "issuing_office",
-  "issuing_authority",
+  "signed_by",
+  "signed_capacity",
+  "seal_stamp",
+  "certificate",
+  "office_city",
+  "issue_date",
+  "office_name",
+  "attestation_number",
   "officer",
 ] as const;
-export type RecordField = (typeof RECORD_FIELDS)[number];
+export type RecordRowId = (typeof RECORD_ROWS)[number];
+
+/** stacked: the words on one line and the value on the next. inline: the value right after the words, wrapping on narrow screens. */
+export type RowLayout = "stacked" | "inline";
+export const ROW_LAYOUTS: { value: RowLayout; label: string }[] = [
+  { value: "stacked", label: "Two lines — the value under the words" },
+  { value: "inline", label: "One line — the value after the words (wraps on phones)" },
+];
+
+/** One entry of the verification record. */
+export interface RecordRow {
+  id: RecordRowId;
+  /** Shown before the words, e.g. "2"; empty shows none. */
+  number: string;
+  /** The words, e.g. "Previously signed by". In the certificate box, its text. */
+  text: string;
+  /** Country's value ("Pakistan"), fixed on the page. Every other entry shows the document's own value. */
+  value: string;
+  layout: RowLayout;
+  hidden: boolean;
+}
+
+export type CertificateFont = "serif" | "sans" | "arial";
+export const CERTIFICATE_FONTS: { value: CertificateFont; label: string }[] = [
+  { value: "serif", label: "Serif (Georgia)" },
+  { value: "sans", label: "Sans (the page's own)" },
+  { value: "arial", label: "Arial" },
+];
+
+export type CertificateBorderSides = "lines" | "box";
+export const CERTIFICATE_BORDER_SIDES: { value: CertificateBorderSides; label: string }[] = [
+  { value: "lines", label: "A line above and below" },
+  { value: "box", label: "A line all round" },
+];
+
+/** The certificate box's look. Sizes are in the view's design pixels (1062 px wide desktop, 360 px phone). */
+export interface CertificateStyle {
+  font: CertificateFont;
+  size: number;
+  bold: boolean;
+  italic: boolean;
+  uppercase: boolean;
+  /** Letter spacing in em. */
+  spacing: number;
+  /** #rrggbb */
+  color: string;
+  background: string;
+  /** #rrggbb, or empty for no border. */
+  border: string;
+  /** lines: a line above and below the box, as in the design; box: a line all round. */
+  border_sides: CertificateBorderSides;
+  /** Share of the record's width, in percent. */
+  width: number;
+  /** Least height, in design pixels. */
+  height: number;
+  radius: number;
+}
 
 /* ---------------- Defaults (the reference design) ---------------- */
 
@@ -262,6 +328,49 @@ function img(alt: string): PImage {
 function social(id: string, icon: SocialIcon, label: string): PSocial {
   return { id, icon, label, href: "#", new_tab: true, hidden: false };
 }
+
+function row(id: RecordRowId, number: string, text: string, layout: RowLayout = "stacked", value = ""): RecordRow {
+  return { id, number, text, value, layout, hidden: false };
+}
+
+/** The entries as the super admin first described them; every word can be changed under Page design. */
+export const DEFAULT_ROWS: RecordRow[] = [
+  row("country", "1", "Country", "stacked", "Pakistan"),
+  row("document_type", "", "Document Type:", "inline"),
+  row("signed_by", "2", "Previously signed by"),
+  row("signed_capacity", "3", "Previous Signed acting in capacity"),
+  row("seal_stamp", "4", "Bears the seal or stamp"),
+  row("certificate", "", "Certified"),
+  row("office_city", "5", "Office City"),
+  row("issue_date", "6", "Date"),
+  row("office_name", "7", "Office Name"),
+  row("attestation_number", "8", "Complete Number"),
+  row("officer", "", "Approving officer"),
+];
+
+/**
+ * The certificate box as in the super admin's design: "Certified" in bold serif, dark green, centred on a
+ * pale green band as wide as the record, with a thin line above and below it. The text is a little under
+ * half the band's height.
+ */
+export const DEFAULT_CERTIFICATE: CertificateStyle = {
+  font: "serif",
+  size: 16,
+  bold: true,
+  italic: false,
+  uppercase: false,
+  spacing: 0,
+  color: "#064b2b",
+  background: "#eaf1e5",
+  border: "#bdccbc",
+  border_sides: "lines",
+  width: 100,
+  height: 36,
+  radius: 0,
+};
+
+/** The same on the phone's 360 px grid, kept in proportion with the entries round it. */
+export const DEFAULT_MOBILE_CERTIFICATE: CertificateStyle = { ...DEFAULT_CERTIFICATE, size: 18, height: 41 };
 
 export const DEFAULT_TOOLS: Record<ViewerTool, boolean> = Object.fromEntries(
   VIEWER_TOOLS.map((tool) => [tool.key, true]),
@@ -328,14 +437,8 @@ export const DEFAULT_DESKTOP: DesktopContent = {
     logo: img("Notary Public and Legal Services"),
     cert_title: t("GENERAL ATTESTATION"),
     cert_subtitle: t("Notary Public & Legal Services, Gujrat"),
-    labels: {
-      attestation_number: t("Attestation number"),
-      issue_date: t("Date of issue"),
-      document_type: t("Document type"),
-      issuing_office: t("Issuing office"),
-      issuing_authority: t("Issuing authority"),
-      officer: t("Approving officer"),
-    },
+    rows: DEFAULT_ROWS.map((r) => ({ ...r })),
+    certificate: { ...DEFAULT_CERTIFICATE },
     designation: { hidden: false },
     signature: { hidden: false },
     disclaimer: t(
@@ -444,7 +547,12 @@ export const DEFAULT_MOBILE: MobileContent = {
     lead: t("This General Attestation record is issued by the Notary Public"),
   },
   result: { ...DEFAULT_DESKTOP.result },
-  record: { ...DEFAULT_DESKTOP.record, logo: { ...DEFAULT_DESKTOP.record.logo } },
+  record: {
+    ...DEFAULT_DESKTOP.record,
+    logo: { ...DEFAULT_DESKTOP.record.logo },
+    rows: DEFAULT_ROWS.map((r) => ({ ...r })),
+    certificate: { ...DEFAULT_MOBILE_CERTIFICATE },
+  },
   document: {
     eyebrow: { ...DEFAULT_DESKTOP.document.eyebrow },
     title: { ...DEFAULT_DESKTOP.document.title },
@@ -697,15 +805,85 @@ function cleanResult(result: Record<string, unknown>, d: Result): Result {
   };
 }
 
+/** One entry, checked. Only Country keeps a value of its own; the rest show the document's. */
+function cleanRow(o: Record<string, unknown>, d: RecordRow): RecordRow {
+  return {
+    id: d.id,
+    number: str(o.number, d.number, 12).replace(/\n/g, " "),
+    text: str(o.text, d.text),
+    value: d.id === "country" ? str(o.value, d.value, 200).replace(/\n/g, " ") : "",
+    layout: o.layout === "inline" || o.layout === "stacked" ? o.layout : d.layout,
+    hidden: bool(o.hidden, d.hidden),
+  };
+}
+
+/**
+ * Every entry exactly once, in the saved order. An entry the saved order lacks (one added in a later
+ * version) goes in after the entry it follows in the defaults.
+ */
+function cleanRows(v: unknown, d: RecordRow[]): RecordRow[] {
+  const out: RecordRow[] = [];
+  const seen = new Set<string>();
+  for (const raw of Array.isArray(v) ? v.slice(0, 40) : []) {
+    const o = obj(raw);
+    const base = d.find((x) => x.id === o.id);
+    if (!base || seen.has(base.id)) continue;
+    seen.add(base.id);
+    out.push(cleanRow(o, base));
+  }
+  d.forEach((r, i) => {
+    if (seen.has(r.id)) return;
+    const before = d
+      .slice(0, i)
+      .reverse()
+      .find((x) => seen.has(x.id));
+    out.splice(before ? out.findIndex((x) => x.id === before.id) + 1 : 0, 0, { ...r });
+    seen.add(r.id);
+  });
+  return out;
+}
+
+function color(v: unknown, fallback: string, allowEmpty = false): string {
+  if (typeof v !== "string") return fallback;
+  const c = v.trim().toLowerCase();
+  if (allowEmpty && c === "") return "";
+  return /^#[0-9a-f]{6}$/.test(c) ? c : fallback;
+}
+
+function between(v: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n * 100) / 100));
+}
+
+function cleanCertificate(v: unknown, d: CertificateStyle): CertificateStyle {
+  const o = obj(v);
+  return {
+    font: CERTIFICATE_FONTS.some((f) => f.value === o.font) ? (o.font as CertificateFont) : d.font,
+    size: between(o.size, d.size, 6, 60),
+    bold: bool(o.bold, d.bold),
+    italic: bool(o.italic, d.italic),
+    uppercase: bool(o.uppercase, d.uppercase),
+    spacing: between(o.spacing, d.spacing, 0, 1),
+    color: color(o.color, d.color),
+    background: color(o.background, d.background),
+    border: color(o.border, d.border, true),
+    border_sides: CERTIFICATE_BORDER_SIDES.some((b) => b.value === o.border_sides) ? (o.border_sides as CertificateBorderSides) : d.border_sides,
+    width: between(o.width, d.width, 20, 100),
+    height: between(o.height, d.height, 0, 200),
+    radius: between(o.radius, d.radius, 0, 40),
+  };
+}
+
 function cleanRecord(record: Record<string, unknown>, d: RecordSection): RecordSection {
-  const labels = obj(record.labels);
   return {
     eyebrow: cleanText(record.eyebrow, d.eyebrow),
     title: cleanText(record.title, d.title),
     logo: cleanImage(record.logo, d.logo),
     cert_title: cleanText(record.cert_title, d.cert_title),
     cert_subtitle: cleanText(record.cert_subtitle, d.cert_subtitle),
-    labels: Object.fromEntries(RECORD_FIELDS.map((f) => [f, cleanText(labels[f], d.labels[f])])) as RecordSection["labels"],
+    rows: cleanRows(record.rows, d.rows),
+    certificate: cleanCertificate(record.certificate, d.certificate),
     designation: { hidden: bool(obj(record.designation).hidden, d.designation.hidden) },
     signature: { hidden: bool(obj(record.signature).hidden, d.signature.hidden) },
     disclaimer: cleanText(record.disclaimer, d.disclaimer),
@@ -836,6 +1014,25 @@ export function mobileFromDesktop(desk: DesktopContent, mob: MobileContent): Mob
   });
 }
 
+/**
+ * The part of the verification record that is Appo's alone: its entries (rows, the certificate box,
+ * the officer's designation and signature) and the note under them. Copying New M's page design
+ * leaves it as it is, since New M's record has its own; everything else on the page is shared.
+ */
+export function keepRecordEntries<T extends DesktopContent | MobileContent>(copied: T, own: T): T {
+  return {
+    ...copied,
+    record: {
+      ...copied.record,
+      rows: own.record.rows.map((r) => ({ ...r })),
+      certificate: { ...own.record.certificate },
+      designation: { ...own.record.designation },
+      signature: { ...own.record.signature },
+      disclaimer: { ...own.record.disclaimer },
+    },
+  };
+}
+
 /* ---------------- Addressing pieces of the page (the editor) ---------------- */
 
 /**
@@ -894,11 +1091,16 @@ export function listOf(root: unknown, path: string): { listPath: string; itemId:
 /** One document's values, as the page shows them. */
 export interface PageRecord {
   attestation_number: string;
-  /** Already formatted, e.g. "15 Oct 2026". */
+  /** Already formatted, e.g. "15 Oct 2026" (the banner). */
   issue_date: string;
+  /** The record's Date, e.g. "29th of October 2026". */
+  issue_date_long: string;
   document_type: string;
-  issuing_office: string;
-  issuing_authority: string;
+  signed_by: string;
+  signed_capacity: string;
+  seal_stamp: string;
+  office_city: string;
+  office_name: string;
   officer_name: string;
   officer_designation: string;
   signature_url: string | null;
@@ -915,13 +1117,74 @@ export interface PageRecord {
   } | null;
 }
 
+/** The value an entry shows: Country's fixed value, or the document's own. */
+export function rowValue(row: RecordRow, r: PageRecord): string {
+  switch (row.id) {
+    case "country":
+      return row.value;
+    case "document_type":
+      return r.document_type;
+    case "signed_by":
+      return r.signed_by;
+    case "signed_capacity":
+      return r.signed_capacity;
+    case "seal_stamp":
+      return r.seal_stamp;
+    case "office_city":
+      return r.office_city;
+    case "issue_date":
+      return r.issue_date_long;
+    case "office_name":
+      return r.office_name;
+    case "attestation_number":
+      return r.attestation_number;
+    case "officer":
+      return r.officer_name;
+    default:
+      return "";
+  }
+}
+
+/**
+ * The certificate box's look as inline CSS. unit turns design pixels into the view's scaled CSS size,
+ * and fonts names each font choice as the view's stylesheet does, so one style serves both views.
+ */
+export function certificateStyle(
+  s: CertificateStyle,
+  unit: (n: number) => string,
+  fonts: Record<CertificateFont, string>,
+): CSSProperties {
+  return {
+    fontFamily: fonts[s.font],
+    fontSize: unit(s.size),
+    fontWeight: s.bold ? 700 : 400,
+    fontStyle: s.italic ? "italic" : "normal",
+    textTransform: s.uppercase ? "uppercase" : "none",
+    letterSpacing: `${s.spacing}em`,
+    color: s.color,
+    background: s.background,
+    ...(s.border
+      ? s.border_sides === "box"
+        ? { border: `${unit(1)} solid ${s.border}` }
+        : { border: "none", borderTop: `${unit(1)} solid ${s.border}`, borderBottom: `${unit(1)} solid ${s.border}` }
+      : { border: "none" }),
+    width: `${s.width}%`,
+    minHeight: unit(s.height),
+    borderRadius: unit(s.radius),
+  };
+}
+
 /** Values from the reference design, for the editor when no document is picked. */
 export const SAMPLE_RECORD: PageRecord = {
-  attestation_number: "GEN-PSMK-XHLI-NSML",
-  issue_date: "15 Oct 2026",
+  attestation_number: "APN-PSMK-XHLI-NSML",
+  issue_date: "29 Oct 2026",
+  issue_date_long: "29th of October 2026",
   document_type: "School Leaving Certificate (SLC)",
-  issuing_office: "Court Road, Gujrat",
-  issuing_authority: "Notary Public & Legal Services, Gujrat",
+  signed_by: "Muhammad Asad Ali",
+  signed_capacity: "Notary Public",
+  seal_stamp: "Notary Public & Legal Services, Gujrat",
+  office_city: "Gujrat",
+  office_name: "Notary Public & Legal Services",
   officer_name: "Muhammad Junaid Khalid",
   officer_designation: "Notary Officer",
   signature_url: null,

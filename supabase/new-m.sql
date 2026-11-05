@@ -80,7 +80,9 @@ create table if not exists public.new_m_settings (
   background_has_frame boolean not null default false,
   -- Where the super admin placed the image on the 958 x 761 sticker and what is cropped off it:
   -- {x, y, width, height, crop?: {top, right, bottom, left}} (crop as shares of the image). Anything past
-  -- the sticker is cut off too. Null stretches it over the whole sticker.
+  -- the sticker is cut off too. Null stretches it over the whole sticker. It also holds the sticker's parts
+  -- the super admin moved (layout: each set's move, and once ungrouped its label's and value's own moves)
+  -- and the labels reworded for the sticker (texts). Nothing new to run: it is all inside this JSON.
   background_placement jsonb,
   updated_by uuid references public.users(id) on delete set null,
   updated_at timestamptz not null default now()

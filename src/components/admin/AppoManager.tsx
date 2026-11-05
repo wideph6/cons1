@@ -4,6 +4,7 @@ import {
   Download,
   Eye,
   Globe,
+  Hash,
   Image as ImageIcon,
   LayoutTemplate,
   ListChecks,
@@ -20,6 +21,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AppoDomains } from "@/components/admin/AppoDomains";
 import { AppoForm } from "@/components/admin/AppoForm";
+import { AppoNumberPrefixDialog } from "@/components/admin/AppoNumberPrefix";
 import { AppoQrDialog, QrSvgImage } from "@/components/admin/AppoQr";
 import { AppoSavedValues } from "@/components/admin/AppoSavedValues";
 import { downloadSticker, AppoBackgroundDialog, AppoStickerDialog } from "@/components/admin/AppoSticker";
@@ -70,6 +72,7 @@ export function AppoManager() {
   /** The document whose sticker PNG is being made straight from the list. */
   const [stickerBusy, setStickerBusy] = useState<string | null>(null);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const [prefixOpen, setPrefixOpen] = useState(false);
   const [del, setDel] = useState<AppoRecord | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -227,6 +230,11 @@ export function AppoManager() {
             Saved values
           </Button>
           {isSuper ? (
+            <Button icon={<Hash className="size-4" />} disabled={!lists} onClick={() => setPrefixOpen(true)} title="The three letters every new attestation number starts with">
+              Number prefix{lists ? ` (${lists.number_prefix})` : ""}
+            </Button>
+          ) : null}
+          {isSuper ? (
             <Button icon={<ImageIcon className="size-4" />} onClick={() => setBackgroundOpen(true)}>
               Background image
             </Button>
@@ -270,7 +278,7 @@ export function AppoManager() {
           <div className="flex gap-2">
             <Input
               value={query}
-              placeholder="Attestation number, document type, office, authority, officer, domain, file name or date"
+              placeholder="Number, document type, signed by, capacity, seal, office city or name, officer, domain, file or date"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
@@ -338,7 +346,8 @@ export function AppoManager() {
                   <th>Document type</th>
                   <th>Domain</th>
                   <th>Date</th>
-                  <th>Issuing office / authority</th>
+                  <th>Previously signed by</th>
+                  <th>Office city / name</th>
                   <th>Approving officer</th>
                   <th>PDF</th>
                   <th>Uploaded</th>
@@ -396,8 +405,13 @@ export function AppoManager() {
                     </td>
                     <td className="whitespace-nowrap">{formatIssued(r.issue_date)}</td>
                     <td>
-                      <div>{r.issuing_office || <span className="text-text-faint">—</span>}</div>
-                      <div className="text-[12px] text-text-muted">{r.issuing_authority}</div>
+                      <div>{r.signed_by || <span className="text-text-faint">—</span>}</div>
+                      <div className="text-[12px] text-text-muted">{r.signed_capacity}</div>
+                      {r.seal_stamp ? <div className="text-[12px] text-text-faint">{r.seal_stamp}</div> : null}
+                    </td>
+                    <td>
+                      <div>{r.office_city || <span className="text-text-faint">—</span>}</div>
+                      <div className="text-[12px] text-text-muted">{r.office_name}</div>
                     </td>
                     <td>
                       {r.officer_name ? (
@@ -486,6 +500,15 @@ export function AppoManager() {
 
       {isSuper ? (
         <AppoBackgroundDialog open={backgroundOpen} onClose={() => setBackgroundOpen(false)} sample={items[0] ?? null} />
+      ) : null}
+
+      {isSuper && lists ? (
+        <AppoNumberPrefixDialog
+          open={prefixOpen}
+          onClose={() => setPrefixOpen(false)}
+          prefix={lists.number_prefix}
+          onSaved={(number_prefix) => setLists((l) => (l ? { ...l, number_prefix } : l))}
+        />
       ) : null}
 
       <AppoSavedValues

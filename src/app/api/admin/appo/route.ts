@@ -5,12 +5,15 @@ import {
   cleanText,
   dbError,
   docColumns,
+  getNumberPrefix,
   linkFor,
   mapRecord,
   missingHashColumn,
   normalizeNumber,
   numberTaken,
   officerColumns,
+  OPTION_KINDS,
+  OPTION_LABELS,
   parseIssueDate,
   qrColumns,
   recordFromRow,
@@ -24,7 +27,7 @@ import {
 import { resolveLink } from "@/lib/appo-link";
 import { db } from "@/lib/supabase";
 import type { Paged } from "@/lib/types";
-import type { AppoRecord } from "@/lib/appo-types";
+import type { AppoOptionKind, AppoRecord } from "@/lib/appo-types";
 
 interface CreateBody {
   /** An Appo domain. */
@@ -36,8 +39,11 @@ interface CreateBody {
   /** `YYYY-MM-DD`. Blank means today. */
   issue_date?: string;
   document_type?: string;
-  issuing_office?: string;
-  issuing_authority?: string;
+  signed_by?: string;
+  signed_capacity?: string;
+  seal_stamp?: string;
+  office_city?: string;
+  office_name?: string;
   /** A saved officer, copied onto the document. Blank or null means none. */
   officer_id?: string | null;
   doc_key?: string;
@@ -104,16 +110,13 @@ export async function POST(req: NextRequest) {
 
     // Everything that needs no database is checked first, so a typing mistake costs no round trip.
     const typed = (body.attestation_number ?? "").trim();
-    const typedNumber = typed ? normalizeNumber(typed) : null;
     const issueDate = parseIssueDate(body.issue_date);
-    const texts = {
-      document_type: cleanText(body.document_type, "Document type"),
-      issuing_office: cleanText(body.issuing_office, "Issuing office"),
-      issuing_authority: cleanText(body.issuing_authority, "Issuing authority"),
-    };
+    const texts = Object.fromEntries(OPTION_KINDS.map((k) => [k, cleanText(body[k], OPTION_LABELS[k])])) as Record<AppoOptionKind, string>;
 
     // Then the lookups, side by side rather than one after another: the link with its domain, the
-    // number, the officer, and the PDF in storage.
+    // number (a new one always starts with the prefix the super admin set), the officer, and the PDF.
+    const prefix = await getNumberPrefix();
+    const typedNumber = typed ? normalizeNumber(typed, prefix) : null;
     const [link, number, officer, doc] = await Promise.all([
       linkFor(body.domain_id, body.link_id),
       typedNumber
@@ -121,7 +124,7 @@ export async function POST(req: NextRequest) {
             if (taken) throw new ApiError(409, `${typedNumber} is already used by another document`);
             return typedNumber;
           })
-        : uniqueNumber(),
+        : uniqueNumber(prefix),
       officerColumns(body.officer_id || null),
       docColumns(body.doc_key, body.doc_filename, body.doc_content_type),
     ]);

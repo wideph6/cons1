@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { DesktopContent, PageRecord, PImage, PLink, PLinkText, PText } from "@/lib/appo-page";
+import { certificateStyle, rowValue, type DesktopContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText } from "@/lib/appo-page";
 import { PdfViewer } from "./PdfViewer";
 import { ArrowNE, DocLines, Emblem, ShieldTick, Social, Tick } from "./icons";
 import "./verify-page.css";
@@ -30,10 +30,13 @@ export interface VerifyPageProps {
   preview?: boolean;
 }
 
-/** One design pixel in CSS, for the few sizes set inline (link widths). */
+/** One design pixel in CSS, for the few sizes set inline (link widths, the certificate box). */
 function u(n: number): string {
   return `calc(var(--u) * ${n})`;
 }
+
+/** The certificate box's font choices, as this view's stylesheet names them. */
+const FONTS = { serif: "var(--apo-serif)", sans: "var(--apo-sans)", arial: "var(--apo-arial)" };
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -140,6 +143,8 @@ export function VerifyPage({ content: c, record, assets, editor, preview }: Veri
   const f = c.footer;
   const r = record;
   const animated = c.meta.animations && !editing && !preview;
+  // The entries keep a gutter for their numbers only while any entry shown has one.
+  const numbered = rec.rows.some((row) => visible(row) && row.id !== "certificate" && row.number.trim() !== "");
 
   return (
     <div className={cx("apo", animated && "apo-anim", editing && "is-editing")}>
@@ -302,47 +307,56 @@ export function VerifyPage({ content: c, record, assets, editor, preview }: Veri
                       {text(rec.cert_title, "record.cert_title", "apo-cert-title")}
                       {text(rec.cert_subtitle, "record.cert_subtitle", "apo-cert-sub")}
                     </div>
-                    <div className="apo-rows">
-                      {(
-                        [
-                          ["attestation_number", r.attestation_number],
-                          ["issue_date", r.issue_date],
-                          ["document_type", r.document_type],
-                          ["issuing_office", r.issuing_office],
-                          ["issuing_authority", r.issuing_authority],
-                        ] as const
-                      ).map(([key, value]) =>
-                        visible(rec.labels[key]) ? (
-                          <div key={key} {...ed(`record.labels.${key}`, rec.labels[key].hidden, "apo-row")}>
-                            <span className="apo-row-label">{rec.labels[key].text}</span>
-                            <span className="apo-row-value">{dash(value)}</span>
-                          </div>
-                        ) : null,
-                      )}
-                      {visible(rec.labels.officer) ? (
-                        <div {...ed("record.labels.officer", rec.labels.officer.hidden, "apo-row apo-row-officer")}>
-                          <div className="apo-officer-text">
-                            <span className="apo-row-label">{rec.labels.officer.text}</span>
-                            <span className="apo-row-value">{dash(r.officer_name)}</span>
-                            {visible(rec.designation) && r.officer_designation ? (
-                              <span {...ed("record.designation", rec.designation.hidden, "apo-officer-role")}>
-                                {r.officer_designation}
+                    <div className={cx("apo-rows", numbered && "has-numbers")}>
+                      {rec.rows.map((row) => {
+                        if (!visible(row)) return null;
+                        const path = `record.rows.${row.id}`;
+                        const num = row.number.trim() ? <span className="apo-row-num">{row.number}</span> : null;
+                        if (row.id === "certificate") {
+                          return (
+                            <div key={row.id} {...ed(path, row.hidden, "apo-certrow")}>
+                              <span className="apo-certbox" style={certificateStyle(rec.certificate, u, FONTS)}>
+                                {row.text}
                               </span>
-                            ) : null}
+                            </div>
+                          );
+                        }
+                        if (row.id === "officer") {
+                          return (
+                            <div key={row.id} {...ed(path, row.hidden, "apo-row apo-row-officer")}>
+                              {num}
+                              <div className="apo-officer-text">
+                                <span className="apo-row-label">{row.text}</span>
+                                <span className="apo-row-value">{dash(r.officer_name)}</span>
+                                {visible(rec.designation) && r.officer_designation ? (
+                                  <span {...ed("record.designation", rec.designation.hidden, "apo-officer-role")}>
+                                    {r.officer_designation}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {visible(rec.signature) && (r.signature_url || editing) ? (
+                                <span {...ed("record.signature", rec.signature.hidden, "apo-signature")}>
+                                  {r.signature_url ? (
+                                    // Signatures are signed R2 links that expire; next/image would cache them.
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={r.signature_url} alt={`Signature of ${r.officer_name || "the approving officer"}`} />
+                                  ) : (
+                                    <SampleSignature />
+                                  )}
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={row.id} {...ed(path, row.hidden, cx("apo-row", row.layout === "inline" && "is-inline"))}>
+                            {num}
+                            <span className="apo-row-label">{row.text}</span>
+                            {row.layout === "inline" ? " " : null}
+                            <span className="apo-row-value">{dash(rowValue(row, r))}</span>
                           </div>
-                          {visible(rec.signature) && (r.signature_url || editing) ? (
-                            <span {...ed("record.signature", rec.signature.hidden, "apo-signature")}>
-                              {r.signature_url ? (
-                                // Signatures are signed R2 links that expire; next/image would cache them.
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={r.signature_url} alt={`Signature of ${r.officer_name || "the approving officer"}`} />
-                              ) : (
-                                <SampleSignature />
-                              )}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : null}
+                        );
+                      })}
                     </div>
                     {visible(rec.disclaimer) ? (
                       <p {...ed("record.disclaimer", rec.disclaimer.hidden, "apo-disclaimer")}>{rec.disclaimer.text}</p>

@@ -751,6 +751,15 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
   "4 by" + issuing authority), QR code apni border ke saath, aur "1 Country Pakistan" alag set. **Signature** aur **designation**
   alag alag hilte hain. **Put this one back** sirf chuni hui cheez, **Put all text & QR back** sab ko wapas asal jagah le aata hai.
   **Done moving** se wapas image hilane par.
+- **Ungroup (fix text aur value alag alag):** Move text & QR mein kisi set (jaise "4 by" + authority) par click karen to **Ungroup**
+  ka button aata hai. Dabane par us set ke **fix text** (number + label) aur **value** ke alag alag dabbe ban jate hain (narangi
+  dashed) — har aik ko alag ghaseet ya arrow keys se hila sakte hain. **Group again** dabane se dono phir aik saath hilte hain (jahan
+  rakhe the wahin rehte hain). **Put this one back** set ko poori tarah asal jagah aur grouped haalat mein le aata hai.
+- **Fix text badalna (sirf sticker par):** set chunne par neeche **"Words of … — on the sticker only"** khana aata hai — wahan set ke
+  fix text (jaise "4", "by", "Country", "Pakistan") badal sakte hain. **Restore** se asal lafz wapas, **Restore all words** se sab.
+  Khali chhor dein to wo lafz sticker par nahi aata. Ye tabdeeli **sirf sticker** par hoti hai — verification page ka apna text alag
+  hai (Page design se). Background par labels pehle se chhape hon (tick laga ho) to app labels nahi likhta, is liye ye khana nahi aata.
+- Ye sab (jagah, ungroup, badle hue lafz) **database** mein background ki position ke saath save hota hai — code mein kahin nahi.
 - Sab theek ho to **Use this background** (nayi image) ya **Save position** (sirf jagah/crop/text ki jagah badli ho).
   Wohi jagah aur crop save hote hain aur har sticker — screen par bhi aur download mein bhi — bilkul waisa hi banta hai.
 - Nayi image purani ki jagah le leti hai; purani file storage se mita di jati hai.
@@ -894,6 +903,10 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
 - **Undo / Redo** (Ctrl+Z / Ctrl+Shift+Z) — har view ki apni history; **Discard changes** (dono views aakhri save par wapas);
   **Reset desktop/mobile to design** (sirf khula hua view asal design par wapas — Save tak live nahi hota); **Save** (Ctrl+S) — jo
   view badla ho wohi save hota hai.
+- **Copy Appo's design:** Appo ka saved page design (dono views — text, links, buttons, logo, favicon, PDF tab ka favicon) New M ke
+  editor mein le aata hai, unsaved changes ki tarah. **Verification record ki entries copy nahi hotin** — New M ke labels (Attestation
+  number, Date of issue, waghera), approving officer ki designation/signature aur neeche wala note ("This verification confirms…")
+  jaise thay waise rehte hain, kyun ke Appo ka ye hissa alag hai. Logo/favicon ki R2 mein New M ki apni copy banti hai. Pasand na aaye to **Undo**; **Save** tak visitors ko kuch nahi badalta.
 - **Save** dabane par saara text, links, buttons ke naam aur settings **database** (`new_m_page_settings`) mein jate hain aur usi
   waqt har verification link par lag jate hain. Logo **R2** mein; jo logo hata diya ya badal diya wo R2 se mita diya jata hai — magar sirf tab jab doosra view bhi use
   istemal na kar raha ho.
@@ -931,10 +944,76 @@ to us par New M khulta hai.
 jaisa banane ke liye **Appo page** → **Copy New M's design** → **Copy** dabayen. New M ka saved design — dono views ke text,
 links, buttons, logo, favicon aur PDF tab ka favicon — editor mein aa jayega. Preview dekh kar **Save** dabayen (pasand na aaye to
 **Undo** ya **Discard changes**). Logo aur favicon ki R2 mein Appo ki apni copy banti hai, is liye baad mein kisi ek page ko
-badalne se doosre par asar nahi parta. New M ka koi data is se nahi badalta.
+badalne se doosre par asar nahi parta. New M ka koi data is se nahi badalta. **Verification record ki entries copy nahi hotin**
+(neeche wali list, certificate ka khana, officer ki designation/signature) aur un ke neeche wala note ("This verification
+confirms…") bhi copy nahi hota — ye Appo ke apne hain aur jaise thay waise rehte hain.
 
 Baqi sab kaam (upload, edit, sticker, background image, page design, favicon, PDF ka 40 character naam aur link) Hissa 13 jaisa hai,
-bas New M ki jagah **Appo** tab aur **Appo page** use karen.
+bas New M ki jagah **Appo** tab aur **Appo page** use karen. Jo cheezen Appo mein New M se mukhtalif hain wo neeche hain.
+
+## 13A.1 Appo ke liye database dobara chalayen
+
+Is update ke baad `supabase/appo.sql` **dobara Run** karen (Supabase → SQL Editor). Ye:
+
+- documents mein 3 naye khane banata hai: `signed_by`, `signed_capacity`, `seal_stamp`;
+- purane "Issuing office" ko **Office city** (`office_city`) aur "Issuing authority" ko **Office name** (`office_name`) bana deta hai —
+  purana data aur saved values wahi rehte hain;
+- attestation number ko **koi bhi 3 capital letters** se shuru hone deta hai (purane GEN numbers bhi chalte rahte hain);
+- settings mein **number prefix** (shuru mein `APN`) rakhta hai.
+
+Jab tak ye na chale, Appo ka upload/edit "Run supabase/appo.sql again" ka paigham deta hai.
+
+## 13A.2 Attestation number: APN aur us ka option
+
+Naya Appo number ab **APN** se shuru hota hai, jaise `APN-NMPD-SSTI-FBDS` (Generate dabane par bhi, aur khali chhorne par auto bhi).
+Super admin **Appo → Number prefix (APN)** se ye 3 letters kabhi bhi badal sakta hai (sirf A–Z, bilkul 3). Prefix database mein
+save hota hai. Hath se number likhen to wo bhi isi prefix se shuru hona chahiye. Pehle se bane documents ke numbers, links aur QR
+nahi badalte — wo chalte rehte hain; sirf naye ya badle gaye numbers naya prefix lete hain.
+
+## 13A.3 Upload form ki entries
+
+Upload / edit mein ye values aati hain (har aik ki apni saved list, jaise New M mein):
+
+| Admin panel mein | Page par | Sticker par |
+|---|---|---|
+| Document type | Document Type: value (aik line, phone par 2 lines) | Document Type / value (2 lines) |
+| Previously signed by | 2 Previously signed by / value | 2 previously signed by / value |
+| Previous signed acting in capacity | 3 Previous Signed acting in capacity / value | 3 previous Signed acting in capacity / value |
+| Bears the seal or stamp | 4 Bears the seal or stamp / value | 4 bears the seal or stamp / value |
+| Office city | 5 Office City / value | 5 office City value (aik line) |
+| Date | 6 Date / 29th of October 2026 | 6 date 29th of October 2026 (aik line) — aur alag "Date: 29 Oct 2026" |
+| Office name | 7 Office Name / value | 7 office Name value (aik line) |
+| Attestation number (APN…) | 8 Complete Number / APN-… | 8 No APN-… (aik line) |
+| Approving officer | Approving officer / naam / designation, signature saath | signature, neeche officer ka **naam** |
+
+"1 Country / Pakistan" kisi document se nahi aata — ye fix text hai: page par Page design se, sticker par Background image se badla
+jata hai.
+
+## 13A.4 Appo ka sticker
+
+Appo ka sticker New M jaisa banta hai magar apni entries ke saath (oper ki table). QR code ke gird **koi border line nahi** — sirf
+safed chokor par QR. Signature ke neeche officer ka **naam** aata hai. Labels sticker par chhote harf se shuru hote hain
+("previously signed by", "office City", "date") aur "No" bara. Har cheez ki pehli jagah aik andaze se rakhi gayi hai — apni
+background image upload kar ke **Move text & QR** se har set ko us ki jagah par le aayen; zarurat ho to **Ungroup** kar ke fix
+text aur value alag alag rakhen, aur lafz badlen (Hissa 13.5b mein tareeqa). Ye sab database mein save hota hai.
+
+## 13A.5 Verification record (page par)
+
+Page design → kisi bhi entry par click karen (ya "Everything on the page" list mein **Verification record** ke neeche):
+
+- **Number** (jaise 2; khali = koi number nahi), **Words** (jaise "Previously signed by"), aur Country ke liye **Value** (Pakistan).
+- **Layout:** *Two lines* (value neeche) ya *One line* (value lafzon ke foran baad — phone par jitna na samaye agli line par).
+- **Earlier / Later** se entry ko list mein oper neeche karen (position badalna). **Hide from the page** se chhupayen.
+- **Certificate box** (4 aur 5 ke darmiyan, sirf page par — sticker par nahi): text, font, size, bold/italic, CAPITAL, letter
+  spacing, chorai (%), oonchai, kone, aur **text / background / border ke rang** (border: oopar-neeche line ya chaaron taraf).
+  Shuru mein ye aap ke design jaisa hai: halka sabz band (#eaf1e5), oopar-neeche patli line (#bdccbc), beech mein **Certified**
+  bold serif gehre sabz (#064b2b) mein. Desktop aur mobile ka look alag alag set hota hai, is liye phone par box ki chorai kam rakh
+  sakte hain. **Back to the first look** se wapas yehi design.
+- Neeche wala note ("This verification confirms…") New M ki tarah **Certificate note** par click kar ke badlen (copy karte waqt ye
+  copy nahi hota) — desktop aur mobile
+  dono mein.
+
+Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote hain, code mein nahi.
 
 ---
 

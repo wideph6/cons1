@@ -42,15 +42,20 @@ import {
 } from "@/components/ui";
 import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
 import {
+  CERTIFICATE_BORDER_SIDES,
+  CERTIFICATE_FONTS,
   cleanDesktop,
   cleanMobile,
+  DEFAULT_CERTIFICATE,
+  DEFAULT_MOBILE_CERTIFICATE,
   DEFAULT_DESKTOP,
   DEFAULT_MOBILE,
+  keepRecordEntries,
   LINK_ICONS,
   MAX_ITEMS,
   MOBILE_VIEWER_MODES,
   PAGE_VIEWS,
-  RECORD_FIELDS,
+  ROW_LAYOUTS,
   SAMPLE_PDF_NAME,
   SAMPLE_RECORD,
   SOCIAL_ICONS,
@@ -74,7 +79,12 @@ import {
   type PLinkText,
   type PSocial,
   type PText,
-  type RecordField,
+  type CertificateBorderSides,
+  type CertificateFont,
+  type CertificateStyle,
+  type RecordRow,
+  type RecordRowId,
+  type RowLayout,
   type SocialIcon,
   type ViewerTool,
 } from "@/lib/appo-page";
@@ -112,12 +122,7 @@ const NAMES: Record<string, string> = {
   "record.logo": "Certificate logo",
   "record.cert_title": "Certificate title",
   "record.cert_subtitle": "Certificate subtitle",
-  "record.labels.attestation_number": "Label — attestation number",
-  "record.labels.issue_date": "Label — date of issue",
-  "record.labels.document_type": "Label — document type",
-  "record.labels.issuing_office": "Label — issuing office",
-  "record.labels.issuing_authority": "Label — issuing authority",
-  "record.labels.officer": "Label — approving officer",
+  "record.rows": "Record entry",
   "record.designation": "Officer designation",
   "record.signature": "Officer signature",
   "record.disclaimer": "Certificate note",
@@ -160,14 +165,34 @@ function namesFor(view: PageView): Record<string, string> {
   return view === "mobile" ? MOBILE_NAMES : NAMES;
 }
 
-/** Which document value appears under each label. */
-const FIELD_SOURCE: Record<RecordField, string> = {
-  attestation_number: "the document's attestation number",
-  issue_date: "the document's issue date",
-  document_type: "the document type picked when the document was uploaded",
-  issuing_office: "the issuing office picked when the document was uploaded",
-  issuing_authority: "the issuing authority picked when the document was uploaded",
-  officer: "the approving officer's name (with designation and signature) picked when the document was uploaded",
+/** What each entry of the verification record is called here. */
+const ROW_NAMES: Record<RecordRowId, string> = {
+  country: "Entry — Country",
+  document_type: "Entry — Document Type",
+  signed_by: "Entry — Previously signed by",
+  signed_capacity: "Entry — Acting in capacity",
+  seal_stamp: "Entry — Seal or stamp",
+  certificate: "Certificate box",
+  office_city: "Entry — Office City",
+  issue_date: "Entry — Date",
+  office_name: "Entry — Office Name",
+  attestation_number: "Entry — Complete Number",
+  officer: "Entry — Approving officer",
+};
+
+/** Which value each entry shows. */
+const ROW_SOURCE: Record<RecordRowId, string> = {
+  country: "the fixed value typed in below, the same for every document",
+  document_type: "the document type typed into each upload",
+  signed_by: "“Previously signed by” as typed into each upload",
+  signed_capacity: "“Previous signed acting in capacity” as typed into each upload",
+  seal_stamp: "“Bears the seal or stamp” as typed into each upload",
+  certificate: "",
+  office_city: "the office city typed into each upload",
+  issue_date: "the document's date, written like “29th of October 2026”",
+  office_name: "the office name typed into each upload",
+  attestation_number: "the document's attestation number (generated or typed in, starting with the prefix in use)",
+  officer: "the approving officer's name, with their designation under it and their signature beside them",
 };
 
 /** Text that may run over several lines (Enter makes a line break on the page). */
@@ -188,6 +213,8 @@ function widthGrid(view: PageView, listPath: string): number | null {
 function nameOf(view: PageView, path: string, content: AnyContent): string {
   const names = namesFor(view);
   if (names[path]) return names[path];
+  const rowId = path.startsWith("record.rows.") ? (path.slice("record.rows.".length) as RecordRowId) : null;
+  if (rowId && ROW_NAMES[rowId]) return ROW_NAMES[rowId];
   const list = listOf(content, path);
   if (list && names[list.listPath]) return names[list.listPath];
   return path;
@@ -236,7 +263,11 @@ function outline(view: PageView, c: AnyContent): OutlineGroup[] {
         t("record.logo"),
         t("record.cert_title"),
         t("record.cert_subtitle"),
-        ...RECORD_FIELDS.map((f) => t(`record.labels.${f}`)),
+        ...c.record.rows.map((r) => ({
+          path: `record.rows.${r.id}`,
+          label: r.id === "certificate" ? `${ROW_NAMES[r.id]}: ${r.text || "(empty)"}` : `${r.number ? `${r.number} ` : ""}${r.text || "(empty)"}`,
+          hidden: r.hidden,
+        })),
         t("record.designation"),
         t("record.signature"),
         t("record.disclaimer"),
@@ -659,13 +690,16 @@ export function AppoPageEditor() {
     try {
       const r = await api<NewMCopy>("/api/admin/appo/page/from-new-m", { method: "POST" });
       setAssets((a) => ({ ...a, ...r.assets }));
-      edit("desktop", () => cleanDesktop(r.desktop));
-      edit("mobile", () => cleanMobile(r.mobile));
+      // The verification record's entries are Appo's own (New M's record has others), so they stay as they are.
+      edit("desktop", (c) => keepRecordEntries(cleanDesktop(r.desktop), c as DesktopContent));
+      edit("mobile", (c) => keepRecordEntries(cleanMobile(r.mobile), c as MobileContent));
       setSelected(null);
       setMenuPinned(false);
       setConfirm(null);
       const neverSaved = PAGE_VIEWS.filter((v) => !r.saved[v]).map((v) => VIEW_LABEL[v].toLowerCase());
-      const notes = ["New M's design is copied into both views. Check the preview, then press Save."];
+      const notes = [
+        "New M's design is copied into both views; the verification record's entries and the note under them stay Appo's own. Check the preview, then press Save.",
+      ];
       if (r.images.missing) {
         notes.push(
           `${r.images.missing} of its images ${r.images.missing === 1 ? "was" : "were"} not in storage, so the design's own shows there.`,
@@ -948,8 +982,13 @@ export function AppoPageEditor() {
             Both views — desktop and mobile — take New M&apos;s verification page as it is saved now: every text, link,
             button, tab, menu item and logo, the favicon and the PDF tab&apos;s favicon. Appo gets its own copies of the
             logos and favicons in R2, so changing either page later never touches the other. Changes not yet saved in New
-            M&apos;s editor are not included. Nothing changes for visitors until you press <b>Save</b>, and <b>Undo</b>{" "}
-            brings back your version of each view.
+            M&apos;s editor are not included.
+            <br />
+            <br />
+            <b>Not copied:</b> the entries of the verification record — Country, Document Type, 2 to 8, the certificate box,
+            the approving officer&apos;s designation and signature — and the note under them (&ldquo;This verification
+            confirms…&rdquo;). They are Appo&apos;s own, so they stay exactly as they are. Nothing changes for visitors until you press <b>Save</b>, and <b>Undo</b> brings back your version of
+            each view.
           </>
         }
       />
@@ -1196,6 +1235,8 @@ function Inspector({
   const list = listOf(content, path);
   const listItems = list ? (getAt(content, list.listPath) as Array<{ id: string }>) : null;
   const index = list && listItems ? listItems.findIndex((x) => x.id === list.itemId) : -1;
+  /** The record's entries are a fixed set: they can be moved and hidden, not added, copied or deleted. */
+  const fixedList = list?.listPath === "record.rows";
   const set = (field: string, v: unknown) => onChange(`${path}.${field}`, v);
 
   let body: ReactNode = <p className="text-sm text-text-muted">This piece has no settings.</p>;
@@ -1234,14 +1275,19 @@ function Inspector({
     );
   } else if (path === "header.menu_button") {
     body = <MenuButtonFields value={value as PText} set={set} menuOpen={menuOpen} onMenuOpen={onMenuOpen} />;
-  } else if (path.startsWith("record.labels.")) {
-    const field = path.split(".")[2] as RecordField;
+  } else if (path === "record.rows.certificate") {
     body = (
-      <>
-        <TextFields value={value as PText} set={set} multiline={false} />
-        <Alert tone="info">The value under this label is {FIELD_SOURCE[field]}. It changes with every document and is not edited here.</Alert>
-      </>
+      <CertificateFields
+        view={view}
+        row={value as RecordRow}
+        style={content.record.certificate}
+        set={set}
+        setStyle={(field, v) => onChange(`record.certificate.${field}`, v)}
+        onResetStyle={() => onChange("record.certificate", { ...(view === "mobile" ? DEFAULT_MOBILE_CERTIFICATE : DEFAULT_CERTIFICATE) })}
+      />
     );
+  } else if (path.startsWith("record.rows.")) {
+    body = <RowFields row={value as RecordRow} set={set} />;
   } else if (path === "record.designation" || path === "record.signature") {
     body = (
       <>
@@ -1300,6 +1346,7 @@ function Inspector({
       <div className="px-4 py-3 space-y-3 max-h-[calc(100vh-16rem)] overflow-y-auto">{body}</div>
       {list && listItems ? (
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-3 border-t bg-surface-2 rounded-b-md">
+          {fixedList ? <span className="w-full text-[12px] text-text-muted">Move this entry up or down the record:</span> : null}
           <Button size="sm" icon={<ArrowUp className="size-3.5" />} disabled={index <= 0} onClick={() => onMove(-1)} title="Move before the previous item">
             Earlier
           </Button>
@@ -1312,18 +1359,224 @@ function Inspector({
           >
             Later
           </Button>
-          <Button size="sm" icon={<Plus className="size-3.5" />} onClick={onAddAfter}>
-            Add after
-          </Button>
-          <Button size="sm" icon={<Copy className="size-3.5" />} onClick={onDuplicate}>
-            Duplicate
-          </Button>
-          <Button size="sm" variant="danger" icon={<Trash2 className="size-3.5" />} onClick={onRemove} className="ml-auto">
-            Delete
-          </Button>
+          {fixedList ? null : (
+            <>
+              <Button size="sm" icon={<Plus className="size-3.5" />} onClick={onAddAfter}>
+                Add after
+              </Button>
+              <Button size="sm" icon={<Copy className="size-3.5" />} onClick={onDuplicate}>
+                Duplicate
+              </Button>
+              <Button size="sm" variant="danger" icon={<Trash2 className="size-3.5" />} onClick={onRemove} className="ml-auto">
+                Delete
+              </Button>
+            </>
+          )}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** One entry of the verification record: its number, its words, its layout, and Country's fixed value. */
+function RowFields({ row, set }: { row: RecordRow; set: (f: string, v: unknown) => void }) {
+  return (
+    <>
+      <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
+        <Field label="Number" hint="Empty: none.">
+          <Input value={row.number} maxLength={12} onChange={(e) => set("number", e.target.value)} />
+        </Field>
+        <Field label="Words">
+          <Input value={row.text} onChange={(e) => set("text", e.target.value)} />
+        </Field>
+      </div>
+      {row.id === "country" ? (
+        <Field label="Value" hint="Fixed text, the same on every document's page.">
+          <Input value={row.value} onChange={(e) => set("value", e.target.value)} />
+        </Field>
+      ) : null}
+      {row.id !== "officer" ? (
+        <Field label="Layout">
+          <Select value={row.layout} onChange={(e) => set("layout", e.target.value as RowLayout)}>
+            {ROW_LAYOUTS.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
+      <VisibleToggle hidden={row.hidden} onChange={(h) => set("hidden", h)} />
+      <Alert tone="info">
+        The value {row.id === "country" ? "is" : "shown is"} {ROW_SOURCE[row.id]}.{" "}
+        {row.id === "country" ? null : "It changes with every document and is not edited here."} These words are the
+        page&apos;s own; the sticker has its own, set under Appo → Background image.
+      </Alert>
+    </>
+  );
+}
+
+/** A colour picker with its hex value beside it. */
+function ColorField({
+  label,
+  value,
+  onChange,
+  allowNone,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  /** Offer "none" (an empty value), as for the border. */
+  allowNone?: boolean;
+}) {
+  const none = allowNone && !value;
+  // What is typed shows as it is typed; only a whole #rrggbb (or nothing, where allowed) is taken.
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <Field label={label}>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="color"
+          value={value || "#000000"}
+          disabled={none}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 w-10 shrink-0 cursor-pointer rounded border bg-surface p-0.5 disabled:opacity-40"
+          aria-label={label}
+        />
+        <Input
+          value={draft}
+          placeholder={allowNone ? "none" : "#000000"}
+          className="font-mono"
+          onChange={(e) => {
+            setDraft(e.target.value);
+            const v = e.target.value.trim();
+            if (v === "" && allowNone) onChange("");
+            else if (/^#[0-9a-f]{6}$/i.test(v)) onChange(v.toLowerCase());
+          }}
+          onBlur={() => setDraft(value)}
+        />
+        {allowNone ? (
+          <Checkbox label="None" checked={none} onChange={(e) => onChange(e.target.checked ? "" : "#bdccbc")} />
+        ) : null}
+      </div>
+    </Field>
+  );
+}
+
+/** A number in design pixels (or %, em), kept within its range. */
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  hint,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  hint?: string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <Input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (e.target.value !== "" && Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
+        }}
+      />
+    </Field>
+  );
+}
+
+/** The certificate box: its text and how it looks, set apart for each view. */
+function CertificateFields({
+  view,
+  row,
+  style,
+  set,
+  setStyle,
+  onResetStyle,
+}: {
+  view: PageView;
+  row: RecordRow;
+  style: CertificateStyle;
+  set: (f: string, v: unknown) => void;
+  setStyle: (field: keyof CertificateStyle, v: unknown) => void;
+  onResetStyle: () => void;
+}) {
+  const grid = view === "mobile" ? "360 px phone grid" : "1062 px page grid";
+  return (
+    <>
+      <Field label="Text in the box" hint="Shown on the page only, never on the sticker.">
+        <Input value={row.text} onChange={(e) => set("text", e.target.value)} />
+      </Field>
+      <Field label="Font">
+        <Select value={style.font} onChange={(e) => setStyle("font", e.target.value as CertificateFont)}>
+          {CERTIFICATE_FONTS.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        <Checkbox label="Bold" checked={style.bold} onChange={(e) => setStyle("bold", e.target.checked)} />
+        <Checkbox label="Italic" checked={style.italic} onChange={(e) => setStyle("italic", e.target.checked)} />
+        <Checkbox label="CAPITAL LETTERS" checked={style.uppercase} onChange={(e) => setStyle("uppercase", e.target.checked)} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField label="Text size" value={style.size} min={6} max={60} step={0.5} hint={`On the ${grid}`} onChange={(v) => setStyle("size", v)} />
+        <NumberField label="Letter spacing (em)" value={style.spacing} min={0} max={1} step={0.01} onChange={(v) => setStyle("spacing", v)} />
+        <NumberField
+          label="Width (%)"
+          value={style.width}
+          min={20}
+          max={100}
+          step={1}
+          hint={view === "mobile" ? "Of the record's width on phones" : "Of the record's width"}
+          onChange={(v) => setStyle("width", v)}
+        />
+        <NumberField label="Height" value={style.height} min={0} max={200} step={1} hint={`At least, on the ${grid}`} onChange={(v) => setStyle("height", v)} />
+        <NumberField label="Rounded corners" value={style.radius} min={0} max={40} step={0.5} onChange={(v) => setStyle("radius", v)} />
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        <ColorField label="Text colour" value={style.color} onChange={(v) => setStyle("color", v)} />
+        <ColorField label="Background colour" value={style.background} onChange={(v) => setStyle("background", v)} />
+        <ColorField label="Border colour" value={style.border} allowNone onChange={(v) => setStyle("border", v)} />
+        {style.border ? (
+          <Field label="Border">
+            <Select value={style.border_sides} onChange={(e) => setStyle("border_sides", e.target.value as CertificateBorderSides)}>
+              {CERTIFICATE_BORDER_SIDES.map((b) => (
+                <option key={b.value} value={b.value}>
+                  {b.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+      </div>
+      <VisibleToggle hidden={row.hidden} onChange={(h) => set("hidden", h)} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" icon={<RotateCcw className="size-3.5" />} onClick={onResetStyle}>
+          Back to the first look
+        </Button>
+      </div>
+      <p className="text-[12.5px] text-text-muted">
+        Desktop and mobile each keep their own look, so the box can be narrower on phones. Saved in the database with the
+        rest of the page.
+      </p>
+    </>
   );
 }
 

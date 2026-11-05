@@ -210,6 +210,8 @@ export const ACTION_LABELS: Record<string, string> = {
   reset_appo_background: "Restored Appo sticker background",
   update_appo_page: "Changed Appo verification page",
   copy_appo_page_from_new_m: "Copied New M page design into Appo",
+  copy_new_m_page_from_appo: "Copied Appo page design into New M",
+  update_appo_number_prefix: "Changed Appo number prefix",
   upload_appo_page_logo: "Uploaded Appo page logo",
   upload_appo_page_favicon: "Uploaded Appo page favicon",
 };

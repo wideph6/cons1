@@ -41,7 +41,8 @@ function image(bytes: Uint8Array, contentType: string, s: BackgroundSettings): R
       "content-type": contentType,
       "cache-control": "private, no-store",
       "x-background-has-frame": s.background_has_frame ? "1" : "0",
-      "x-background-placement": s.background_placement ? JSON.stringify(s.background_placement) : "",
+      // URI-encoded: reworded sticker words may hold letters a header cannot carry as they are.
+      "x-background-placement": s.background_placement ? encodeURIComponent(JSON.stringify(s.background_placement)) : "",
     },
   });
 }

@@ -10,6 +10,7 @@ import {
   type PageRecord,
   type PageView,
 } from "./appo-page";
+import { longDate } from "./appo-sticker";
 import { presignDownload } from "./r2";
 import { db } from "./supabase";
 import { formatIssued } from "./utils";
@@ -104,8 +105,11 @@ interface ViewRow {
   attestation_number: string;
   issue_date: string;
   document_type: string;
-  issuing_office: string;
-  issuing_authority: string;
+  signed_by: string;
+  signed_capacity: string;
+  seal_stamp: string;
+  office_city: string;
+  office_name: string;
   officer_name: string;
   officer_designation: string;
   officer_signature_r2_key: string | null;
@@ -120,7 +124,7 @@ interface ViewRow {
 }
 
 const ROW_COLUMNS =
-  "id,attestation_number,issue_date,document_type,issuing_office,issuing_authority,officer_name,officer_designation,officer_signature_r2_key,officer_signature_content_type,doc_filename,doc_r2_key,doc_size,doc_content_type";
+  "id,attestation_number,issue_date,document_type,signed_by,signed_capacity,seal_stamp,office_city,office_name,officer_name,officer_designation,officer_signature_r2_key,officer_signature_content_type,doc_filename,doc_r2_key,doc_size,doc_content_type";
 const ADDRESS_COLUMNS = "doc_storage_number,doc_hash_name";
 
 type ViewRead = { data: unknown; error: { code?: string; message: string } | null };
@@ -167,9 +171,13 @@ export async function pageRecord(row: ViewRow): Promise<PageRecord> {
   return {
     attestation_number: row.attestation_number,
     issue_date: formatIssued(row.issue_date),
+    issue_date_long: longDate(row.issue_date),
     document_type: row.document_type,
-    issuing_office: row.issuing_office,
-    issuing_authority: row.issuing_authority,
+    signed_by: row.signed_by ?? "",
+    signed_capacity: row.signed_capacity ?? "",
+    seal_stamp: row.seal_stamp ?? "",
+    office_city: row.office_city ?? "",
+    office_name: row.office_name ?? "",
     officer_name: row.officer_name,
     officer_designation: row.officer_designation,
     signature_url: signature,

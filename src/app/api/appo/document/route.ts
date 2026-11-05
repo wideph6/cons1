@@ -6,7 +6,7 @@ import { APP_MARKER, getObjectRange, headObjectFull, presignDownload } from "@/l
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/appo/document?number=GEN-…&date=YYYY-MM-DD[&mode=open|download]
+ * GET /api/appo/document?number=APN-…&date=YYYY-MM-DD[&mode=open|download]
  *
  * The PDF behind a verification page. Whoever holds the attestation number and its issue date — the
  * two things printed in the verification link — can read the document, exactly as the page shows it.

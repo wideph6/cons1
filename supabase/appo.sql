@@ -36,11 +36,12 @@ create table if not exists public.appo_link_templates (
 );
 
 -- ---------- Saved values ----------
--- Every document type, issuing office and issuing authority typed into an upload is kept here, so
--- the next upload can pick it from a list instead of typing it again.
+-- Every value typed into an upload (document type, previously signed by, acting in capacity, seal or
+-- stamp, office city, office name) is kept here, so the next upload can pick it from a list instead of
+-- typing it again.
 create table if not exists public.appo_options (
   id uuid primary key default gen_random_uuid(),
-  kind text not null check (kind in ('document_type', 'issuing_office', 'issuing_authority')),
+  kind text not null check (kind in ('document_type', 'signed_by', 'signed_capacity', 'seal_stamp', 'office_city', 'office_name')),
   value text not null,
   created_by uuid references public.users(id) on delete set null,
   created_at timestamptz not null default now()
@@ -48,6 +49,15 @@ create table if not exists public.appo_options (
 
 -- "Degree" and "degree" are the same choice.
 create unique index if not exists appo_options_value_idx on public.appo_options (kind, lower(value));
+
+-- Earlier versions kept "issuing office" and "issuing authority" lists. They are Appo's office city
+-- and office name now, so their saved values move across with them.
+alter table public.appo_options drop constraint if exists appo_options_kind_check;
+update public.appo_options set kind = 'office_city' where kind = 'issuing_office';
+update public.appo_options set kind = 'office_name' where kind = 'issuing_authority';
+alter table public.appo_options
+  add constraint appo_options_kind_check
+  check (kind in ('document_type', 'signed_by', 'signed_capacity', 'seal_stamp', 'office_city', 'office_name'));
 
 -- ---------- Approving officers ----------
 -- Name, designation and signature are saved together, so picking one officer fills in all three.
@@ -69,17 +79,25 @@ create table if not exists public.appo_settings (
   background_r2_key text,
   background_content_type text,
   background_filename text,
-  -- The app draws the labels and the QR border itself; the title bar and table lines come with the image.
-  -- True only for a background that already has the labels and QR border printed on it, so they are not
-  -- drawn twice.
+  -- The app draws the fixed words (numbers and labels) itself; the title bar and table lines come with the
+  -- image. True only for a background that already has the words printed on it, so they are not drawn twice.
   background_has_frame boolean not null default false,
   -- Where the super admin placed the image on the 958 x 761 sticker and what is cropped off it:
   -- {x, y, width, height, crop?: {top, right, bottom, left}} (crop as shares of the image). Anything past
-  -- the sticker is cut off too. Null stretches it over the whole sticker.
+  -- the sticker is cut off too. Null stretches it over the whole sticker. It also holds the sticker's parts
+  -- the super admin moved (layout: each set's move, and once ungrouped its words' and value's own moves)
+  -- and the fixed words reworded for the sticker (texts), so none of that lives in the app's code.
   background_placement jsonb,
+  -- The three capital letters every new attestation number starts with. The super admin can change
+  -- them at any time (Appo → Number prefix); documents already saved keep their numbers.
+  number_prefix text not null default 'APN' check (number_prefix ~ '^[A-Z]{3}$'),
   updated_by uuid references public.users(id) on delete set null,
   updated_at timestamptz not null default now()
 );
+
+-- Added after the first version.
+alter table public.appo_settings
+  add column if not exists number_prefix text not null default 'APN' check (number_prefix ~ '^[A-Z]{3}$');
 
 insert into public.appo_settings (id) values (true) on conflict (id) do nothing;
 
@@ -174,13 +192,18 @@ create table if not exists public.appo_records (
   -- document's link and QR code. link_template keeps a copy, for when the link is removed.
   link_id uuid references public.appo_link_templates(id) on delete set null,
   link_template text not null default '',
-  -- Unique across every domain. Always GEN, then three groups of four capital letters.
-  attestation_number text not null unique check (attestation_number ~ '^GEN-[A-Z]{4}-[A-Z]{4}-[A-Z]{4}$'),
+  -- Unique across every domain. Three capital letters (the prefix in use when it was made, APN unless
+  -- the super admin changed it), then three groups of four capital letters.
+  attestation_number text not null unique check (attestation_number ~ '^[A-Z]{3}-[A-Z]{4}-[A-Z]{4}-[A-Z]{4}$'),
   issue_date date not null,               -- filled into the link as DDMMYYYY
 
+  -- What the verification record and the sticker show, as typed into the upload.
   document_type text not null default '',
-  issuing_office text not null default '',
-  issuing_authority text not null default '',
+  signed_by text not null default '',        -- 2  Previously signed by
+  signed_capacity text not null default '',  -- 3  Previous signed acting in capacity
+  seal_stamp text not null default '',       -- 4  Bears the seal or stamp
+  office_city text not null default '',      -- 5  Office city
+  office_name text not null default '',      -- 7  Office name
 
   -- The officer picked from the saved list, plus a copy of what it said at that moment. The copy is
   -- what the document shows, so removing the officer from the list leaves this document as it is.
@@ -212,6 +235,37 @@ create table if not exists public.appo_records (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- ---------- Updating a database made by an earlier appo.sql ----------
+-- The first version had GEN numbers only and an issuing office and authority. Those two are Appo's
+-- office city and office name now (renamed, values kept), three values are new, and a number may
+-- start with any three capital letters, so a changed prefix never invalidates the documents before it.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'appo_records' and column_name = 'issuing_office')
+     and not exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'appo_records' and column_name = 'office_city') then
+    alter table public.appo_records rename column issuing_office to office_city;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'appo_records' and column_name = 'issuing_authority')
+     and not exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'appo_records' and column_name = 'office_name') then
+    alter table public.appo_records rename column issuing_authority to office_name;
+  end if;
+end $$;
+
+alter table public.appo_records add column if not exists signed_by text not null default '';
+alter table public.appo_records add column if not exists signed_capacity text not null default '';
+alter table public.appo_records add column if not exists seal_stamp text not null default '';
+alter table public.appo_records add column if not exists office_city text not null default '';
+alter table public.appo_records add column if not exists office_name text not null default '';
+
+alter table public.appo_records drop constraint if exists appo_records_attestation_number_check;
+alter table public.appo_records
+  add constraint appo_records_attestation_number_check
+  check (attestation_number ~ '^[A-Z]{3}-[A-Z]{4}-[A-Z]{4}-[A-Z]{4}$');
 
 -- Two documents drawing the same number is next to impossible; should it ever happen, the later one
 -- draws again, so the unique indexes below can always be made.

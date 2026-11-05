@@ -71,7 +71,7 @@ export const QR_BOX = {
 /**
  * The parts of the sticker the super admin can move over the background: each value together with
  * its own label, the QR code together with its border, and the signature and the designation each on
- * their own.
+ * their own. A set that has both a label and a value can be ungrouped, so the two move apart.
  */
 export const STICKER_SETS = [
   { id: "country", name: "1 Country Pakistan" },
@@ -88,31 +88,69 @@ export const STICKER_SETS = [
 
 export type StickerSetId = (typeof STICKER_SETS)[number]["id"];
 
-/** How far a set was moved from its measured place, in sticker units. */
+/** The two halves of an ungrouped set: its fixed words, and the value written after or under them. */
+export type SetPart = "label" | "value";
+export const SET_PARTS: SetPart[] = ["label", "value"];
+
+/** How far a set (or one half of it) was moved from its measured place, in sticker units. */
 export interface SetOffset {
   dx: number;
   dy: number;
 }
 
-/** Only the sets that were moved. */
-export type StickerLayout = Partial<Record<StickerSetId, SetOffset>>;
+/**
+ * How one set was moved. dx/dy moves the whole set. Ungrouped (split), its label and its value are
+ * moved each on its own, by parts; grouped again, they keep where they were put and move together.
+ */
+export interface SetLayout extends SetOffset {
+  split?: boolean;
+  parts?: Partial<Record<SetPart, SetOffset>>;
+}
 
-/** Labels in Georgia regular 19 px, black; "Pakistan" is bold, as on the reference. Baselines as measured. */
-const LABELS: Array<{ text: string; x: number; y: number; bold?: boolean; set: StickerSetId }> = [
-  { text: "1", x: 88, y: 121, set: "country" },
-  { text: "Country", x: 105, y: 121, set: "country" },
-  { text: "Pakistan", x: 179, y: 121, bold: true, set: "country" },
-  { text: "This Public Document", x: 293, y: 121, set: "documentType" },
-  { text: "2", x: 594, y: 121, set: "issuingOffice" },
-  { text: "at", x: 609, y: 121, set: "issuingOffice" },
-  { text: "3", x: 87, y: 202, set: "dateLong" },
-  { text: "the", x: 109, y: 202, set: "dateLong" },
-  { text: "4", x: 86, y: 273, set: "issuingAuthority" },
-  { text: "by", x: 108, y: 273, set: "issuingAuthority" },
-  { text: "5", x: 86, y: 345, set: "number" },
-  { text: "No.", x: 107, y: 345, set: "number" },
-  { text: "Date:", x: 88, y: 392, set: "dateShort" },
+/** Only the sets that were moved or ungrouped. */
+export type StickerLayout = Partial<Record<StickerSetId, SetLayout>>;
+
+/** The fixed words the app writes, reworded by the super admin for the sticker only, by piece id. */
+export type StickerTexts = Partial<Record<string, string>>;
+
+/** One run of fixed words the app writes on the sticker. */
+export interface StickerPiece {
+  id: string;
+  set: StickerSetId;
+  part: SetPart;
+  /** The words as on the reference; the super admin can reword them (StickerTexts). */
+  text: string;
+  x: number;
+  y: number;
+  bold?: boolean;
+}
+
+/**
+ * Labels in Georgia regular 19 px, black; "Pakistan" is bold, as on the reference. Baselines as measured.
+ * "Pakistan" is fixed too, but it is Country's value, so it is the half that moves as the value.
+ */
+export const PIECES: StickerPiece[] = [
+  { id: "country.number", text: "1", x: 88, y: 121, set: "country", part: "label" },
+  { id: "country.label", text: "Country", x: 105, y: 121, set: "country", part: "label" },
+  { id: "country.value", text: "Pakistan", x: 179, y: 121, bold: true, set: "country", part: "value" },
+  { id: "documentType.label", text: "This Public Document", x: 293, y: 121, set: "documentType", part: "label" },
+  { id: "issuingOffice.number", text: "2", x: 594, y: 121, set: "issuingOffice", part: "label" },
+  { id: "issuingOffice.label", text: "at", x: 609, y: 121, set: "issuingOffice", part: "label" },
+  { id: "dateLong.number", text: "3", x: 87, y: 202, set: "dateLong", part: "label" },
+  { id: "dateLong.label", text: "the", x: 109, y: 202, set: "dateLong", part: "label" },
+  { id: "issuingAuthority.number", text: "4", x: 86, y: 273, set: "issuingAuthority", part: "label" },
+  { id: "issuingAuthority.label", text: "by", x: 108, y: 273, set: "issuingAuthority", part: "label" },
+  { id: "number.number", text: "5", x: 86, y: 345, set: "number", part: "label" },
+  { id: "number.label", text: "No.", x: 107, y: 345, set: "number", part: "label" },
+  { id: "dateShort.label", text: "Date:", x: 88, y: 392, set: "dateShort", part: "label" },
 ];
+
+/** A piece's words as the sticker writes them: reworded, or as on the reference. */
+export function pieceText(piece: StickerPiece, texts: StickerTexts | undefined): string {
+  const t = texts?.[piece.id];
+  return typeof t === "string" ? t : piece.text;
+}
+
 /**
  * A thin outline on the regular labels. Against the reference they came out lighter than the values
  * did (by ink and by stroke width), so they get a little more weight; values and "Pakistan" are left
@@ -186,15 +224,17 @@ function valueEl(slot: TextSlot, value: string, measure: Measure): string {
   return text(slot.x, slot.y, t, size, slot.weight, { anchor: slot.anchor });
 }
 
-/** Wraps a set's drawing in its move, when it was moved. */
-type Mover = (set: StickerSetId, svg: string) => string;
+/** Wraps a set's drawing (or one half of it) in its move, when it was moved. */
+type Mover = (set: StickerSetId, part: SetPart | null, svg: string) => string;
 
 /** The labels. The title bar and table lines come with the background image; the app does not draw them. */
-function frameEl(moved: Mover): string {
+function frameEl(moved: Mover, texts: StickerTexts | undefined): string {
   const parts: string[] = [];
-  for (const l of LABELS) {
+  for (const p of PIECES) {
+    const words = pieceText(p, texts).trim();
+    if (!words) continue;
     parts.push(
-      moved(l.set, l.bold ? text(l.x, l.y, l.text, 19, "bold") : text(l.x, l.y, l.text, 19, "normal", { outline: LABEL_OUTLINE })),
+      moved(p.set, p.part, p.bold ? text(p.x, p.y, words, 19, "bold") : text(p.x, p.y, words, 19, "normal", { outline: LABEL_OUTLINE })),
     );
   }
   return parts.join("");
@@ -263,6 +303,8 @@ export interface BackgroundPlacement {
   crop?: BackgroundCrop;
   /** The values, labels and QR code the super admin moved to line up with this image; left out when none were. */
   layout?: StickerLayout;
+  /** The fixed words the super admin reworded, for the sticker only; left out when none were. */
+  texts?: StickerTexts;
 }
 
 /** No position saved: the image is stretched over the whole sticker. */
@@ -281,33 +323,94 @@ export function fitPlacement(imageWidth: number, imageHeight: number): Backgroun
   return { x: (STICKER_W - width) / 2, y: (STICKER_H - height) / 2, width, height };
 }
 
-/** The placement with this crop, or with none when nothing is cut off. Any layout is left out. */
+/** The placement with this crop, or with none when nothing is cut off. Any layout and texts are left out. */
 export function withCrop(p: BackgroundPlacement, crop: BackgroundCrop): BackgroundPlacement {
   const { x, y, width, height } = p;
   const cut = crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0;
   return cut ? { x, y, width, height, crop: { ...crop } } : { x, y, width, height };
 }
 
-/** The placement with only the sets that were really moved, or with no layout when none were. */
+const moves = (o: SetOffset | undefined): boolean => Boolean(o && (o.dx !== 0 || o.dy !== 0));
+
+/** A set's layout with nothing in it that does nothing, or null when it is left exactly as measured. */
+function tidySet(o: SetLayout | undefined): SetLayout | null {
+  if (!o) return null;
+  const parts = Object.fromEntries(SET_PARTS.filter((p) => moves(o.parts?.[p])).map((p) => [p, { ...o.parts![p]! }]));
+  const out: SetLayout = { dx: o.dx, dy: o.dy };
+  if (o.split) out.split = true;
+  if (Object.keys(parts).length) out.parts = parts;
+  return out.split || out.parts || moves(out) ? out : null;
+}
+
+/** The placement with only the sets that were really moved or ungrouped, or with no layout when none were. */
 export function withLayout(p: BackgroundPlacement, layout: StickerLayout): BackgroundPlacement {
   const rest = { ...p };
   delete rest.layout;
-  const moved = Object.fromEntries(Object.entries(layout).filter(([, o]) => o && (o.dx !== 0 || o.dy !== 0)));
+  const moved: StickerLayout = {};
+  for (const [set, o] of Object.entries(layout) as Array<[StickerSetId, SetLayout | undefined]>) {
+    const t = tidySet(o);
+    if (t) moved[set] = t;
+  }
   return Object.keys(moved).length ? { ...rest, layout: moved } : rest;
 }
 
-const SET_IDS: ReadonlySet<string> = new Set(STICKER_SETS.map((s) => s.id));
+/** The placement with only the words that really differ from the reference, or with no texts when none do. */
+export function withTexts(p: BackgroundPlacement, texts: StickerTexts): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.texts;
+  const changed = Object.fromEntries(
+    PIECES.filter((piece) => typeof texts[piece.id] === "string" && texts[piece.id] !== piece.text).map((piece) => [piece.id, texts[piece.id]]),
+  ) as StickerTexts;
+  return Object.keys(changed).length ? { ...rest, texts: changed } : rest;
+}
 
-/** Known sets, each moved by numbers no larger than the sticker itself, or null when it is not that. */
+const SET_IDS: ReadonlySet<string> = new Set(STICKER_SETS.map((s) => s.id));
+const PIECE_IDS: ReadonlySet<string> = new Set(PIECES.map((p) => p.id));
+/** The most a reworded piece may hold. */
+export const MAX_PIECE_TEXT = 200;
+
+/** A move by numbers no larger than the sticker itself, or null when it is not one. */
+function cleanOffset(v: unknown): SetOffset | null {
+  if (!v || typeof v !== "object") return null;
+  const { dx, dy } = v as Record<string, unknown>;
+  if (typeof dx !== "number" || typeof dy !== "number" || !Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+  if (Math.abs(dx) > STICKER_W || Math.abs(dy) > STICKER_H) return null;
+  return { dx: n(dx), dy: n(dy) };
+}
+
+/** Known sets, each moved (and its halves moved) by numbers no larger than the sticker itself, or null when it is not that. */
 function cleanLayout(v: unknown): StickerLayout | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   const out: StickerLayout = {};
   for (const [set, o] of Object.entries(v as Record<string, unknown>)) {
-    if (!SET_IDS.has(set) || !o || typeof o !== "object") return null;
-    const { dx, dy } = o as Record<string, unknown>;
-    if (typeof dx !== "number" || typeof dy !== "number" || !Number.isFinite(dx) || !Number.isFinite(dy)) return null;
-    if (Math.abs(dx) > STICKER_W || Math.abs(dy) > STICKER_H) return null;
-    out[set as StickerSetId] = { dx: n(dx), dy: n(dy) };
+    if (!SET_IDS.has(set)) return null;
+    const move = cleanOffset(o);
+    if (!move) return null;
+    const raw = o as Record<string, unknown>;
+    const entry: SetLayout = { ...move };
+    if (raw.split === true) entry.split = true;
+    if (raw.parts !== undefined && raw.parts !== null) {
+      if (typeof raw.parts !== "object" || Array.isArray(raw.parts)) return null;
+      const parts: Partial<Record<SetPart, SetOffset>> = {};
+      for (const [part, po] of Object.entries(raw.parts as Record<string, unknown>)) {
+        const c = cleanOffset(po);
+        if (!SET_PARTS.includes(part as SetPart) || !c) return null;
+        parts[part as SetPart] = c;
+      }
+      if (Object.keys(parts).length) entry.parts = parts;
+    }
+    out[set as StickerSetId] = entry;
+  }
+  return out;
+}
+
+/** Known pieces, each with words of a sane length and no control characters, or null when it is not that. */
+function cleanTexts(v: unknown): StickerTexts | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: StickerTexts = {};
+  for (const [id, t] of Object.entries(v as Record<string, unknown>)) {
+    if (!PIECE_IDS.has(id) || typeof t !== "string") return null;
+    out[id] = t.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, MAX_PIECE_TEXT);
   }
   return out;
 }
@@ -367,7 +470,13 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     if (!l) return null;
     layout = l;
   }
-  const placed = withLayout(withCrop(p, crop), layout);
+  let texts: StickerTexts = {};
+  if (raw.texts !== undefined && raw.texts !== null) {
+    const t = cleanTexts(raw.texts);
+    if (!t) return null;
+    texts = t;
+  }
+  const placed = withTexts(withLayout(withCrop(p, crop), layout), texts);
   const s = visibleRect(placed);
   const onSticker = s.x < STICKER_W && s.y < STICKER_H && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;
@@ -408,6 +517,8 @@ export interface StickerContent extends StickerValues {
   drawFrame: boolean;
   /** The sets the super admin moved; the rest stay at their measured places. */
   layout?: StickerLayout;
+  /** The fixed words the super admin reworded; the rest read as on the reference. */
+  texts?: StickerTexts;
 }
 
 export interface StickerInput extends StickerContent {
@@ -434,17 +545,24 @@ export function buildStickerOverlaySvg(input: StickerContent, measure: Measure):
   return wrap(contentEl(input, measure));
 }
 
+/** How far a set's half is moved in all: the set's own move plus the half's. */
+export function partShift(layout: StickerLayout | undefined, set: StickerSetId, part: SetPart | null): SetOffset {
+  const o = layout?.[set];
+  const p = part ? o?.parts?.[part] : undefined;
+  return { dx: (o?.dx ?? 0) + (p?.dx ?? 0), dy: (o?.dy ?? 0) + (p?.dy ?? 0) };
+}
+
 /** The frame, values, signature and QR code, drawn over the background, each set where it was moved to. */
 function contentEl(input: StickerContent, measure: Measure): string {
-  const moved: Mover = (set, svg) => {
-    const o = input.layout?.[set];
-    return svg && o && (o.dx || o.dy) ? `<g transform="translate(${n(o.dx)} ${n(o.dy)})">${svg}</g>` : svg;
+  const moved: Mover = (set, part, svg) => {
+    const o = partShift(input.layout, set, part);
+    return svg && (o.dx || o.dy) ? `<g transform="translate(${n(o.dx)} ${n(o.dy)})">${svg}</g>` : svg;
   };
   const parts: string[] = [];
-  if (input.drawFrame) parts.push(frameEl(moved));
+  if (input.drawFrame) parts.push(frameEl(moved, input.texts));
 
   for (const [set, value] of valueTexts(input)) {
-    if (set !== "designation") parts.push(moved(set, valueEl(SLOTS[set], value, measure)));
+    if (set !== "designation") parts.push(moved(set, "value", valueEl(SLOTS[set], value, measure)));
   }
 
   if (input.signature) {
@@ -452,13 +570,14 @@ function contentEl(input: StickerContent, measure: Measure): string {
     parts.push(
       moved(
         "signature",
+        null,
         `<image href="${input.signature}" xlink:href="${input.signature}" x="${b.x}" y="${b.y}" width="${b.width}" ` +
           `height="${b.height}" preserveAspectRatio="xMidYMid meet"/>`,
       ),
     );
   }
-  parts.push(moved("designation", valueEl(SLOTS.designation, input.designation, measure)));
-  parts.push(moved("qr", qrEl(input.qrSvg, input.qrUrl, input.drawFrame)));
+  parts.push(moved("designation", null, valueEl(SLOTS.designation, input.designation, measure)));
+  parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, input.drawFrame)));
   return parts.join("");
 }
 
@@ -488,12 +607,36 @@ export interface Rect {
 const EMPTY_VALUE_WIDTH = 120;
 
 /**
+ * Where a set is drawn before any move. parts holds its label and its value apart (whichever are drawn);
+ * a set with both can be ungrouped. A set drawn in one piece (signature, designation, QR code) has none.
+ */
+export interface SetBoxes {
+  /** The whole set: what a grouped set is grabbed by. */
+  whole: Rect;
+  parts: Partial<Record<SetPart, Rect>>;
+}
+
+function union(rects: Rect[]): Rect {
+  const x1 = Math.min(...rects.map((r) => r.x));
+  const y1 = Math.min(...rects.map((r) => r.y));
+  const x2 = Math.max(...rects.map((r) => r.x + r.width));
+  const y2 = Math.max(...rects.map((r) => r.y + r.height));
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+}
+
+export function shiftRect(r: Rect, o: SetOffset): Rect {
+  return { ...r, x: r.x + o.dx, y: r.y + o.dy };
+}
+
+/**
  * Each set's box where it is drawn before any move: the area the editor lets the super admin grab.
  * A set with nothing drawn (the labels of a background that has them printed) has no box.
  */
-export function stickerSetBoxes(input: StickerContent, measure: Measure): Partial<Record<StickerSetId, Rect>> {
-  const parts: Partial<Record<StickerSetId, Rect[]>> = {};
-  const add = (set: StickerSetId, r: Rect) => (parts[set] ??= []).push(r);
+export function stickerSetBoxes(input: StickerContent, measure: Measure): Partial<Record<StickerSetId, SetBoxes>> {
+  const drawn: Partial<Record<StickerSetId, Partial<Record<SetPart | "whole", Rect[]>>>> = {};
+  /** Values with nothing in them: grabbable on their own, but not widening a set that has words. */
+  const blank: Partial<Record<StickerSetId, Rect>> = {};
+  const add = (set: StickerSetId, part: SetPart | "whole", r: Rect) => ((drawn[set] ??= {})[part] ??= []).push(r);
   // From a little above the capitals to a little below the baseline.
   const textBox = (x: number, y: number, size: number, width: number, anchor: "start" | "middle"): Rect => ({
     x: anchor === "middle" ? x - width / 2 : x,
@@ -503,28 +646,58 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
   });
 
   if (input.drawFrame) {
-    for (const l of LABELS) add(l.set, textBox(l.x, l.y, 19, measure(l.text, `${l.bold ? "bold" : "normal"} 19px ${FONT_FAMILY}`), "start"));
+    for (const p of PIECES) {
+      const words = pieceText(p, input.texts).trim();
+      if (words) add(p.set, p.part, textBox(p.x, p.y, 19, measure(words, `${p.bold ? "bold" : "normal"} 19px ${FONT_FAMILY}`), "start"));
+    }
   }
   for (const [set, value] of valueTexts(input)) {
     const slot: TextSlot = SLOTS[set];
     const t = value.trim();
     // A value too wide for its cell is set smaller, so it never reaches past maxWidth.
     const width = t ? Math.min(measure(t, fontFor(slot)), slot.maxWidth) : 0;
-    if (width) add(set, textBox(slot.x, slot.y, slot.size, width, slot.anchor));
-    else if (!parts[set]) add(set, textBox(slot.x, slot.y, slot.size, Math.min(EMPTY_VALUE_WIDTH, slot.maxWidth), slot.anchor));
+    const part = set === "designation" ? "whole" : "value";
+    if (width) add(set, part, textBox(slot.x, slot.y, slot.size, width, slot.anchor));
+    else blank[set] = textBox(slot.x, slot.y, slot.size, Math.min(EMPTY_VALUE_WIDTH, slot.maxWidth), slot.anchor);
   }
-  add("signature", SIGNATURE_BOX);
-  add("qr", QR_BORDER);
+  add("signature", "whole", SIGNATURE_BOX);
+  add("qr", "whole", QR_BORDER);
 
-  const boxes: Partial<Record<StickerSetId, Rect>> = {};
-  for (const [set, rects] of Object.entries(parts) as Array<[StickerSetId, Rect[]]>) {
-    const x1 = Math.min(...rects.map((r) => r.x));
-    const y1 = Math.min(...rects.map((r) => r.y));
-    const x2 = Math.max(...rects.map((r) => r.x + r.width));
-    const y2 = Math.max(...rects.map((r) => r.y + r.height));
-    boxes[set] = { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+  const boxes: Partial<Record<StickerSetId, SetBoxes>> = {};
+  for (const { id: set } of STICKER_SETS) {
+    const d = drawn[set] ?? {};
+    const empty = blank[set];
+    if (d.whole) {
+      boxes[set] = { whole: union(d.whole), parts: {} };
+      continue;
+    }
+    if (set === "designation") {
+      if (empty) boxes[set] = { whole: empty, parts: {} };
+      continue;
+    }
+    const label = d.label ? union(d.label) : null;
+    const value = d.value ? union(d.value) : (empty ?? null);
+    if (!label && !value) continue;
+    // Each half that is drawn, so a half moved on its own is grabbed where it is; only a set with both
+    // halves can be ungrouped.
+    const parts: Partial<Record<SetPart, Rect>> = {};
+    if (label) parts.label = label;
+    if (value) parts.value = value;
+    // A set with words keeps the box it always had; an empty value only fills in when it has none.
+    const words = [label, d.value ? value : null].filter((r): r is Rect => Boolean(r));
+    boxes[set] = { whole: union(words.length ? words : [value as Rect]), parts };
   }
   return boxes;
+}
+
+/**
+ * The area a grouped set is grabbed by: each half where its own move put it, before the set's move.
+ * Without moved halves this is the whole set.
+ */
+export function groupRect(b: SetBoxes, l: SetLayout | undefined): Rect {
+  const moved = SET_PARTS.filter((p) => b.parts[p] && moves(l?.parts?.[p]));
+  if (!moved.length) return b.whole;
+  return union(SET_PARTS.filter((p) => b.parts[p]).map((p) => shiftRect(b.parts[p]!, l?.parts?.[p] ?? { dx: 0, dy: 0 })));
 }
 
 /** A move that keeps the set's box on the sticker. */

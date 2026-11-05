@@ -690,6 +690,57 @@
   color: #223825;
   overflow-wrap: anywhere;
 }
+/*
+ * Appo's entries: a number in a gutter on the left (when any entry has one, so the words line up), the
+ * words, then the value under them (two lines) or right after them (one line, wrapping when the page
+ * is too narrow for it).
+ */
+.apo-rows.has-numbers .apo-row {
+  padding-left: U(30.4);
+}
+.apo-row-num {
+  position: absolute;
+  left: U(9.4);
+  top: U(15.55);
+  min-width: U(14);
+  font-size: U(11.5);
+  line-height: U(16);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #3d8a57;
+}
+.apo-row.is-inline .apo-row-label,
+.apo-row.is-inline .apo-row-value {
+  display: inline;
+}
+.apo-row.is-inline .apo-row-value {
+  margin-top: 0;
+}
+.apo-row-officer .apo-row-num {
+  top: U(13.35);
+}
+
+/*
+ * The certificate box between entries 4 and 5; its look is set under Page design. As in the design it is a
+ * band as wide as the record, its top line laid over the line under the entry before it.
+ */
+.apo-certrow {
+  position: relative;
+  margin-top: U(-1);
+}
+.apo-certbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: U(6) U(14);
+  text-align: center;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
 .apo-row-officer {
   padding-top: U(13.35);
   padding-bottom: U(3.31);

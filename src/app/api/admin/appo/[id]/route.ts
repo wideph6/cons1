@@ -7,6 +7,7 @@ import {
   checkLinkDomain,
   docColumns,
   getLinkWithHost,
+  getNumberPrefix,
   getRecord,
   missingHashColumn,
   normalizeNumber,
@@ -37,8 +38,11 @@ interface PatchBody {
   attestation_number?: string;
   issue_date?: string;
   document_type?: string;
-  issuing_office?: string;
-  issuing_authority?: string;
+  signed_by?: string;
+  signed_capacity?: string;
+  seal_stamp?: string;
+  office_city?: string;
+  office_name?: string;
   /** A saved officer to copy onto the document; blank or null takes the officer off. Omitted keeps the current one. */
   officer_id?: string | null;
   /** A newly uploaded PDF, replacing the current one. */
@@ -66,7 +70,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const { id } = await params;
     const body = await readBody<PatchBody>(req);
 
-    // Everything that needs no database is checked first, so a typing mistake costs no round trip.
+    // Everything that needs no database is checked first, so a typing mistake costs no round trip. A
+    // number is only read here; one that changes must start with the prefix in use (checked below), while
+    // a document keeps a number made under an earlier prefix for as long as it is not changed.
     const nextNumber = body.attestation_number !== undefined ? normalizeNumber(body.attestation_number) : undefined;
     const nextDate = body.issue_date !== undefined ? parseIssueDate(body.issue_date) : undefined;
     const typed: Partial<Record<AppoOptionKind, string>> = {};
@@ -79,8 +85,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     // The document and everything the edit might need are read side by side, in one round. A lookup
     // that fails only matters if the edit really changes that part, so failures are held until then.
     const held = <T,>(p: Promise<T>) => p.catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
-    const [existing, linkRead, numberRead, officerRead, docRead] = await Promise.all([
+    const [existing, prefix, linkRead, numberRead, officerRead, docRead] = await Promise.all([
       getRecord(id),
+      nextNumber !== undefined ? getNumberPrefix() : null,
       body.link_id !== undefined ? held(getLinkWithHost(body.link_id)) : null,
       nextNumber !== undefined ? held(numberTaken(nextNumber, id)) : null,
       officerId ? held(officerColumns(officerId)) : null,
@@ -105,6 +112,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
     const linkFound = linkChanged ? use(linkRead) : null;
     const link = linkFound ? checkLinkDomain(linkFound, domainId) : null;
+    if (numberChanged && prefix) normalizeNumber(nextNumber, prefix);
     if (numberChanged && use(numberRead)) throw new ApiError(409, `${nextNumber} is already used by another document`);
     const officer = officerChanged ? (officerId ? use(officerRead) : await officerColumns(null)) : null;
     const doc = docChanged ? use(docRead) : null;

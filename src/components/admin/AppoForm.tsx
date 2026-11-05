@@ -6,8 +6,8 @@ import { LinkQrPreview } from "@/components/admin/AppoQr";
 import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
 import { uploadAppoFile, type UploadedObject } from "@/lib/appo-client";
-import { NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber } from "@/lib/appo-link";
-import type { AppoDomain, AppoLists, AppoOfficer, AppoOption, AppoRecord } from "@/lib/appo-types";
+import { DEFAULT_NUMBER_PREFIX, numberExample, NUMBER_RE, randomNumber, resolveLink, tidyNumber } from "@/lib/appo-link";
+import { APPO_FIELDS, type AppoDomain, type AppoLists, type AppoOfficer, type AppoOption, type AppoOptionKind, type AppoRecord } from "@/lib/appo-types";
 import { fileExtension, formatBytes } from "@/lib/utils";
 
 function todayLocalIso(): string {
@@ -24,15 +24,17 @@ const CURRENT_OFFICER = "__current";
 /** The link this document already carries, after it was removed from its domain's links. */
 const CURRENT_LINK = "__current";
 
-interface Draft {
+/** The values typed into an upload, one per saved list. */
+type FieldValues = Record<AppoOptionKind, string>;
+
+const NO_VALUES = Object.fromEntries(APPO_FIELDS.map((f) => [f.kind, ""])) as FieldValues;
+
+interface Draft extends FieldValues {
   domain_id: string;
   /** One of the domain's links, or CURRENT_LINK. */
   link: string;
   attestation_number: string;
   issue_date: string;
-  document_type: string;
-  issuing_office: string;
-  issuing_authority: string;
   officer: string;
 }
 
@@ -87,9 +89,7 @@ export function AppoForm({
     link: "",
     attestation_number: "",
     issue_date: todayLocalIso(),
-    document_type: "",
-    issuing_office: "",
-    issuing_authority: "",
+    ...NO_VALUES,
     officer: NO_OFFICER,
   });
   const [officer, setOfficer] = useState<OfficerDraft>(EMPTY_OFFICER);
@@ -105,6 +105,8 @@ export function AppoForm({
   const [error, setError] = useState<string | null>(null);
 
   const officers = lists?.officers ?? [];
+  /** Every new number starts with these three letters, as the super admin set them. */
+  const prefix = lists?.number_prefix ?? DEFAULT_NUMBER_PREFIX;
 
   useEffect(() => {
     if (!open) return;
@@ -125,9 +127,7 @@ export function AppoForm({
         link: linkStillThere ? (record.link_id as string) : CURRENT_LINK,
         attestation_number: record.attestation_number,
         issue_date: record.issue_date.slice(0, 10),
-        document_type: record.document_type,
-        issuing_office: record.issuing_office,
-        issuing_authority: record.issuing_authority,
+        ...(Object.fromEntries(APPO_FIELDS.map((f) => [f.kind, record[f.kind] ?? ""])) as FieldValues),
         officer: saved ? (record.officer_id as string) : carries ? CURRENT_OFFICER : NO_OFFICER,
       });
       if (!saved && record.officer_signature_r2_key) {
@@ -143,9 +143,7 @@ export function AppoForm({
         link: first?.links[0]?.id ?? "",
         attestation_number: "",
         issue_date: todayLocalIso(),
-        document_type: "",
-        issuing_office: "",
-        issuing_authority: "",
+        ...NO_VALUES,
         officer: NO_OFFICER,
       });
     }
@@ -201,10 +199,17 @@ export function AppoForm({
     draft.link === CURRENT_LINK ? (record?.link_template ?? null) : (links.find((l) => l.id === draft.link)?.template ?? null);
 
   const number = tidyNumber(draft.attestation_number);
-  const numberError = number && !NUMBER_RE.test(number) ? `Must look like ${NUMBER_EXAMPLE}: GEN, then three groups of four capital English letters.` : null;
+  // A document keeps a number made under an earlier prefix; a new or changed number starts with the one in use.
+  const keepsNumber = Boolean(record && number === record.attestation_number);
+  const numberError =
+    number && !NUMBER_RE.test(number)
+      ? `Must look like ${numberExample(prefix)}: ${prefix}, then three groups of four capital English letters.`
+      : number && !keepsNumber && !number.startsWith(`${prefix}-`)
+        ? `Attestation numbers start with ${prefix}, e.g. ${numberExample(prefix)}.`
+        : null;
   const issueDate = draft.issue_date || todayLocalIso();
 
-  const previewUrl = domain && template !== null ? resolveLink(domain.hostname, template, number || "GEN-••••-••••-••••", issueDate) : "";
+  const previewUrl = domain && template !== null ? resolveLink(domain.hostname, template, number || `${prefix}-••••-••••-••••`, issueDate) : "";
   // The exact complete link the server will build, once there is a valid number to put in it.
   const qrUrl = domain && template !== null && NUMBER_RE.test(number) ? resolveLink(domain.hostname, template, number, issueDate) : null;
 
@@ -283,9 +288,7 @@ export function AppoForm({
         ...(draft.link === CURRENT_LINK ? {} : { link_id: draft.link }),
         attestation_number: number,
         issue_date: draft.issue_date || todayLocalIso(),
-        document_type: draft.document_type,
-        issuing_office: draft.issuing_office,
-        issuing_authority: draft.issuing_authority,
+        ...(Object.fromEntries(APPO_FIELDS.map((f) => [f.kind, draft[f.kind]])) as FieldValues),
       };
       if (officerId !== undefined) payload.officer_id = officerId;
       if (upload) {
@@ -295,7 +298,7 @@ export function AppoForm({
       }
 
       // A value typed in that no saved list has yet: the lists need a refresh to offer it next time.
-      const listsChanged = (["document_type", "issuing_office", "issuing_authority"] as const).some((kind) => {
+      const listsChanged = APPO_FIELDS.map((f) => f.kind).some((kind) => {
         const value = draft[kind].trim().toLowerCase();
         return value !== "" && !(lists?.options[kind] ?? []).some((o) => o.value.toLowerCase() === value);
       });
@@ -414,7 +417,7 @@ export function AppoForm({
             </Select>
           </Field>
 
-          <Field label="Date of attestation" hint="Left empty, today's date is used. Fills the date formula as DDMMYYYY.">
+          <Field label="Date" hint="Left empty, today's date is used. Shown as “29th of October 2026”; fills the link's date formula as DDMMYYYY.">
             <Input type="date" value={draft.issue_date} disabled={busy} onChange={(e) => set("issue_date", e.target.value)} />
           </Field>
         </div>
@@ -425,7 +428,7 @@ export function AppoForm({
           hint={
             editing
               ? "Fills the attestation-number formula, so changing it changes the link."
-              : `Left empty, one is generated, e.g. ${NUMBER_EXAMPLE}. Must be unique across all domains.`
+              : `Left empty, one is generated, e.g. ${numberExample(prefix)}. Must be unique across all domains. Shown on the page as Complete Number and on the sticker after No.`
           }
         >
           <div className="flex gap-2">
@@ -433,14 +436,14 @@ export function AppoForm({
               value={draft.attestation_number}
               disabled={busy}
               invalid={Boolean(numberError)}
-              placeholder={editing ? "" : "GEN-••••-••••-••••  (auto)"}
+              placeholder={editing ? "" : `${prefix}-••••-••••-••••  (auto)`}
               className="font-mono"
               onChange={(e) => set("attestation_number", e.target.value.toUpperCase())}
             />
             <Button
               icon={<RefreshCw className="size-4" />}
               disabled={busy}
-              onClick={() => set("attestation_number", randomNumber())}
+              onClick={() => set("attestation_number", randomNumber(prefix))}
               title="Fill in a new random number"
             >
               Generate
@@ -468,30 +471,16 @@ export function AppoForm({
         ) : null}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <OptionField
-            key={`document_type-${session}`}
-            label="Document type"
-            value={draft.document_type}
-            options={lists?.options.document_type ?? []}
-            disabled={busy}
-            onChange={(v) => set("document_type", v)}
-          />
-          <OptionField
-            key={`issuing_office-${session}`}
-            label="Issuing office"
-            value={draft.issuing_office}
-            options={lists?.options.issuing_office ?? []}
-            disabled={busy}
-            onChange={(v) => set("issuing_office", v)}
-          />
-          <OptionField
-            key={`issuing_authority-${session}`}
-            label="Issuing authority"
-            value={draft.issuing_authority}
-            options={lists?.options.issuing_authority ?? []}
-            disabled={busy}
-            onChange={(v) => set("issuing_authority", v)}
-          />
+          {APPO_FIELDS.map((f) => (
+            <OptionField
+              key={`${f.kind}-${session}`}
+              label={f.label}
+              value={draft[f.kind]}
+              options={lists?.options[f.kind] ?? []}
+              disabled={busy}
+              onChange={(v) => set(f.kind, v)}
+            />
+          ))}
         </div>
 
         <div className="rounded-md border p-3 space-y-3">

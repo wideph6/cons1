@@ -26,7 +26,20 @@ export interface AppoDomain {
 }
 
 /** The lists an upload can pick from, each growing with every new value typed in. */
-export type AppoOptionKind = "document_type" | "issuing_office" | "issuing_authority";
+export type AppoOptionKind = "document_type" | "signed_by" | "signed_capacity" | "seal_stamp" | "office_city" | "office_name";
+
+/**
+ * The values typed into each upload, in the order the verification record shows them, with the name
+ * the admin panel gives each and its saved list's heading.
+ */
+export const APPO_FIELDS: Array<{ kind: AppoOptionKind; label: string; list: string }> = [
+  { kind: "document_type", label: "Document type", list: "Document types" },
+  { kind: "signed_by", label: "Previously signed by", list: "Previously signed by" },
+  { kind: "signed_capacity", label: "Previous signed acting in capacity", list: "Acting in capacity" },
+  { kind: "seal_stamp", label: "Bears the seal or stamp", list: "Seals or stamps" },
+  { kind: "office_city", label: "Office city", list: "Office cities" },
+  { kind: "office_name", label: "Office name", list: "Office names" },
+];
 
 export interface AppoOption {
   id: string;
@@ -48,6 +61,8 @@ export interface AppoOfficer {
 export interface AppoLists {
   options: Record<AppoOptionKind, AppoOption[]>;
   officers: AppoOfficer[];
+  /** The three capital letters every new attestation number starts with (APN unless the super admin changed it). */
+  number_prefix: string;
 }
 
 /**
@@ -66,8 +81,16 @@ export interface AppoRecord {
   /** ISO date (YYYY-MM-DD); the link carries it as DDMMYYYY. */
   issue_date: string;
   document_type: string;
-  issuing_office: string;
-  issuing_authority: string;
+  /** 2 — Previously signed by. */
+  signed_by: string;
+  /** 3 — Previous Signed acting in capacity. */
+  signed_capacity: string;
+  /** 4 — Bears the seal or stamp. */
+  seal_stamp: string;
+  /** 5 — Office City. */
+  office_city: string;
+  /** 7 — Office Name. */
+  office_name: string;
   /** The saved officer this document was given, or null when none was picked or it was removed from the list. */
   officer_id: string | null;
   /** Copied from that officer, so removing them from the list leaves this document unchanged. */

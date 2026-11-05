@@ -44,6 +44,8 @@ import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
 import {
   cleanDesktop,
   cleanMobile,
+  keepRecordEntries,
+  PAGE_VIEWS,
   DEFAULT_DESKTOP,
   DEFAULT_MOBILE,
   LINK_ICONS,
@@ -355,6 +357,15 @@ interface LoadResult {
   table_ready: boolean;
 }
 
+/** Appo's saved page, both views, with New M's own copies of its logos and favicons. */
+interface AppoCopy {
+  desktop: DesktopContent;
+  mobile: MobileContent;
+  assets: Record<string, string>;
+  saved: Record<PageView, boolean>;
+  images: { copied: number; missing: number };
+}
+
 /** One view's content: as saved, as being edited, and the edits that can be undone and redone. */
 interface ViewDoc<T> {
   saved: T;
@@ -390,7 +401,8 @@ export function NewMPageEditor() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirm, setConfirm] = useState<null | "reset" | "discard" | "copy">(null);
+  const [confirm, setConfirm] = useState<null | "reset" | "discard" | "copy" | "appo">(null);
+  const [copyingAppo, setCopyingAppo] = useState(false);
 
   const [record, setRecord] = useState<PageRecord>(SAMPLE_RECORD);
   const [recordLabel, setRecordLabel] = useState("Sample values from the design");
@@ -637,6 +649,40 @@ export function NewMPageEditor() {
     }
   }
 
+  /**
+   * Both views take Appo's page as it is saved now, as unsaved changes: nothing reaches visitors until
+   * Save, and Undo brings each view back. The server has already copied its logos and favicons to New M.
+   * The verification record's entries stay New M's own, since Appo's record has entries of its own.
+   */
+  async function copyFromAppo() {
+    if (copyingAppo) return;
+    setCopyingAppo(true);
+    try {
+      const r = await api<AppoCopy>("/api/admin/new-m/page/from-appo", { method: "POST" });
+      setAssets((a) => ({ ...a, ...r.assets }));
+      edit("desktop", (c) => keepRecordEntries(cleanDesktop(r.desktop), c as DesktopContent));
+      edit("mobile", (c) => keepRecordEntries(cleanMobile(r.mobile), c as MobileContent));
+      setSelected(null);
+      setMenuPinned(false);
+      setConfirm(null);
+      const neverSaved = PAGE_VIEWS.filter((v) => !r.saved[v]).map((v) => VIEW_LABEL[v].toLowerCase());
+      const notes = [
+        "Appo's design is copied into both views; the verification record's entries and the note under them stay New M's own. Check the preview, then press Save.",
+      ];
+      if (r.images.missing) {
+        notes.push(
+          `${r.images.missing} of its images ${r.images.missing === 1 ? "was" : "were"} not in storage, so the design's own shows there.`,
+        );
+      }
+      if (neverSaved.length) notes.push(`Appo has never saved its ${neverSaved.join(" or ")} view, so that view is the design as made.`);
+      toast(notes.join(" "), r.images.missing ? "info" : "ok");
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setCopyingAppo(false);
+    }
+  }
+
   /* ---------- Clicks in the preview ---------- */
 
   const menuOpen = view === "mobile" && (menuPinned || Boolean(selected?.startsWith("menu.")));
@@ -760,6 +806,9 @@ export function NewMPageEditor() {
           </Button>
           <Button onClick={() => setConfirm("discard")} disabled={!dirty}>
             Discard changes
+          </Button>
+          <Button icon={<Copy className="size-4" />} onClick={() => setConfirm("appo")} title="Both views take Appo's saved page design">
+            Copy Appo&apos;s design
           </Button>
           <Button icon={<RotateCcw className="size-4" />} onClick={() => setConfirm("reset")}>
             Reset {view} to design
@@ -887,6 +936,28 @@ export function NewMPageEditor() {
             Every text, link, button and logo of the {view} view goes back to the original {view} design; the other view
             stays as it is. Nothing changes for visitors until you press <b>Save</b>, and <b>Undo</b> brings your version
             back. Logos no longer used by either view are deleted from R2 when you save.
+          </>
+        }
+      />
+      <ConfirmDialog
+        open={confirm === "appo"}
+        onClose={() => (copyingAppo ? undefined : setConfirm(null))}
+        onConfirm={copyFromAppo}
+        loading={copyingAppo}
+        title="Copy Appo's page design into New M?"
+        confirmLabel="Copy"
+        message={
+          <>
+            Both views — desktop and mobile — take Appo&apos;s verification page as it is saved now: every text, link,
+            button, tab, menu item and logo, the favicon and the PDF tab&apos;s favicon. New M gets its own copies of the
+            logos and favicons in R2, so changing either page later never touches the other. Changes not yet saved in
+            Appo&apos;s editor are not included.
+            <br />
+            <br />
+            <b>Not copied:</b> the entries of the verification record — its labels, the approving officer&apos;s
+            designation and signature — and the note under them (&ldquo;This verification confirms…&rdquo;). They are New
+            M&apos;s own (Appo&apos;s record has different ones), so they stay exactly as they are. Nothing changes for visitors until you press <b>Save</b>, and <b>Undo</b> brings back
+            your version of each view.
           </>
         }
       />

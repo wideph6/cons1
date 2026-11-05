@@ -7,7 +7,7 @@ import { encodeQr, qrToSvg, type QrMatrix } from "./appo-qr";
 
 /**
  * Formulas a domain's link can carry. Each document fills in its own values: the attestation number
- * as `GEN-NMPD-SSTI-FBDS` and the issue date as DDMMYYYY.
+ * as `APN-NMPD-SSTI-FBDS` and the issue date as DDMMYYYY.
  */
 export const LINK_TOKENS = {
   number: "{attestation_number}",
@@ -18,13 +18,33 @@ export const LINK_TOKENS = {
 export const STANDARD_TEMPLATE =
   "/verify-general-attestation-by-qr?attestation_number={attestation_number}&issue_date={issue_date}";
 
-/** Every attestation number starts with this. */
-export const NUMBER_PREFIX = "GEN";
+/**
+ * Every new attestation number starts with three capital letters the super admin sets (Appo → Number
+ * prefix), saved in the database (appo_settings.number_prefix). This is only what is used until
+ * appo.sql has added that setting.
+ */
+export const DEFAULT_NUMBER_PREFIX = "APN";
 
-/** `GEN-NMPD-SSTI-FBDS`: GEN, then three groups of four capital English letters. */
-export const NUMBER_RE = /^GEN-[A-Z]{4}-[A-Z]{4}-[A-Z]{4}$/;
+/** What a prefix may be: exactly three capital English letters. */
+export const PREFIX_RE = /^[A-Z]{3}$/;
 
-export const NUMBER_EXAMPLE = "GEN-NMPD-SSTI-FBDS";
+/**
+ * `APN-NMPD-SSTI-FBDS`: the prefix, then three groups of four capital English letters. Any three
+ * letters are read as a number, so documents numbered under an earlier prefix keep working.
+ */
+export const NUMBER_RE = /^[A-Z]{3}-[A-Z]{4}-[A-Z]{4}-[A-Z]{4}$/;
+
+/** A number written out as an example, with the prefix in use. */
+export function numberExample(prefix = DEFAULT_NUMBER_PREFIX): string {
+  return `${prefix}-NMPD-SSTI-FBDS`;
+}
+
+export const NUMBER_EXAMPLE = numberExample();
+
+/** The prefix as typed, tidied: spaces dropped, letters capitalised. */
+export function tidyPrefix(input: string): string {
+  return input.trim().toUpperCase().replace(/\s+/g, "");
+}
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -47,9 +67,9 @@ function randomLetters(count: number, alphabet = LETTERS): string {
   return out;
 }
 
-/** A fresh random number such as `GEN-NMPD-SSTI-FBDS`. Not checked against existing ones. */
-export function randomNumber(): string {
-  return [NUMBER_PREFIX, randomLetters(4), randomLetters(4), randomLetters(4)].join("-");
+/** A fresh random number such as `APN-NMPD-SSTI-FBDS`, with the prefix in use. Not checked against existing ones. */
+export function randomNumber(prefix = DEFAULT_NUMBER_PREFIX): string {
+  return [PREFIX_RE.test(prefix) ? prefix : DEFAULT_NUMBER_PREFIX, randomLetters(4), randomLetters(4), randomLetters(4)].join("-");
 }
 
 /** How a typed number is read: spaces dropped, letters capitalised. */

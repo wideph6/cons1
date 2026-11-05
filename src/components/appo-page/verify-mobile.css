@@ -617,6 +617,58 @@
   line-height: calc(var(--mu) * 27.5);
   overflow-wrap: anywhere;
 }
+/*
+ * Appo's entries: a number in a gutter on the left (when any entry has one, so the words line up), the
+ * words, then the value under them (two lines) or right after them (one line, wrapping onto a second
+ * line when the phone is too narrow for it).
+ */
+.apom-cert.has-numbers .apom-row {
+  padding-left: calc(var(--mu) * 31);
+}
+.apom-row-num {
+  position: absolute;
+  left: calc(var(--mu) * 12);
+  top: calc(var(--mu) * 19.8);
+  min-width: calc(var(--mu) * 14);
+  color: #3d8a57;
+  font-size: calc(var(--mu) * 13);
+  font-weight: 700;
+  line-height: calc(var(--mu) * 18);
+}
+.apom-row.is-inline .apom-row-label,
+.apom-row.is-inline .apom-row-value {
+  display: inline;
+}
+.apom-row.is-inline .apom-row-value {
+  margin-top: 0;
+  line-height: calc(var(--mu) * 18);
+}
+.apom-row-officer .apom-row-num {
+  top: calc(var(--mu) * 18.3);
+}
+
+/*
+ * The certificate box between entries 4 and 5; its look (and its width on phones) is set under Page design.
+ * As in the design it is a band as wide as the record, its top line laid over the line under the entry
+ * before it.
+ */
+.apom-certrow {
+  position: relative;
+  margin-top: calc(var(--mu) * -1);
+}
+.apom-certbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: calc(var(--mu) * 6) calc(var(--mu) * 12);
+  text-align: center;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
 .apom-row-officer {
   padding-top: calc(var(--mu) * 18.3);
   padding-bottom: calc(var(--mu) * 16.7);
