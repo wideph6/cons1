@@ -927,6 +927,12 @@ admin ke liye hai — bilkul New M ki tarah.
 Vercel project mein add hona chahiye (Hissa 7 ki tarah). **Aik domain ya subdomain New M aur Appo dono mein na daalen** — dono mein ho
 to us par New M khulta hai.
 
+**4. Page design (super admin):** Appo ka verification page (desktop + mobile) shuru mein design ke defaults dikhata hai. New M
+jaisa banane ke liye **Appo page** → **Copy New M's design** → **Copy** dabayen. New M ka saved design — dono views ke text,
+links, buttons, logo, favicon aur PDF tab ka favicon — editor mein aa jayega. Preview dekh kar **Save** dabayen (pasand na aaye to
+**Undo** ya **Discard changes**). Logo aur favicon ki R2 mein Appo ki apni copy banti hai, is liye baad mein kisi ek page ko
+badalne se doosre par asar nahi parta. New M ka koi data is se nahi badalta.
+
 Baqi sab kaam (upload, edit, sticker, background image, page design, favicon, PDF ka 40 character naam aur link) Hissa 13 jaisa hai,
 bas New M ki jagah **Appo** tab aur **Appo page** use karen.
 

@@ -49,6 +49,7 @@ import {
   LINK_ICONS,
   MAX_ITEMS,
   MOBILE_VIEWER_MODES,
+  PAGE_VIEWS,
   RECORD_FIELDS,
   SAMPLE_PDF_NAME,
   SAMPLE_RECORD,
@@ -356,6 +357,15 @@ interface LoadResult {
   table_ready: boolean;
 }
 
+/** New M's saved page, both views, with Appo's own copies of its logos and favicons. */
+interface NewMCopy {
+  desktop: DesktopContent;
+  mobile: MobileContent;
+  assets: Record<string, string>;
+  saved: Record<PageView, boolean>;
+  images: { copied: number; missing: number };
+}
+
 /** One view's content: as saved, as being edited, and the edits that can be undone and redone. */
 interface ViewDoc<T> {
   saved: T;
@@ -391,7 +401,8 @@ export function AppoPageEditor() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirm, setConfirm] = useState<null | "reset" | "discard" | "copy">(null);
+  const [confirm, setConfirm] = useState<null | "reset" | "discard" | "copy" | "new-m">(null);
+  const [copyingNewM, setCopyingNewM] = useState(false);
 
   const [record, setRecord] = useState<PageRecord>(SAMPLE_RECORD);
   const [recordLabel, setRecordLabel] = useState("Sample values from the design");
@@ -638,6 +649,37 @@ export function AppoPageEditor() {
     }
   }
 
+  /**
+   * Both views take New M's page as it is saved now, as unsaved changes: nothing reaches visitors until
+   * Save, and Undo brings each view back. The server has already copied its logos and favicons to Appo.
+   */
+  async function copyFromNewM() {
+    if (copyingNewM) return;
+    setCopyingNewM(true);
+    try {
+      const r = await api<NewMCopy>("/api/admin/appo/page/from-new-m", { method: "POST" });
+      setAssets((a) => ({ ...a, ...r.assets }));
+      edit("desktop", () => cleanDesktop(r.desktop));
+      edit("mobile", () => cleanMobile(r.mobile));
+      setSelected(null);
+      setMenuPinned(false);
+      setConfirm(null);
+      const neverSaved = PAGE_VIEWS.filter((v) => !r.saved[v]).map((v) => VIEW_LABEL[v].toLowerCase());
+      const notes = ["New M's design is copied into both views. Check the preview, then press Save."];
+      if (r.images.missing) {
+        notes.push(
+          `${r.images.missing} of its images ${r.images.missing === 1 ? "was" : "were"} not in storage, so the design's own shows there.`,
+        );
+      }
+      if (neverSaved.length) notes.push(`New M has never saved its ${neverSaved.join(" or ")} view, so that view is the design as made.`);
+      toast(notes.join(" "), r.images.missing ? "info" : "ok");
+    } catch (e) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setCopyingNewM(false);
+    }
+  }
+
   /* ---------- Clicks in the preview ---------- */
 
   const menuOpen = view === "mobile" && (menuPinned || Boolean(selected?.startsWith("menu.")));
@@ -761,6 +803,9 @@ export function AppoPageEditor() {
           </Button>
           <Button onClick={() => setConfirm("discard")} disabled={!dirty}>
             Discard changes
+          </Button>
+          <Button icon={<Copy className="size-4" />} onClick={() => setConfirm("new-m")} title="Both views take New M's saved page design">
+            Copy New M&apos;s design
           </Button>
           <Button icon={<RotateCcw className="size-4" />} onClick={() => setConfirm("reset")}>
             Reset {view} to design
@@ -888,6 +933,23 @@ export function AppoPageEditor() {
             Every text, link, button and logo of the {view} view goes back to the original {view} design; the other view
             stays as it is. Nothing changes for visitors until you press <b>Save</b>, and <b>Undo</b> brings your version
             back. Logos no longer used by either view are deleted from R2 when you save.
+          </>
+        }
+      />
+      <ConfirmDialog
+        open={confirm === "new-m"}
+        onClose={() => (copyingNewM ? undefined : setConfirm(null))}
+        onConfirm={copyFromNewM}
+        loading={copyingNewM}
+        title="Copy New M's page design into Appo?"
+        confirmLabel="Copy"
+        message={
+          <>
+            Both views — desktop and mobile — take New M&apos;s verification page as it is saved now: every text, link,
+            button, tab, menu item and logo, the favicon and the PDF tab&apos;s favicon. Appo gets its own copies of the
+            logos and favicons in R2, so changing either page later never touches the other. Changes not yet saved in New
+            M&apos;s editor are not included. Nothing changes for visitors until you press <b>Save</b>, and <b>Undo</b>{" "}
+            brings back your version of each view.
           </>
         }
       />

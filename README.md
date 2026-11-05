@@ -227,6 +227,11 @@ and hands the visit to the system it belongs to — a host set up in both answer
 only), the permission list, the admin sidebar, the activity log's wording and the storage report. Appo's tab shows to the super
 admin and to admins given any Appo permission; its page design is the super admin's only, as for New M.
 
+Appo's page starts from the design's defaults. **Copy New M's design** in Appo's page editor brings in New M's page as it is
+saved now — both views, with every text, link and logo, the favicon and the PDF tab's favicon — as unsaved changes to check,
+then Save (or Undo). Its logos and favicons are copied in R2 to `appo/page/`, so the two pages never share a file. This is the
+one place Appo reads New M's data (`new_m_page_settings` and `new-m/page/`); it never writes or deletes any of it.
+
 ## Permissions
 
 Super admins can do everything. Admin users get only the boxes ticked for them:
