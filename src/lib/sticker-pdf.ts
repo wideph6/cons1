@@ -108,15 +108,14 @@ export async function pdfToBackground(pdf: File, maxBytes: number): Promise<PdfB
 }
 
 /**
- * A sticker as a one-page PDF: the sticker drawn at `scale` times its size (as sharp as the PNG was) on
- * a page of the sticker's real size, `pointsPerUnit` points for every sticker unit. creator names the
- * system that made it (New M, Appo).
+ * A sticker as a one-page PDF: the sticker drawn at `scale` times its size (as sharp as the PNG was), placed
+ * on the page where layout puts it (anything past the page's sides is cut). creator names the system that
+ * made it (New M, Appo).
  */
 export async function stickerPdf(
   svg: string,
-  size: { width: number; height: number },
   scale: number,
-  pointsPerUnit: number,
+  layout: { page: { width: number; height: number }; sticker: { x: number; y: number; width: number; height: number } },
   title: string,
   creator = "New M",
 ): Promise<Blob> {
@@ -125,10 +124,10 @@ export async function stickerPdf(
   doc.setTitle(title);
   doc.setCreator(creator);
   const image = await doc.embedPng(new Uint8Array(await png.arrayBuffer()));
-  const width = size.width * pointsPerUnit;
-  const height = size.height * pointsPerUnit;
-  const page = doc.addPage([width, height]);
-  page.drawImage(image, { x: 0, y: 0, width, height });
+  const { page: pg, sticker: st } = layout;
+  const page = doc.addPage([pg.width, pg.height]);
+  // PDF pages count up from the bottom.
+  page.drawImage(image, { x: st.x, y: pg.height - st.y - st.height, width: st.width, height: st.height });
   const bytes = await doc.save();
   return new Blob([bytes as BlobPart], { type: "application/pdf" });
 }

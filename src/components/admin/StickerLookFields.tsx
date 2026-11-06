@@ -193,112 +193,89 @@ export function StickerSetsShown<Id extends string>({
   );
 }
 
-const PRINT_UNITS = [
-  { id: "cm", label: "cm", points: 72 / 2.54, step: 0.1 },
-  { id: "mm", label: "mm", points: 72 / 25.4, step: 1 },
-  { id: "in", label: "inch", points: 72, step: 0.05 },
-] as const;
-type PrintUnit = (typeof PRINT_UNITS)[number]["id"];
+/** A4 paper's width, in millimetres. */
+const A4_MM = 210;
 
 /**
- * The size the whole sticker prints at: the background (image or PDF) with every value, word and the QR code
- * on it, as one. Width or height can be typed; the other follows, so the sticker keeps its shape. Stored as
- * the width in points (printWidth); left out, it prints as made.
+ * How the sticker sits across an A4 page, set with one slider once its words, values and QR code are in place:
+ * white left on both sides, edge to edge, or its sides cut. The page is A4-wide; its length follows the sticker,
+ * so the longer the image, the longer the page.
  */
-export function PrintSizeField({
+export function PageWidthField({
   size,
-  madePoints,
   value,
   disabled,
   onChange,
 }: {
-  /** The sticker's own size, in sticker units. */
+  /** The sticker's own size, in sticker units (its background as shown). */
   size: { width: number; height: number };
-  /** Points per sticker unit as made: the background PDF's own size, or 96 units to the inch. */
-  madePoints: number;
-  /** The width set, in points; null for as made. */
-  value: number | null;
+  /** The sticker's width against the page's (1 = edge to edge). */
+  value: number;
   disabled?: boolean;
-  onChange: (printWidth: number | null) => void;
+  onChange: (k: number) => void;
 }) {
-  const [unit, setUnit] = useState<PrintUnit>("cm");
-  const u = PRINT_UNITS.find((x) => x.id === unit)!;
-  const widthPt = value ?? size.width * madePoints;
-  const heightPt = (widthPt * size.height) / size.width;
-  /** A length in points, in the chosen unit: whole millimetres, or hundredths of a centimetre or inch. */
-  const shown = (pt: number) => String(Number((pt / u.points).toFixed(unit === "mm" ? 0 : 2)));
-  const [draft, setDraft] = useState<{ w: string; h: string } | null>(null);
-  useEffect(() => setDraft(null), [value, unit, size.width, size.height]);
-  const put = (side: "w" | "h", text: string) => {
-    setDraft(side === "w" ? { w: text, h: shown(heightPt) } : { w: shown(widthPt), h: text });
-    const n = Number(text);
-    if (!text.trim() || !Number.isFinite(n) || n <= 0) return;
-    const pt = n * u.points;
-    const w = side === "w" ? pt : (pt * size.width) / size.height;
-    if (w < 28.35 || w > 14400) return;
-    onChange(Math.round(w * 100) / 100);
-  };
+  const min = 0.2;
+  const max = 2;
+  const put = (k: number) => onChange(Math.round(Math.min(max, Math.max(min, k)) * 1000) / 1000);
+  // The slider runs in millimetres left at each side: positive is white, negative is cut off.
+  const side = ((1 - value) * A4_MM) / 2;
+  const toFill = (mm: number) => 1 - (2 * mm) / A4_MM;
+  const stickerMm = A4_MM * value;
+  const lengthMm = (stickerMm * size.height) / size.width;
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => setDraft(null), [value]);
   return (
     <div className="rounded-md border bg-surface-2 p-3 space-y-2">
       <div className="text-[12.5px] font-medium">
-        Print size of the whole sticker
+        Page width (A4)
         <span className="font-normal text-text-muted">
           {" "}
-          · the background and everything on it (words, values, signature, QR code) print together as one set, at this size.
-          Type the width or the height; the other follows, so nothing is stretched.
+          · set once the words, values and QR code are in place: how much white is left at the sides of an A4 page, none,
+          or how much of the sticker&apos;s sides is cut. The page&apos;s length follows on its own.
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
-        <label className="inline-flex items-center gap-1.5">
-          Width
-          <input
-            type="number"
-            min={0}
-            step={u.step}
-            value={draft?.w ?? shown(widthPt)}
-            disabled={disabled}
-            aria-label="Printed width"
-            className="w-24 rounded-md border border-line-strong bg-surface px-2 h-8"
-            onChange={(e) => put("w", e.target.value)}
-            onBlur={() => setDraft(null)}
-          />
-        </label>
-        <span>×</span>
-        <label className="inline-flex items-center gap-1.5">
-          Height
-          <input
-            type="number"
-            min={0}
-            step={u.step}
-            value={draft?.h ?? shown(heightPt)}
-            disabled={disabled}
-            aria-label="Printed height"
-            className="w-24 rounded-md border border-line-strong bg-surface px-2 h-8"
-            onChange={(e) => put("h", e.target.value)}
-            onBlur={() => setDraft(null)}
-          />
-        </label>
-        <select
-          value={unit}
+        <span className="w-28">White at each side</span>
+        <input
+          type="range"
+          min={-((max - 1) * A4_MM) / 2}
+          max={((1 - min) * A4_MM) / 2}
+          step={0.5}
+          value={side}
           disabled={disabled}
-          aria-label="Unit"
-          className="rounded-md border border-line-strong bg-surface px-2 h-8"
-          onChange={(e) => setUnit(e.target.value as PrintUnit)}
-        >
-          {PRINT_UNITS.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.label}
-            </option>
-          ))}
-        </select>
-        {value !== null ? (
-          <Button size="sm" disabled={disabled} onClick={() => onChange(null)}>
-            As made ({(Math.round(((size.width * madePoints) / u.points) * 100) / 100).toString()} {u.label} wide)
+          aria-label="White at each side of the A4 page, in millimetres (less than 0 cuts the sticker's sides)"
+          className="w-64 accent-teal-600"
+          onChange={(e) => put(toFill(Number(e.target.value)))}
+        />
+        <input
+          type="number"
+          step={0.5}
+          value={draft ?? String(Math.round(side * 10) / 10)}
+          disabled={disabled}
+          aria-label="White at each side, in millimetres"
+          className="w-20 rounded-md border border-line-strong bg-surface px-2 h-8"
+          onChange={(e) => {
+            setDraft(e.target.value);
+            const n = Number(e.target.value);
+            if (e.target.value.trim() !== "" && Number.isFinite(n)) put(toFill(n));
+          }}
+          onBlur={() => setDraft(null)}
+        />
+        <span>mm</span>
+        {Math.abs(value - 1) > 0.0005 ? (
+          <Button size="sm" disabled={disabled} onClick={() => onChange(1)}>
+            Edge to edge
           </Button>
-        ) : (
-          <span className="text-text-muted">as made</span>
-        )}
+        ) : null}
       </div>
+      <p className="text-[12px] text-text-muted">
+        {Math.abs(side) < 0.25
+          ? "Edge to edge: "
+          : side > 0
+            ? `${(Math.round(side * 10) / 10).toString()} mm of white on the left and on the right: `
+            : `${(Math.round(-side * 10) / 10).toString()} mm cut off each side: `}
+        the sticker prints {(stickerMm / 10).toFixed(1)} cm wide on a page 21.0 cm wide and {(lengthMm / 10).toFixed(1)} cm long.
+      </p>
     </div>
   );
 }

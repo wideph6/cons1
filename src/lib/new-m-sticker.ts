@@ -37,8 +37,8 @@ export interface StickerSize {
 }
 export const DEFAULT_SIZE: StickerSize = { width: STICKER_W, height: STICKER_H };
 /** The narrowest/widest and shortest/tallest a sticker may be, in sticker units. */
-export const MIN_SIDE = 60;
-export const MAX_SIDE = 12000;
+export const MIN_SIDE = 20;
+export const MAX_SIDE = 40000;
 
 /** The sticker for an image of these pixels: STICKER_W wide and as tall as the image's proportions make it. */
 export function sizeForImage(imageWidth: number, imageHeight: number): StickerSize {
@@ -435,6 +435,11 @@ export interface BackgroundPlacement {
    * (the background PDF's own size, or 96 units to the inch).
    */
   printWidth?: number;
+  /**
+   * How wide the sticker prints against an A4 page's width (1 = edge to edge, less leaves white on both sides,
+   * more cuts its sides); the page is as long as the sticker at that width. Left out at 1.
+   */
+  pageFill?: number;
 }
 
 /** The narrowest a sticker may be set to print (1 cm), in points. */
@@ -740,7 +745,16 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     if (typeof w !== "number" || !Number.isFinite(w) || w < MIN_PRINT_WIDTH - 0.01 || w > MAX_PDF_SIDE) return null;
     printWidth = w;
   }
-  const placed = withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage), printWidth);
+  let pageFill: number | null = null;
+  if (raw.pageFill !== undefined && raw.pageFill !== null) {
+    const k = raw.pageFill;
+    if (typeof k !== "number" || !Number.isFinite(k) || k < MIN_PAGE_FILL - 1e-9 || k > MAX_PAGE_FILL + 1e-9) return null;
+    pageFill = k;
+  }
+  const placed = withPageFill(
+    withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage), printWidth),
+    pageFill,
+  );
   const s = visibleRect(placed);
   const onSticker = s.x < size.width && s.y < size.height && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;
@@ -1129,5 +1143,70 @@ export function fitToBackground(
     out[set] = next;
   }
   return { placement: crop ? { ...box, crop } : box, size: { width: STICKER_W, height }, layout: out };
+}
+
+/**
+ * The sticker made exactly its background as shown: the visible part of the image (after its crop), at the
+ * size it was zoomed to — so the sticker's width and length are the image's, with no frame cutting it.
+ * Everything moves so that part starts at the sticker's corner; nothing on the sticker moves against the
+ * background.
+ */
+export function refitToBackground(p: BackgroundPlacement, layout: StickerLayout): FittedSticker {
+  const r = visibleRect(p);
+  const shift = Math.abs(r.x) > 0.005 || Math.abs(r.y) > 0.005;
+  const placement: BackgroundPlacement = { x: n(p.x - r.x), y: n(p.y - r.y), width: p.width, height: p.height };
+  if (p.crop) placement.crop = p.crop;
+  const out: StickerLayout = {};
+  for (const { id } of STICKER_SETS) {
+    const l = layout[id];
+    if (!shift) {
+      if (l) out[id] = l;
+      continue;
+    }
+    out[id] = { ...(l ?? {}), dx: n((l?.dx ?? 0) - r.x), dy: n((l?.dy ?? 0) - r.y) };
+  }
+  const side = (v: number) => n(Math.min(MAX_SIDE, Math.max(MIN_SIDE, v)));
+  return { placement, size: { width: side(r.width), height: side(r.height) }, layout: out };
+}
+
+/* ---------------- The printed page ---------------- */
+
+/** A4 paper's width, in points (210 mm): the sticker prints on a page this wide. */
+export const A4_WIDTH = 595.28;
+/** The narrowest and widest the sticker may print against the A4 page's width (past 1 its sides are cut). */
+export const MIN_PAGE_FILL = 0.2;
+export const MAX_PAGE_FILL = 2;
+
+/** The placement with how wide the sticker prints against an A4 page's width, or with none for edge to edge. */
+export function withPageFill(p: BackgroundPlacement, k: number | null | undefined): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.pageFill;
+  return k && Math.abs(k - 1) > 0.0005 ? { ...rest, pageFill: Math.round(k * 10000) / 10000 } : rest;
+}
+
+/** The PDF a sticker prints as: the page, and where the sticker sits on it, in points. */
+export interface PdfLayout {
+  page: { width: number; height: number };
+  sticker: { x: number; y: number; width: number; height: number };
+}
+
+/**
+ * The page is as wide as A4, and as long as the sticker printed at that width: the sticker is pageFill times
+ * the page's width (1 = edge to edge; less leaves white on both sides; more cuts its sides), centred, and its
+ * length follows. A page longer than a PDF may be (200 inches) is made smaller as a whole.
+ */
+export function pdfLayout(p: { size?: StickerSize; pageFill?: number } | null | undefined): PdfLayout {
+  const size = stickerSize(p);
+  const k = p?.pageFill ?? 1;
+  let pageWidth = A4_WIDTH;
+  let width = A4_WIDTH * k;
+  let height = (size.height * width) / size.width;
+  const most = MAX_PDF_SIDE / Math.max(height, pageWidth);
+  if (most < 1) {
+    pageWidth *= most;
+    width *= most;
+    height *= most;
+  }
+  return { page: { width: pageWidth, height }, sticker: { x: (pageWidth - width) / 2, y: 0, width, height } };
 }
 

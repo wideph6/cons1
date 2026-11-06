@@ -14,6 +14,10 @@ import {
   cleanPlacement,
   fitPlacement,
   fitToBackground,
+  pdfLayout,
+  refitToBackground,
+  withPageFill,
+  type PdfLayout,
   DEFAULT_SIZE,
   FULL_PLACEMENT,
   fullPlacement,
@@ -63,7 +67,7 @@ import {
 } from "@/lib/new-m-sticker";
 import type { NewMRecord } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
-import { PrintSizeField, QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
+import { PageWidthField, QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
 import type { StyleKey, TextStyle } from "@/lib/sticker-style";
 
 /* ---------------- Shared pieces ---------------- */
@@ -160,12 +164,23 @@ function scaleFor(imageWidth: number, placement: BackgroundPlacement | null): nu
  * old fixed size in the database; it is drawn at its background's length all the same (fitToBackground,
  * everything moved with the background's cells), until the super admin saves it so.
  */
-function drawnPlacement(bg: Background, values: StickerValues): BackgroundPlacement | null {
-  const p = bg.placement;
-  if (p?.size) return p;
-  const boxes = stickerSetBoxes({ drawFrame: !bg.hasFrame, texts: p?.texts, layout: p?.layout, ...values }, measure);
-  const f = fitToBackground(p ?? FULL_PLACEMENT, { width: bg.width, height: bg.height }, p?.layout ?? {}, boxes);
-  return withPrintWidth(withPdfPage(withSize(withTexts(withLayout(f.placement, f.layout), p?.texts ?? {}), f.size), p?.pdfPage), p?.printWidth);
+function drawnPlacement(bg: Background, values: StickerValues): BackgroundPlacement {
+  const saved = bg.placement;
+  let p: BackgroundPlacement = saved ?? FULL_PLACEMENT;
+  let layout = saved?.layout ?? {};
+  // Made at the old fixed size: its stretched background is put back in proportion first.
+  if (!saved?.size) {
+    const boxes = stickerSetBoxes({ drawFrame: !bg.hasFrame, texts: saved?.texts, layout, ...values }, measure);
+    const f = fitToBackground(p, { width: bg.width, height: bg.height }, layout, boxes);
+    p = f.placement;
+    layout = f.layout;
+  }
+  // The sticker is its background as shown: the image's width and length, nothing cut by a frame.
+  const r = refitToBackground(p, layout);
+  return withPageFill(
+    withPrintWidth(withPdfPage(withSize(withTexts(withLayout(r.placement, r.layout), saved?.texts ?? {}), r.size), saved?.pdfPage), saved?.printWidth),
+    saved?.pageFill,
+  );
 }
 
 /** The officer's signature a document carries, inline, or null for none. */
@@ -196,9 +211,8 @@ function recordValues(record: NewMRecord, signature: string | null): StickerValu
 export interface MadeSticker {
   svg: string;
   scale: number;
-  size: StickerSize;
-  /** Points per sticker unit in the PDF: the background PDF's own size, or 96 units to the inch. */
-  points: number;
+  /** The A4-wide page it prints on, and where the sticker sits on it. */
+  pdf: PdfLayout;
 }
 
 /** One document's sticker, built from its current values, its officer's signature and its saved QR code. */
@@ -217,13 +231,13 @@ export async function renderSticker(record: NewMRecord): Promise<MadeSticker> {
     },
     measure,
   );
-  return { svg, scale: scaleFor(bg.width, placement), size: stickerSize(placement), points: pointsPerUnit(placement) };
+  return { svg, scale: scaleFor(bg.width, placement), pdf: pdfLayout(placement) };
 }
 
 /** Saves a made sticker as a one-page PDF of the sticker's real size. */
 export async function saveStickerPdf(record: NewMRecord, sticker: MadeSticker): Promise<void> {
   const name = `${record.attestation_number}-sticker`;
-  downloadBlob(await stickerPdf(sticker.svg, sticker.size, sticker.scale, sticker.points, name), `${name}.pdf`);
+  downloadBlob(await stickerPdf(sticker.svg, sticker.scale, sticker.pdf, name), `${name}.pdf`);
 }
 
 /** One document's sticker, made and saved as a PDF straight from the list. */
@@ -234,12 +248,11 @@ export async function downloadSticker(record: NewMRecord): Promise<void> {
 /** The most a background image may weigh: it is served back through a function, capped near 4.5 MB. */
 const MAX_BACKGROUND = 4 * 1024 * 1024;
 
-/** How large the PDF sticker prints, e.g. "10.2 × 8.1 cm (4.0 × 3.2 in)". */
-function pageSizeText(size: StickerSize, page: PdfPage | null, placement: BackgroundPlacement, printWidth: number | null): string {
-  const points = pointsPerUnit(withPrintWidth(withPdfPage(withSize(placement, size), page), printWidth));
-  const cm = (v: number) => (((v * points) / 72) * 2.54).toFixed(1);
-  const inch = (v: number) => ((v * points) / 72).toFixed(1);
-  return `${cm(size.width)} × ${cm(size.height)} cm (${inch(size.width)} × ${inch(size.height)} in)`;
+/** What the PDF comes to, e.g. "an A4-wide page 21.0 × 16.6 cm, the sticker 19.0 cm wide". */
+function pageSizeText(size: StickerSize, pageFill: number): string {
+  const l = pdfLayout({ size, pageFill });
+  const cm = (pt: number) => ((pt / 72) * 2.54).toFixed(1);
+  return `an A4-wide page ${cm(l.page.width)} × ${cm(l.page.height)} cm, the sticker ${cm(l.sticker.width)} cm wide`;
 }
 
 function svgDataUri(svg: string): string {
@@ -364,8 +377,8 @@ function sampleValues(): StickerValues {
 }
 
 /** Zoom is the image's width against the sticker's: 1 is as wide as the sticker. */
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 4;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 10;
 
 /** Position and size only; the crop is kept apart while editing. */
 function box(p: BackgroundPlacement): BackgroundPlacement {
@@ -375,6 +388,7 @@ function box(p: BackgroundPlacement): BackgroundPlacement {
 function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean {
   if (Boolean(a.pdfPage) !== Boolean(b.pdfPage)) return false;
   if (Math.abs((a.printWidth ?? 0) - (b.printWidth ?? 0)) >= 0.01) return false;
+  if (Math.abs((a.pageFill ?? 1) - (b.pageFill ?? 1)) >= 0.0005) return false;
   if (a.pdfPage && b.pdfPage && (Math.abs(a.pdfPage.width - b.pdfPage.width) >= 0.01 || Math.abs(a.pdfPage.height - b.pdfPage.height) >= 0.01)) {
     return false;
   }
@@ -475,14 +489,16 @@ export function NewMBackgroundDialog({
   const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
   /** The page size of the PDF the background was drawn from, which gives the PDF sticker its real size; null for an image. */
   const [pdfPage, setPdfPage] = useState<PdfPage | null>(null);
-  /** How wide the whole sticker prints, in points, as the super admin set it; null for as made. */
-  const [printWidth, setPrintWidth] = useState<number | null>(null);
+  /** How wide the sticker prints against an A4 page's width (1 = edge to edge). */
+  const [pageFill, setPageFill] = useState(1);
   /** Reading a chosen PDF. */
   const [reading, setReading] = useState(false);
   /** The sticker had the old fixed size and was just made its background's length here, not saved yet. */
   const [fitted, setFitted] = useState(false);
   /** Set when the saved sticker has the old fixed size, so it is fitted once its sets can be measured. */
   const fitOnOpen = useRef(false);
+  /** The saved sticker was made at the old fixed size, before stickers followed their background. */
+  const legacyOnOpen = useRef(false);
   /** Showing the crop handles and the cut-off parts. */
   const [cropping, setCropping] = useState(false);
   /** The sets moved off their measured places. */
@@ -506,7 +522,7 @@ export function NewMBackgroundDialog({
     setPlacement(box(p ?? fullPlacement(stickerSize(p))));
     setSize(stickerSize(p));
     setPdfPage(p?.pdfPage ?? null);
-    setPrintWidth(p?.printWidth ?? null);
+    setPageFill(p?.pageFill ?? 1);
     setCrop(p?.crop ?? NO_CROP);
     setLayout(p?.layout ?? {});
     setTexts(p?.texts ?? {});
@@ -539,7 +555,8 @@ export function NewMBackgroundDialog({
       setSaved(current);
       setImage(current);
       // Saved before stickers followed their background: fitted to it below, once the sets are measured.
-      if (!i.placement?.size) fitOnOpen.current = true;
+      fitOnOpen.current = true;
+      legacyOnOpen.current = !i.placement?.size;
     })()
       .catch((e) => {
         if (!cancelled) setError(errorMessage(e));
@@ -620,21 +637,40 @@ export function NewMBackgroundDialog({
     setHasFrame(false);
   }
 
-  /** The sticker made its background's length, everything on it moved with the background's cells. */
-  function fitSticker(): boolean {
-    if (!image) return false;
-    const f = fitToBackground(withCrop(placement, crop), image, layout, setBoxes);
-    if (Math.abs(f.size.height - size.height) < 1 && Math.abs(f.size.width - size.width) < 1) return false;
-    setSize(f.size);
-    setPlacement(box(f.placement));
-    setLayout(f.layout);
-    return true;
+  /**
+   * The sticker made its background exactly as shown, after the image was moved, zoomed or cropped: its width and
+   * length become the image's, and everything on it stays where it sits on the image.
+   */
+  function refit(next: BackgroundPlacement = placement, nextCrop: BackgroundCrop = crop) {
+    const r = refitToBackground(withCrop(next, nextCrop), layout);
+    setPlacement(box(r.placement));
+    setSize(r.size);
+    setLayout(r.layout);
   }
 
+  // As it opens, a sticker saved another way (at the old fixed size, or with a frame that cut its background) is
+  // made its background as shown; the super admin checks it and saves.
   useEffect(() => {
     if (!open || !fitOnOpen.current || !image || image.file || !Object.keys(setBoxes).length) return;
     fitOnOpen.current = false;
-    if (fitSticker()) setFitted(true);
+    let p = withCrop(placement, crop);
+    let l = layout;
+    if (legacyOnOpen.current) {
+      const f = fitToBackground(p, image, l, setBoxes);
+      p = f.placement;
+      l = f.layout;
+    }
+    const r = refitToBackground(p, l);
+    const same =
+      Math.abs(r.size.width - size.width) < 0.5 &&
+      Math.abs(r.size.height - size.height) < 0.5 &&
+      Math.abs(r.placement.x - placement.x) < 0.01 &&
+      Math.abs(r.placement.y - placement.y) < 0.01;
+    if (same) return;
+    setPlacement(box(r.placement));
+    setSize(r.size);
+    setLayout(r.layout);
+    setFitted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, image, setBoxes]);
 
@@ -653,9 +689,11 @@ export function NewMBackgroundDialog({
     if (!image) return;
     setBusy(true);
     try {
-      const sent = withPrintWidth(
-        withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage),
-        printWidth,
+      // Saved as the sticker is: its background as shown.
+      const fitted = refitToBackground(withCrop(placement, crop), layout);
+      const sent = withPageFill(
+        withPdfPage(withSize(withTexts(withLayout(fitted.placement, fitted.layout), texts), fitted.size), pdfPage),
+        pageFill,
       );
       let next: BackgroundInfo;
       if (image.file) {
@@ -697,7 +735,7 @@ export function NewMBackgroundDialog({
     return box(clampPlacement(withCrop(p, c), size));
   }
 
-  const zoom = placement.width / size.width;
+  const zoom = placement.width / STICKER_W;
 
   function zoomTo(z: number) {
     if (!image) return;
@@ -705,9 +743,10 @@ export function NewMBackgroundDialog({
     // The point at the sticker's centre stays where it is.
     const fx = (size.width / 2 - placement.x) / placement.width;
     const fy = (size.height / 2 - placement.y) / placement.height;
-    const width = size.width * next;
+    const width = STICKER_W * next;
     const height = (width * image.height) / image.width;
-    setPlacement(kept({ x: size.width / 2 - fx * width, y: size.height / 2 - fy * height, width, height }));
+    // The sticker takes the image's new size: its width and length grow and shrink with it.
+    refit({ x: size.width / 2 - fx * width, y: size.height / 2 - fy * height, width, height });
   }
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
@@ -727,7 +766,10 @@ export function NewMBackgroundDialog({
   }
 
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (drag.current?.id === e.pointerId) drag.current = null;
+    if (drag.current?.id !== e.pointerId) return;
+    drag.current = null;
+    // Moved under the words: the sticker is the image where it now is.
+    refit();
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -745,7 +787,7 @@ export function NewMBackgroundDialog({
       if (selected) movePicked(selected, (o) => ({ dx: o.dx + move[0], dy: o.dy + move[1] }));
       return;
     }
-    setPlacement((p) => kept({ ...p, x: p.x + move[0], y: p.y + move[1] }));
+    refit(kept({ ...placement, x: placement.x + move[0], y: placement.y + move[1] }));
   }
 
   /* ----- Moving the values, labels and QR code ----- */
@@ -938,7 +980,7 @@ export function NewMBackgroundDialog({
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
         !samePlacement(
-          withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage), printWidth),
+          withPageFill(withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage), pageFill),
           info?.placement ?? FULL_PLACEMENT,
         )),
   );
@@ -947,9 +989,6 @@ export function NewMBackgroundDialog({
   const stretched = samePlacement(withSize(placement, size), withSize(fullPlacement(size), size));
   const imageShape = image ? sizeForImage(image.width, image.height) : null;
   /** The sticker the background would make: its length, with everything kept where it sits on the background. */
-  const fitSize = image ? fitToBackground(withCrop(placement, crop), image, layout, setBoxes).size : size;
-  const fitsBackground = Math.abs(fitSize.height - size.height) < 1 && Math.abs(fitSize.width - size.width) < 1;
-  const fitShape = { width: Math.round(fitSize.width), height: Math.round(fitSize.height) };
   /** The sticker already has the image's shape. */
   const matchesImage = imageShape ? Math.abs(imageShape.height - size.height) < 1 && Math.abs(imageShape.width - size.width) < 1 : true;
 
@@ -1002,13 +1041,11 @@ export function NewMBackgroundDialog({
         </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {image?.file ? (
-          <Alert tone={ratioOff ? "warn" : "info"}>
+          <Alert tone="info">
             {image.fromPdf
-              ? `New PDF: ${image.fromPdf.name}${image.fromPdf.pages > 1 ? ` (page 1 of ${image.fromPdf.pages} is used)` : ""}, drawn at ${image.width} × ${image.height}. The PDF sticker will be ${pageSizeText(size, pdfPage, placement, printWidth)}.`
+              ? `New PDF: ${image.fromPdf.name}${image.fromPdf.pages > 1 ? ` (page 1 of ${image.fromPdf.pages} is used)` : ""}, drawn at ${image.width} × ${image.height}. The PDF sticker will be ${pageSizeText(size, pageFill)}.`
               : `New image: ${image.file.name} (${image.width} × ${image.height}).`}{" "}
-            {ratioOff
-              ? `Its proportions differ from the sticker (${size.width} × ${size.height}) — move, zoom and crop it to fit.`
-              : "Line it up below, then press Use this background. It takes the current image's place."}
+            Line it up below, then press Use this background. It takes the current image&apos;s place.
           </Alert>
         ) : info && !info.uploaded && !loading ? (
           <Alert tone="warn">No background image yet, so no sticker can be made. Upload one to start.</Alert>
@@ -1018,14 +1055,14 @@ export function NewMBackgroundDialog({
               In use: {info.filename ?? "uploaded image"}
               {info.placement?.pdfPage ? " (from a PDF)" : ""}
               {info.updated_at ? `, set ${formatDateTime(info.updated_at)}` : ""}. PDF stickers come out{" "}
-              {pageSizeText(size, pdfPage, placement, printWidth)}.
+              {pageSizeText(size, pageFill)}.
             </p>
             {fitted ? (
               <Alert tone="info">
-                This sticker was saved at the old fixed size (958 × 761). It now takes its background&apos;s length (
-                {Math.round(size.width)} × {Math.round(size.height)}), every value, the QR code and the signature moved with the
-                background&apos;s cells — downloads are made so already. Check that everything sits right, then press{" "}
-                <strong>Save position</strong>. The length is free: a new image or PDF always brings its own.
+                The sticker is now its background exactly as shown ({Math.round(size.width)} × {Math.round(size.height)}): its
+                width and length are the image&apos;s, and nothing outside the image is kept. Every value, the QR code and the
+                signature stayed where they sit on the image — downloads are made so already. Check that everything sits
+                right, then press <strong>Save position</strong>.
               </Alert>
             ) : null}
           </>
@@ -1168,36 +1205,21 @@ export function NewMBackgroundDialog({
                 size="sm"
                 icon={<RotateCcw className="size-3.5" />}
                 disabled={busy}
-                onClick={() => setPlacement(kept(fitPlacement(image.width, image.height, size)))}
+                title="The whole image at 100%, the words' own size"
+                onClick={() => refit(fitPlacement(image.width, image.height, sizeForImage(image.width, image.height)))}
               >
                 Reset position
               </Button>
-              {!fitsBackground ? (
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  title="Make the sticker the background's length, with everything on it kept where it sits on the background"
-                  onClick={() => {
-                    fitSticker();
-                  }}
-                >
-                  Match the background ({fitShape.width} × {fitShape.height})
-                </Button>
-              ) : null}
-              <span className="tabular-nums" title="The sticker's size, in sticker units. It follows the background image's shape.">
+              <span className="tabular-nums" title="The sticker's size, in sticker units: always the background image as shown, at its size here.">
                 Sticker {Math.round(size.width)} × {Math.round(size.height)}
               </span>
-              {ratioOff ? (
-                <Button size="sm" disabled={busy || stretched} onClick={() => setPlacement(kept(fullPlacement(size)))}>
-                  Stretch to fit
-                </Button>
-              ) : null}
               <Button
                 size="sm"
                 variant={cropping ? "primary" : undefined}
                 icon={<Crop className="size-3.5" />}
                 disabled={busy}
                 onClick={() => {
+                  if (cropping) refit();
                   setCropping((c) => !c);
                   setArranging(false);
                   setSelected(null);
@@ -1206,7 +1228,14 @@ export function NewMBackgroundDialog({
                 {cropping ? "Done cropping" : "Crop"}
               </Button>
               {cut ? (
-                <Button size="sm" disabled={busy} onClick={() => setCrop(NO_CROP)}>
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setCrop(NO_CROP);
+                    refit(placement, NO_CROP);
+                  }}
+                >
                   Remove crop
                 </Button>
               ) : null}
@@ -1216,6 +1245,7 @@ export function NewMBackgroundDialog({
                 icon={<Move className="size-3.5" />}
                 disabled={busy}
                 onClick={() => {
+                  if (cropping) refit();
                   setArranging((a) => !a);
                   setCropping(false);
                   setSelected(null);
@@ -1288,13 +1318,7 @@ export function NewMBackgroundDialog({
                 </Button>
               ) : null}
             </div>
-            <PrintSizeField
-              size={size}
-              madePoints={pointsPerUnit(withPdfPage(withSize(placement, size), pdfPage))}
-              value={printWidth}
-              disabled={busy}
-              onChange={setPrintWidth}
-            />
+            <PageWidthField size={size} value={pageFill} disabled={busy} onChange={setPageFill} />
             {arranging && selected && (styleKeys(selected.set).length || selected.set === "qr") ? (
               <div className="rounded-md border bg-surface-2 p-3 space-y-2">
                 <div className="text-[12.5px] font-medium">

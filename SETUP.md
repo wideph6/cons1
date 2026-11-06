@@ -1095,23 +1095,23 @@ Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote ha
 
 ## 13A.6 Background image: view zoom aur size
 
-- **Sticker ka size image ke mutabiq (New M aur Appo dono):** nayi background image chunen to sticker khud usi image ki shakal
-  le leta hai (chorai 958, oonchai image ke tanasub se) aur image poora sticker bhar deti hai. **Lambai free hai** — lambi ya chhoti
-  jaisi bhi image ho (oonchai 60 se 12000 tak), sticker usi ki lambai leta hai. Sticker ka size "Sticker 958 × …" mein nazar aata
-  hai aur database mein save hota hai. Download bhi isi shakal mein banta hai (New M aur Appo dono: PDF).
-- **Purana fix size wala sticker:** jo background us waqt save hui thi jab sticker 958 × 761 par fix hota tha, woh ab **khud** apni
-  background ki lambai leta hai — download bhi isi lambai mein banta hai. Har value, QR code aur signature background ke khaanon ke
-  saath hi khisak jate hain (khinchi hui image wapas sahi tanasub mein; khaali pattiyan kat jati hain). Editor kholen to neela
-  paigham batata hai; sab theek ho to **Save position** dabayen taake ye database mein bhi save ho jaye.
-- **Print size of the whole sticker (New M aur Appo):** Background image editor mein ye panel hamesha nazar aata hai. Background
-  (image ya PDF) aur us par saari values, lafz, signature aur QR code **aik set ki tarah** aik saath print hote hain — yahan poore
-  sticker ki **Width** ya **Height** likhen (cm, mm ya inch); doosri khud usi tanasub se ban jati hai, kuch nahi khinchta. Download
-  hone wali PDF bilkul itni hi jagah leti hai (print par 100% / "Actual size" chunen). **As made** se wapas: background PDF ka apna
-  size, ya image ke liye 96 units fi inch. Phir **Save position**.
+- **Sticker = background, lambai aur chaudai free (New M aur Appo dono):** sticker hamesha apni background image (ya PDF ka
+  pehla page) jitna hota hai — jitna hissa crop ke baad bacha, usi zoom par. **Image size** barhayen to sticker ki **lambai aur
+  chaudai dono** barh jati hain (image kabhi kisi frame se nahi katti); kam karen to dono kam. 100% wo chaudai hai jis ke liye
+  sticker ke lafz bane hain (958) — image bari karne se lafz us ke muqable mein chhote lagte hain, chhoti karne se bare. Image
+  ghaseet kar ya teer se hilane, ya crop karne ke baad sticker khud image ki nayi jagah aur naap le leta hai; values, QR aur signature
+  image par apni jagah rehte hain. **Reset position**: poori image 100% par. "Sticker W × H" mein naap nazar aata hai.
+- **Page width (A4) — aik slider:** text, values aur QR set karne ke baad **Page width (A4)** panel mein aik scroll se tay karen ke
+  A4 page ki chaudai (21 cm) par sticker kaise aaye: **White at each side** ko mm mein barhayen to dono taraf utni safed jagah bachti
+  hai, **0** par sticker page ki poori chaudai leta hai (**Edge to edge**), aur minus mein le jayen to sticker ki sides utni kat jati
+  hain. **Page ki lambai khud** sticker ke saath badalti hai — jitni lambi image, utna lamba page. Neeche likha aata hai ke sticker
+  kitne cm chaura aur page kitna lamba banega. Download hone wali PDF bilkul isi page ki hoti hai (print par "Actual size" / 100%).
+  Phir **Save position**.
+- **Purane stickers:** jo sticker pehle fix size (958 × 761) ya kisi aur frame par save the, woh ab khud apni background jitne
+  ban jate hain — khinchi hui image wapas sahi tanasub mein, aur values image par apni jagah. Editor kholen to neela paigham
+  batata hai; sab theek ho to **Save position**.
 - **View (Appo):** 100% par poora sticker box mein nazar aata hai, chahe kitna lamba ho; − / + se bara kar ke scroll karen, **Fit** se
   wapas poora.
-- **Match the background** (pehle "Match the image"): image hilane/crop karne ke baad sticker ko dobara background ki lambai par
-  laata hai — values apni jagah background par wahin rehti hain.
 - **Appo mein bhi PDF:** list ka **Download PDF** aur sticker window ka **Download PDF** — PDF asal sticker ke size ki banti hai
   (background PDF se bani ho to usi PDF jitni). Background image ki jagah **PDF** bhi upload ho sakti hai (pehla page; sticker us ki
   lambai le leta hai, values pehle ki tarah us par set hoti hain) — bilkul New M jaisa (Hissa 13.5a / 13.5b).
