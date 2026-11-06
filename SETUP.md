@@ -847,8 +847,10 @@ link banta hai:
 jaisi: upar logo, daftar ka naam aur **☰ (hamburger) button**; hero; "MATCHING RECORD FOUND" patti; certificate card; document card
 (PDF ka icon, file ka naam aur neela **Open** button jo PDF download karta hai); "Verify another General Attestation"
 aur footer. Wohi document values usi tarah apni jagah aati hain (upar wala table). **☰ par tap** se menu header ke neeche khulta hai:
-menu items (Home, Attestation, … Verify Document), **Quick links** (Press Releases, LEGAL Services, NPLS Directory, Applicant Portal) aur
-"Connect with NPLS" social icons. Kisi link par, menu se bahar ya ☰ par dobara tap (ya Esc) se band hota hai.
+header ke safed hisse ke foran neeche gehre hare rang ka panel, jis mein menu items (Home, Attestation, … Verify Document) aik ke neeche
+aik; jis item ko chhuen wo halka hara ho kar neeche pale patti dikhata hai (desktop menu jaisa). **Quick links** aur "Connect with NPLS"
+social icons sirf tab neeche aate hain jab Mobile view ki settings mein **Menu: also show quick links and social icons** on ho (shuru
+mein off). Kisi link par, menu se bahar ya ☰ par dobara tap (ya Esc) se band hota hai.
 Mobile design 360 px grid par bani hai aur **har phone** (320 px ke chhote phone se 480 px ke bare phone/foldable tak) par usi
 hisaab se poori ki poori chhoti/bari hoti hai — har cheez apni jagah, koi cheez screen se bahar nahi. 540 px se zyada chori screen
 (chhota tablet) par page mazeed bara nahi hota, rangeen pattiyan donon taraf phail jati hain. Mobile ke fonts desktop se alag hain,
@@ -885,9 +887,12 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
   - **PDF viewer**: thumbnails khuli/band se shuru, aur toolbar ka har button dikhana/chhupana.
 - **Mobile view tab:** phone ke frame mein mobile page bilkul waisa jaisa phone par. Yahan bhi **har** cheez par click se us ki settings
   khulti hain — desktop ki tarah naam, link, nayi tab, icon, hide/show, tarteeb, add/duplicate/delete, logo upload (R2).
-  - **☰ button par click** (ya upar **Menu open**) se menu preview mein khul jata hai; phir har menu item, quick link, "Quick links"
-    heading, "Connect with NPLS" aur har social icon par click kar ke us ka **naam aur link** badlen; **+** se naya item. Menu ki koi
-    cheez select ho to menu khula rehta hai. ☰ button ka naam (screen readers ke liye) aur hide/show bhi yahin.
+  - **☰ button par click** (ya upar **Menu open**) se menu preview mein khul jata hai; phir har menu item par click kar ke us ka
+    **naam, link, icon** badlen, hide/show, tarteeb, duplicate/delete; **+** se naya item. Menu ki koi cheez select ho to menu khula
+    rehta hai. ☰ button ka naam (screen readers ke liye) aur hide/show bhi yahin.
+  - Kuch select na ho to **Mobile page settings** mein **Menu: also show quick links and social icons** — on karen to quick links,
+    "Quick links" heading, "Connect with NPLS" aur social icons menu items ke neeche aa jate hain aur pehle ki tarah click se editable
+    hain. Off (shuru mein) par menu sirf items dikhata hai, design jaisa.
   - **Phone width** — 320, 360 (design), 375, 390, 393, 412, 430, 480 px par dekh len ke har phone par kaisa lagta hai.
   - **Document panel** par click: phone par kya dikhe — **File card + Open button** (design jaisa) ya **PDF ke pages aik ke neeche
     aik**; file ka naam dikhana/chhupana aur **Open** button ka naam.

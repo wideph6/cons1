@@ -213,6 +213,11 @@ export interface MobileContent {
   };
   menu: {
     items: PLink[];
+    /**
+     * The menu shows its items only, as the design draws it; on, the quick links and social icons follow
+     * them in the same panel.
+     */
+    extras: boolean;
     links_title: PText;
     links: PLink[];
     connect: PText;
@@ -438,6 +443,7 @@ export const DEFAULT_MOBILE: MobileContent = {
   },
   menu: {
     items: copyLinks(DEFAULT_DESKTOP.nav.items, (l) => ({ text: l.text.replace(/\s*\n\s*/g, " "), width: null })),
+    extras: false,
     links_title: t("Quick links"),
     links: copyLinks(DEFAULT_DESKTOP.header.top_links, () => ({ width: null })),
     connect: { ...DEFAULT_DESKTOP.header.connect },
@@ -786,6 +792,7 @@ export function cleanMobile(input: unknown): MobileContent {
     },
     menu: {
       items: cleanLinks(menu.items, d.menu.items, "menu"),
+      extras: bool(menu.extras, d.menu.extras),
       links_title: cleanText(menu.links_title, d.menu.links_title),
       links: cleanLinks(menu.links, d.menu.links, "menu-link"),
       connect: cleanText(menu.connect, d.menu.connect),

@@ -275,12 +275,11 @@ function outline(view: PageView, c: AnyContent): OutlineGroup[] {
         title: "Menu (opens from ☰)",
         items: [
           ...list("menu.items", m.menu.items),
-          t("menu.links_title"),
-          ...list("menu.links", m.menu.links),
-          t("menu.connect"),
-          ...list("menu.social", m.menu.social),
+          ...(m.menu.extras
+            ? [t("menu.links_title"), ...list("menu.links", m.menu.links), t("menu.connect"), ...list("menu.social", m.menu.social)]
+            : []),
         ],
-        add: ["menu.items", "menu.links", "menu.social"],
+        add: m.menu.extras ? ["menu.items", "menu.links", "menu.social"] : ["menu.items"],
       },
       ...middle,
       {
@@ -1317,6 +1316,12 @@ function Overview({
           />
           {view === "mobile" ? (
             <>
+              <Checkbox
+                label="Menu: also show quick links and social icons"
+                description="Off, the ☰ menu shows its items only, as the design draws it. On, the quick links, the connect line and the social icons follow the items in the same panel, each editable and hideable."
+                checked={(content as MobileContent).menu.extras}
+                onChange={(e) => onChange("menu.extras", e.target.checked)}
+              />
               <p className="text-[12.5px] text-text-muted">
                 Phones and windows narrower than 768 px show this view; wider screens show the desktop view. The browser
                 tab&apos;s title and icon serve both:{" "}

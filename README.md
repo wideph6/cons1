@@ -183,8 +183,10 @@ the earlier links.
 `verify-mobile.src.css` → `verify-mobile.css`); below 768 px it shows and the desktop one hides (`.nmp-switch`). It is laid out on a
 360 px grid that scales to the phone (`calc(var(--mu) * n)`, `--mu` = one design pixel of the page's width, capped at 540 px), so
 every phone from 320 px up keeps the design's proportions without horizontal scrolling. The header's hamburger button
-(`MobileMenu`, a small client part) opens the main menu, the quick links and the social icons under the header; Escape, a tap on a
-link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button that
+(`MobileMenu`, a small client part) opens the main menu right under the header's white part: a dark green panel inset like the
+hero's text, one item per row (54 design px, Roboto 15.4), a touched or hovered item lighter green with a pale bar along its foot, as
+on the desktop nav; the page behind is not dimmed. The quick links and social icons follow the items only when **Menu: also show quick
+links and social icons** (`menu.extras`, off by default) is on in the mobile view's settings. Escape, a tap on a link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button that
 downloads the PDF) or, if chosen, every page drawn with PDF.js at the phone's width (`MobilePdf`; nothing is downloaded while the view is hidden).
 Its fonts are the mobile design's: Roboto and Noto Serif, served from `public/nm-assets/fonts` (OFL).
 

@@ -179,7 +179,7 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                 )}
                 {addButton("menu.items")}
               </nav>
-              {menu.links.some((l) => visible(l)) || editing ? (
+              {menu.extras && (menu.links.some((l) => visible(l)) || editing) ? (
                 <div className="nmpm-menu-extra">
                   {text(menu.links_title, "menu.links_title", "nmpm-menu-title")}
                   <div className="nmpm-menu-links">
@@ -198,6 +198,7 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                   </div>
                 </div>
               ) : null}
+              {menu.extras ? (
               <div className="nmpm-menu-connect">
                 {text(menu.connect, "menu.connect", "nmpm-menu-connect-text")}
                 <div className="nmpm-menu-socials">
@@ -217,6 +218,7 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                   {addButton("menu.social")}
                 </div>
               </div>
+              ) : null}
             </MobileMenu>
           ) : null}
         </div>
