@@ -218,6 +218,8 @@ export interface MobileContent {
      * them in the same panel.
      */
     extras: boolean;
+    /** The panel the ☰ button opens: how wide it is and where it sits. */
+    panel: MenuPanel;
     links_title: PText;
     links: PLink[];
     connect: PText;
@@ -275,6 +277,38 @@ function social(id: string, icon: SocialIcon, label: string): PSocial {
 export const DEFAULT_TOOLS: Record<ViewerTool, boolean> = Object.fromEntries(
   VIEWER_TOOLS.map((tool) => [tool.key, true]),
 ) as Record<ViewerTool, boolean>;
+
+/**
+ * The ☰ menu's panel on the 360 px wide mobile design (it scales with the phone like the rest): its width,
+ * its distance from the design's left edge, and how far below the header's white part it starts (less than
+ * 0 moves it up over the header). As drawn: 320 wide, 20 in from the left, right under the header.
+ */
+export interface MenuPanel {
+  width: number;
+  left: number;
+  top: number;
+}
+export const DEFAULT_MENU_PANEL: MenuPanel = { width: 320, left: 20, top: 0 };
+/** The mobile design's width and header height, in design pixels. */
+export const MOBILE_WIDTH = 360;
+export const MOBILE_HEADER = 91;
+export const MENU_PANEL_LIMITS = {
+  width: { min: 120, max: MOBILE_WIDTH },
+  top: { min: -MOBILE_HEADER, max: 400 },
+};
+
+/** A menu panel as sent or saved, kept on the page: never narrower than 120, never past either edge. */
+export function cleanMenuPanel(v: unknown): MenuPanel {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  const num = (x: unknown, fallback: number, min: number, max: number) =>
+    typeof x === "number" && Number.isFinite(x) ? Math.round(Math.min(max, Math.max(min, x)) * 2) / 2 : fallback;
+  const width = num(o.width, DEFAULT_MENU_PANEL.width, MENU_PANEL_LIMITS.width.min, MENU_PANEL_LIMITS.width.max);
+  return {
+    width,
+    left: num(o.left, Math.min(DEFAULT_MENU_PANEL.left, MOBILE_WIDTH - width), 0, MOBILE_WIDTH - width),
+    top: num(o.top, DEFAULT_MENU_PANEL.top, MENU_PANEL_LIMITS.top.min, MENU_PANEL_LIMITS.top.max),
+  };
+}
 
 export const DEFAULT_DESKTOP: DesktopContent = {
   meta: {
@@ -444,6 +478,7 @@ export const DEFAULT_MOBILE: MobileContent = {
   menu: {
     items: copyLinks(DEFAULT_DESKTOP.nav.items, (l) => ({ text: l.text.replace(/\s*\n\s*/g, " "), width: null })),
     extras: false,
+    panel: { ...DEFAULT_MENU_PANEL },
     links_title: t("Quick links"),
     links: copyLinks(DEFAULT_DESKTOP.header.top_links, () => ({ width: null })),
     connect: { ...DEFAULT_DESKTOP.header.connect },
@@ -793,6 +828,7 @@ export function cleanMobile(input: unknown): MobileContent {
     menu: {
       items: cleanLinks(menu.items, d.menu.items, "menu"),
       extras: bool(menu.extras, d.menu.extras),
+      panel: cleanMenuPanel(menu.panel),
       links_title: cleanText(menu.links_title, d.menu.links_title),
       links: cleanLinks(menu.links, d.menu.links, "menu-link"),
       connect: cleanText(menu.connect, d.menu.connect),

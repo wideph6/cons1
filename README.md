@@ -186,7 +186,9 @@ every phone from 320 px up keeps the design's proportions without horizontal scr
 (`MobileMenu`, a small client part) opens the main menu right under the header's white part: a dark green panel inset like the
 hero's text, one item per row (54 design px, Roboto 15.4), a touched or hovered item lighter green with a pale bar along its foot, as
 on the desktop nav; the page behind is not dimmed. The quick links and social icons follow the items only when **Menu: also show quick
-links and social icons** (`menu.extras`, off by default) is on in the mobile view's settings. Escape, a tap on a link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button that
+links and social icons** (`menu.extras`, off by default) is on in the mobile view's settings. The panel's width, left-right and up-down
+place (`menu.panel`, design pixels of the 360 px grid: 320 wide, 20 from the left, 0 below the header as drawn; `cleanMenuPanel` keeps it
+on the page) are set from **Menu panel** in the editor. Escape, a tap on a link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button that
 downloads the PDF) or, if chosen, every page drawn with PDF.js at the phone's width (`MobilePdf`; nothing is downloaded while the view is hidden).
 Its fonts are the mobile design's: Roboto and Noto Serif, served from `public/nm-assets/fonts` (OFL).
 

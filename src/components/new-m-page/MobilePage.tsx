@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { MobileContent, PageRecord, PImage, PLink, PLinkText, PText } from "@/lib/new-m-page";
+import { type MobileContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText } from "@/lib/new-m-page";
 import { MobileMenu } from "./MobileMenu";
 import { MobilePdf } from "./MobilePdf";
 import { ArrowNE, Emblem, ShieldTick, Social } from "./icons";
@@ -35,6 +35,16 @@ function m(n: number): string {
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
+}
+
+/** The ☰ menu's panel where the super admin put it, in design pixels below the header's white part. */
+function panelStyle(p: MobileContent["menu"]["panel"]): CSSProperties {
+  return {
+    left: m(p.left),
+    right: "auto",
+    width: m(p.width),
+    top: `calc(100% + ${m(p.top)})`,
+  };
 }
 
 function dash(v: string | null | undefined): string {
@@ -163,6 +173,8 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
             <MobileMenu
               label={h.menu_button.text || "Menu"}
               buttonProps={editing ? ed("header.menu_button", h.menu_button.hidden) : undefined}
+              panelProps={editing ? ed("menu.panel") : undefined}
+              panelStyle={panelStyle(menu.panel)}
               open={editing ? Boolean(editor?.menuOpen) : undefined}
             >
               <nav className="nmpm-menu" aria-label="Main">

@@ -56,6 +56,10 @@ import {
   DEFAULT_MOBILE_CERTIFICATE,
   DEFAULT_DESKTOP,
   DEFAULT_MOBILE,
+  DEFAULT_MENU_PANEL,
+  MENU_PANEL_LIMITS,
+  MOBILE_WIDTH,
+  type MenuPanel,
   fillTitle,
   MAX_TITLE,
   TITLE_WORDS,
@@ -164,6 +168,7 @@ const NAMES: Record<string, string> = {
 const MOBILE_NAMES: Record<string, string> = {
   ...NAMES,
   "header.menu_button": "Menu button (☰)",
+  "menu.panel": "Menu panel — width & position",
   "menu.items": "Menu item",
   "menu.links_title": "Menu — quick links heading",
   "menu.links": "Menu — quick link",
@@ -313,6 +318,7 @@ function outline(view: PageView, c: AnyContent): OutlineGroup[] {
       {
         title: "Menu (opens from ☰)",
         items: [
+          t("menu.panel"),
           ...list("menu.items", m.menu.items),
           ...(m.menu.extras
             ? [t("menu.links_title"), ...list("menu.links", m.menu.links), t("menu.connect"), ...list("menu.social", m.menu.social)]
@@ -1083,6 +1089,9 @@ export function AppoPageEditor() {
                     if (!e.target.checked && selected?.startsWith("menu.")) setSelected(null);
                   }}
                 />
+                <Button size="sm" onClick={() => reveal("menu.panel")} title="The menu panel's width and its left-right and up-down position">
+                  Menu panel
+                </Button>
               </div>
             </div>
             <div className="flex justify-center bg-[#e7ebee] px-3 py-4 overflow-x-auto">
@@ -1596,7 +1605,11 @@ function Inspector({
       </>
     );
   } else if (path === "header.menu_button") {
-    body = <MenuButtonFields value={value as PText} set={set} menuOpen={menuOpen} onMenuOpen={onMenuOpen} />;
+    body = (
+      <MenuButtonFields value={value as PText} set={set} menuOpen={menuOpen} onMenuOpen={onMenuOpen} onPanel={() => onPick("menu.panel")} />
+    );
+  } else if (path === "menu.panel") {
+    body = <MenuPanelFields value={value as MenuPanel} onChange={(v) => onChange("menu.panel", v)} />;
   } else if (path === "record.rows.certificate") {
     body = (
       <CertificateFields
@@ -2536,16 +2549,117 @@ function MobileViewerFields({
   );
 }
 
+/** One of the menu panel's sizes: a slider and the number, in design pixels. */
+function PanelSlider({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+}) {
+  const keep = (n: number) => Math.round(Math.min(max, Math.max(min, n)) * 2) / 2;
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          className="min-w-0 flex-1 accent-teal-600"
+          min={min}
+          max={max}
+          step={0.5}
+          value={value}
+          onChange={(e) => onChange(keep(Number(e.target.value)))}
+          aria-label={label}
+        />
+        <div className="w-20 shrink-0">
+          <Input
+            type="number"
+            min={min}
+            max={max}
+            step={0.5}
+            value={value}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (e.target.value !== "" && Number.isFinite(n)) onChange(keep(n));
+            }}
+          />
+        </div>
+      </div>
+    </Field>
+  );
+}
+
+/**
+ * The panel the ☰ button opens: its width, left-right place and up-down place, on the 360 px wide mobile
+ * design; on every phone it scales like the rest of the page.
+ */
+function MenuPanelFields({ value, onChange }: { value: MenuPanel; onChange: (v: MenuPanel) => void }) {
+  const fit = (p: MenuPanel): MenuPanel => ({ ...p, left: Math.min(p.left, MOBILE_WIDTH - p.width) });
+  return (
+    <>
+      <p className="text-[12.5px] text-text-muted">
+        Sizes are in pixels of the {MOBILE_WIDTH} px wide mobile design; every phone shows them scaled to its width. The
+        preview moves as you change them.
+      </p>
+      <PanelSlider
+        label="Width"
+        hint={`${MENU_PANEL_LIMITS.width.min} to ${MOBILE_WIDTH} (the whole width). As designed: ${DEFAULT_MENU_PANEL.width}.`}
+        value={value.width}
+        min={MENU_PANEL_LIMITS.width.min}
+        max={MENU_PANEL_LIMITS.width.max}
+        onChange={(width) => onChange(fit({ ...value, width }))}
+      />
+      <PanelSlider
+        label="Left – right"
+        hint={`From the page's left edge. 0 touches it; ${MOBILE_WIDTH - value.width} touches the right edge. As designed: ${DEFAULT_MENU_PANEL.left}.`}
+        value={value.left}
+        min={0}
+        max={MOBILE_WIDTH - value.width}
+        onChange={(left) => onChange({ ...value, left })}
+      />
+      <PanelSlider
+        label="Up – down"
+        hint={`0: right under the header's white part. More moves it down; less (to ${MENU_PANEL_LIMITS.top.min}) moves it up over the header.`}
+        value={value.top}
+        min={MENU_PANEL_LIMITS.top.min}
+        max={MENU_PANEL_LIMITS.top.max}
+        onChange={(top) => onChange({ ...value, top })}
+      />
+      <div className="flex flex-wrap gap-1.5">
+        <Button size="sm" onClick={() => onChange({ ...value, left: Math.round(((MOBILE_WIDTH - value.width) / 2) * 2) / 2 })}>
+          Centre it
+        </Button>
+        <Button size="sm" onClick={() => onChange({ ...value, width: MOBILE_WIDTH, left: 0 })}>
+          Whole width
+        </Button>
+        <Button size="sm" onClick={() => onChange({ ...DEFAULT_MENU_PANEL })}>
+          As designed
+        </Button>
+      </div>
+    </>
+  );
+}
+
 function MenuButtonFields({
   value,
   set,
   menuOpen,
   onMenuOpen,
+  onPanel,
 }: {
   value: PText;
   set: (f: string, v: unknown) => void;
   menuOpen: boolean;
   onMenuOpen: (open: boolean) => void;
+  onPanel: () => void;
 }) {
   return (
     <>
@@ -2554,6 +2668,9 @@ function MenuButtonFields({
         header; a tap on a link, outside the menu, or on the button again closes it.
       </p>
       <Checkbox label="Show the menu open in this preview" checked={menuOpen} onChange={(e) => onMenuOpen(e.target.checked)} />
+      <Button size="sm" onClick={onPanel}>
+        The menu panel&apos;s width and position…
+      </Button>
       <Field label="Button name" hint="Not printed on the button (it shows ☰); screen readers read it out, e.g. “Menu”.">
         <Input value={value.text} onChange={(e) => set("text", e.target.value)} />
       </Field>

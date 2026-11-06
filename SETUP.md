@@ -893,6 +893,11 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
   - Kuch select na ho to **Mobile page settings** mein **Menu: also show quick links and social icons** — on karen to quick links,
     "Quick links" heading, "Connect with NPLS" aur social icons menu items ke neeche aa jate hain aur pehle ki tarah click se editable
     hain. Off (shuru mein) par menu sirf items dikhata hai, design jaisa.
+  - **Menu panel (chaudai aur jagah):** phone preview ke oopar **Menu panel** button (ya outline mein "Menu panel — width & position",
+    ya ☰ button ki settings mein) dabayen. **Width** (120 se 360), **Left – right** (baen kinare se faasla) aur **Up – down** (0 = header
+    ke safed hisse ke foran neeche; zyada = neeche; minus = oopar header par) slider ya number se badlen — preview saath saath hilta
+    hai. **Centre it**, **Whole width** aur **As designed** (320 / 20 / 0) ke buttons bhi hain. Naap 360 px wale mobile design ke
+    hain, har phone par usi hisaab se bade/chhote hote hain. Phir **Save**.
   - **Phone width** — 320, 360 (design), 375, 390, 393, 412, 430, 480 px par dekh len ke har phone par kaisa lagta hai.
   - **Document panel** par click: phone par kya dikhe — **File card + Open button** (design jaisa) ya **PDF ke pages aik ke neeche
     aik**; file ka naam dikhana/chhupana aur **Open** button ka naam.

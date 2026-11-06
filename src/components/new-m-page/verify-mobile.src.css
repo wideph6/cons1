@@ -204,16 +204,16 @@
 }
 
 /* The menu opens right under the header's white part, over its pale line and the hero: a dark green
- * panel inset like the hero's text, its items one under another. */
+ * panel inset like the hero's text, its items one under another. It is always drawn whole, never with a
+ * scrollbar of its own: on a wide phone (everything grows with the phone's width) or a short screen, a menu
+ * taller than the screen goes on down the page, which scrolls as usual. */
 .nmpm-drawer {
   position: absolute;
   left: M(20);
   right: M(20);
   top: 100%;
   z-index: 31;
-  max-height: calc(100vh - M(91));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
   padding: 0;
   background: var(--m-green);
   box-shadow: 0 M(10) M(22) rgba(0, 30, 14, 0.18);

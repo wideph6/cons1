@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 /**
  * The hamburger button of the mobile view and the menu it opens under the header. Everything inside
@@ -10,6 +10,8 @@ export function MobileMenu({
   label,
   hidden,
   buttonProps,
+  panelProps,
+  panelStyle,
   open: forced,
   children,
 }: {
@@ -19,6 +21,10 @@ export function MobileMenu({
   hidden?: boolean;
   /** Editor attributes for the button (data-edit and its classes). */
   buttonProps?: { className?: string; "data-edit"?: string };
+  /** Editor attributes for the panel, so it can be picked and its size and place set. */
+  panelProps?: { className?: string; "data-edit"?: string };
+  /** The panel's width and place, as the super admin set them. */
+  panelStyle?: CSSProperties;
   /** Set by the editor to hold the menu open or shut; visitors toggle it themselves. */
   open?: boolean;
   children: ReactNode;
@@ -61,7 +67,9 @@ export function MobileMenu({
       </button>
       <div
         id={id}
-        className={`apom-drawer${open ? " is-open" : ""}`}
+        {...panelProps}
+        className={[`apom-drawer`, open ? "is-open" : "", panelProps?.className ?? ""].join(" ").trim()}
+        style={panelStyle}
         aria-hidden={!open}
         // A tap on a link inside closes the menu as the page moves on.
         onClick={(e) => {

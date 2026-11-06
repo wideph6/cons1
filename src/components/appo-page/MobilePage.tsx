@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { MobileContent, PageRecord, PImage, PLink, PLinkText, PText } from "@/lib/appo-page";
+import { type MobileContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText } from "@/lib/appo-page";
 import { MobileMenu } from "./MobileMenu";
 import { MobilePdf } from "./MobilePdf";
 import { hasNumbers, RecordRows } from "./RecordRows";
@@ -43,6 +43,16 @@ const FONTS = {
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
+}
+
+/** The ☰ menu's panel where the super admin put it, in design pixels below the header's white part. */
+function panelStyle(p: MobileContent["menu"]["panel"]): CSSProperties {
+  return {
+    left: m(p.left),
+    right: "auto",
+    width: m(p.width),
+    top: `calc(100% + ${m(p.top)})`,
+  };
 }
 
 function dash(v: string | null | undefined): string {
@@ -173,6 +183,8 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
             <MobileMenu
               label={h.menu_button.text || "Menu"}
               buttonProps={editing ? ed("header.menu_button", h.menu_button.hidden) : undefined}
+              panelProps={editing ? ed("menu.panel") : undefined}
+              panelStyle={panelStyle(menu.panel)}
               open={editing ? Boolean(editor?.menuOpen) : undefined}
             >
               <nav className="apom-menu" aria-label="Main">
