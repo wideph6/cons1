@@ -2,8 +2,8 @@
 
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, Input } from "@/components/ui";
-import { AS_DESIGNED, clampMove, clampSize, LOOK_SIZE, type PieceLook } from "@/lib/record-looks";
+import { Button, Input, Select } from "@/components/ui";
+import { AS_DESIGNED, clampMove, clampSize, cleanWeight, isDesigned, LOOK_SIZE, LOOK_WEIGHTS, type PieceLook } from "@/lib/record-looks";
 
 /** One piece the panel moves and sizes. */
 export interface LookPiece {
@@ -11,19 +11,23 @@ export interface LookPiece {
   name: string;
   /** The piece has its size set elsewhere (the certificate box's own look), so only its place is set here. */
   noSize?: boolean;
+  /** An image (a logo, a signature), or text whose boldness is set elsewhere: no boldness here. */
+  noWeight?: boolean;
 }
 
 /**
  * Where each piece of a verification record entry sits and how large it is: moved by design pixels (typed,
- * nudged with the arrows, Shift for 10, or dragged on the page while it is picked) and sized in percent
- * (typed, − / + by 5, Shift for 25, or the slider). Used by New M's and Appo's page editors alike.
+ * nudged with the arrows, Shift for 10, or dragged on the page while it is picked), sized in percent
+ * (typed, − / + by 5, Shift for 25, or the slider), and its text made thinner or bolder (100 to 900, a
+ * hundred at a time). Used by New M's and Appo's page editors alike.
  */
 export function RecordLookFields({
   pieces,
   looks,
   onChange,
-  title = "Position and size",
-  hint = "Drag the dashed piece on the page, or set it here. Moves are in design pixels (Shift + arrow moves 10); size is a percent of the design. Nothing else on the page is pushed aside by a move.",
+  title = "Position, size and boldness",
+  hint = "Drag the dashed piece on the page, or set it here. Moves are in design pixels (Shift + arrow moves 10); size is a percent of the design; boldness goes from thin (100) to black (900). Nothing else on the page is pushed aside by a move.",
+  designWeight,
 }: {
   pieces: LookPiece[];
   looks: Record<string, PieceLook | undefined>;
@@ -31,11 +35,14 @@ export function RecordLookFields({
   onChange: (updates: Record<string, PieceLook | null>) => void;
   title?: string;
   hint?: string;
+  /** The boldness a piece's text has by design (read off the page), so the panel starts from it. */
+  designWeight?: (id: string) => number | undefined;
 }) {
   const at = (id: string): PieceLook => looks[id] ?? AS_DESIGNED;
   const put = (id: string, l: PieceLook) => {
-    const next = { x: clampMove(l.x), y: clampMove(l.y), size: clampSize(l.size) };
-    onChange({ [id]: next.x === 0 && next.y === 0 && next.size === 100 ? null : next });
+    const weight = l.weight === undefined ? undefined : cleanWeight(l.weight);
+    const next: PieceLook = { x: clampMove(l.x), y: clampMove(l.y), size: clampSize(l.size), ...(weight !== undefined ? { weight } : {}) };
+    onChange({ [id]: isDesigned(next) ? null : next });
   };
   const changed = pieces.filter((p) => looks[p.id]);
 
@@ -52,6 +59,14 @@ export function RecordLookFields({
           put(piece.id, { ...l, x: l.x + dx * step, y: l.y + dy * step });
         };
         const grow = (by: number) => (e: React.MouseEvent) => put(piece.id, { ...l, size: l.size + by * (e.shiftKey ? 25 : 5) });
+        // The boldness shown: the one set, or the design's own; picking the design's own puts it back.
+        const designed = cleanWeight(designWeight?.(piece.id)) ?? 400;
+        const weight = l.weight ?? designed;
+        const setWeight = (w: number) => {
+          const next = Math.min(900, Math.max(100, w));
+          const { weight: _old, ...rest } = l;
+          put(piece.id, next === designed ? rest : { ...rest, weight: next });
+        };
         return (
           <div key={piece.id} className="space-y-1.5 border-t pt-2 first:border-t-0 first:pt-0">
             <div className="flex items-center gap-2">
@@ -139,6 +154,44 @@ export function RecordLookFields({
                 </button>
                 <SizeInput label={`${piece.name}: size in percent`} value={l.size} onChange={(size) => put(piece.id, { ...l, size })} />
                 <span className="text-[12px] text-text-muted">%</span>
+              </div>
+            )}
+            {piece.noWeight ? null : (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] text-text-muted w-8" title="Boldness">Bold</span>
+                <button
+                  type="button"
+                  className="grid place-items-center size-7 border rounded-md hover:bg-surface disabled:opacity-40"
+                  title="Thinner"
+                  aria-label={`${piece.name}: thinner`}
+                  disabled={weight <= 100}
+                  onClick={() => setWeight(weight - 100)}
+                >
+                  <Minus className="size-3.5" />
+                </button>
+                <Select
+                  value={weight}
+                  aria-label={`${piece.name}: boldness`}
+                  className="h-7 py-0 text-[12.5px] flex-1 min-w-0"
+                  onChange={(e) => setWeight(Number(e.target.value))}
+                >
+                  {LOOK_WEIGHTS.map((w) => (
+                    <option key={w.value} value={w.value}>
+                      {w.value} {w.label}
+                      {w.value === designed ? " (as designed)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                <button
+                  type="button"
+                  className="grid place-items-center size-7 border rounded-md hover:bg-surface disabled:opacity-40"
+                  title="Bolder"
+                  aria-label={`${piece.name}: bolder`}
+                  disabled={weight >= 900}
+                  onClick={() => setWeight(weight + 100)}
+                >
+                  <Plus className="size-3.5" />
+                </button>
               </div>
             )}
           </div>

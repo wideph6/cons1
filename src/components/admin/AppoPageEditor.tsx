@@ -43,7 +43,7 @@ import {
 } from "@/components/ui";
 import { RecordLookFields } from "@/components/admin/RecordLookFields";
 import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
-import { AS_DESIGNED, clampMove, type PieceLook } from "@/lib/record-looks";
+import { AS_DESIGNED, clampMove, isDesigned, type PieceLook } from "@/lib/record-looks";
 import { withoutFakeTransparency } from "@/lib/fake-transparency";
 import {
   CERTIFICATE_BORDER_SIDES,
@@ -1744,9 +1744,10 @@ function Inspector({
       <>
         {body}
         <RecordLookFields
-          pieces={lookPieces}
+          pieces={lookPieces.map((p) => ({ ...p, noWeight: p.id === "logo" }))}
           looks={looks}
           onChange={(updates) => onChange("record.looks", withLooks(looks, updates))}
+          designWeight={(id) => designWeight(`[data-look="${id}"]`)}
         />
       </>
     );
@@ -1889,29 +1890,40 @@ function PartMoves({ row, set }: { row: RecordRow; set: (f: string, v: unknown) 
   for (const part of parts) {
     const m = row.moves[part];
     const size = row.sizes?.[part];
-    if (m || size) looks[part] = { x: m?.x ?? 0, y: m?.y ?? 0, size: size ?? 100 };
+    const weight = row.weights?.[part];
+    if (m || size || weight !== undefined) looks[part] = { x: m?.x ?? 0, y: m?.y ?? 0, size: size ?? 100, ...(weight !== undefined ? { weight } : {}) };
   }
   return (
     <RecordLookFields
-      title="Position and size of the text in the box"
+      title="Position, size and boldness of the text in the box"
       hint={
         row.id === "certificate"
-          ? "Drag the dashed text on the page, or move it here (design pixels; Shift + arrow moves 10). Its size is the box's own (Text size above)."
-          : "Drag the dashed text on the page, or set it here: moves in design pixels (Shift + arrow moves 10), size in percent of the design. The rest of the box stays where it is; larger text wraps within the box."
+          ? "Drag the dashed text on the page, or move it here (design pixels; Shift + arrow moves 10). Its size and boldness are the box's own (Text size and Bold above)."
+          : "Drag the dashed text on the page, or set it here: moves in design pixels (Shift + arrow moves 10), size in percent of the design, boldness from thin (100) to black (900). The rest of the box stays where it is; larger text wraps within the box."
       }
-      pieces={parts.map((part) => ({ id: part, name: partName(row, part), noSize: row.id === "certificate" }))}
+      pieces={parts.map((part) => ({
+        id: part,
+        name: partName(row, part),
+        noSize: row.id === "certificate",
+        noWeight: row.id === "certificate" || part === "signature",
+      }))}
       looks={looks}
+      designWeight={(part) => designWeight(`[data-move="${row.id}:${part}"]`)}
       onChange={(updates) => {
         const moves = { ...row.moves };
         const sizes = { ...(row.sizes ?? {}) };
+        const weights = { ...(row.weights ?? {}) };
         for (const [part, l] of Object.entries(updates) as Array<[RowPart, PieceLook | null]>) {
           if (l && (l.x !== 0 || l.y !== 0)) moves[part] = { x: l.x, y: l.y };
           else delete moves[part];
           if (l && l.size !== 100) sizes[part] = l.size;
           else delete sizes[part];
+          if (l && l.weight !== undefined) weights[part] = l.weight;
+          else delete weights[part];
         }
         if (JSON.stringify(moves) !== JSON.stringify(row.moves)) set("moves", moves);
         if (JSON.stringify(sizes) !== JSON.stringify(row.sizes ?? {})) set("sizes", sizes);
+        if (JSON.stringify(weights) !== JSON.stringify(row.weights ?? {})) set("weights", weights);
       }}
     />
   );
@@ -2083,11 +2095,19 @@ function CertificateFields({
   );
 }
 
+/** The boldness a piece of the record has by design, read off the preview (its own size and weight sit inside it). */
+function designWeight(selector: string): number | undefined {
+  if (typeof document === "undefined") return undefined;
+  const el = document.querySelector<HTMLElement>(selector);
+  const w = el ? Number(getComputedStyle(el).fontWeight) : NaN;
+  return Number.isFinite(w) ? w : undefined;
+}
+
 /** The record's looks with these pieces changed: a look set, or null to put the piece back as designed. */
 function withLooks(current: unknown, updates: Record<string, PieceLook | null>): Record<string, PieceLook> {
   const next = { ...((current ?? {}) as Record<string, PieceLook>) };
   for (const [id, l] of Object.entries(updates)) {
-    if (l && (l.x !== 0 || l.y !== 0 || l.size !== 100)) next[id] = l;
+    if (l && !isDesigned(l)) next[id] = l;
     else delete next[id];
   }
   return next;

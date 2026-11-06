@@ -148,13 +148,17 @@ export function VerifyPage({ content: c, record, assets, editor, preview }: Veri
     return c.record.looks[id]?.size;
   }
 
+  function weightOf(id: RecordPiece): number | undefined {
+    return c.record.looks[id]?.weight;
+  }
+
   /** A line of the record card's text, moved and sized. */
   function recText(item: PText, path: string, className: string, id: RecordPiece, tag: "span" | "h2" | "p" = "span") {
     if (!visible(item)) return null;
     const Tag = tag;
     return (
       <Tag {...ed(path, item.hidden, className)} {...look(id)}>
-        <Sized size={sizeOf(id)}>{item.text}</Sized>
+        <Sized size={sizeOf(id)} weight={weightOf(id)}>{item.text}</Sized>
       </Tag>
     );
   }
@@ -375,14 +379,14 @@ export function VerifyPage({ content: c, record, assets, editor, preview }: Veri
                         <div {...ed("record.labels.officer", rec.labels.officer.hidden, "nmp-row nmp-row-officer")}>
                           <div className="nmp-officer-text">
                             <span className="nmp-row-label" {...look("officer.label")}>
-                            <Sized size={sizeOf("officer.label")}>{rec.labels.officer.text}</Sized>
+                            <Sized size={sizeOf("officer.label")} weight={weightOf("officer.label")}>{rec.labels.officer.text}</Sized>
                           </span>
                             <span className="nmp-row-value" {...look("officer.value")}>
-                            <Sized size={sizeOf("officer.value")}>{dash(r.officer_name)}</Sized>
+                            <Sized size={sizeOf("officer.value")} weight={weightOf("officer.value")}>{dash(r.officer_name)}</Sized>
                           </span>
                             {visible(rec.designation) && r.officer_designation ? (
                               <span {...ed("record.designation", rec.designation.hidden, "nmp-officer-role")} {...look("officer.designation")}>
-                              <Sized size={sizeOf("officer.designation")}>{r.officer_designation}</Sized>
+                              <Sized size={sizeOf("officer.designation")} weight={weightOf("officer.designation")}>{r.officer_designation}</Sized>
                             </span>
                             ) : null}
                           </div>

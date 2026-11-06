@@ -43,7 +43,7 @@ import {
 } from "@/components/ui";
 import { RecordLookFields } from "@/components/admin/RecordLookFields";
 import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
-import { AS_DESIGNED, clampMove, type PieceLook } from "@/lib/record-looks";
+import { AS_DESIGNED, clampMove, isDesigned, type PieceLook } from "@/lib/record-looks";
 import { withoutFakeTransparency } from "@/lib/fake-transparency";
 import {
   cleanDesktop,
@@ -1627,9 +1627,10 @@ function Inspector({
       <>
         {body}
         <RecordLookFields
-          pieces={lookPieces}
+          pieces={lookPieces.map((p) => ({ ...p, noWeight: p.id === "logo" || p.id === "officer.signature" }))}
           looks={looks}
           onChange={(updates) => onChange("record.looks", withLooks(looks, updates))}
+          designWeight={(id) => designWeight(`[data-look="${id}"]`)}
         />
       </>
     );
@@ -1676,11 +1677,19 @@ function Inspector({
   );
 }
 
+/** The boldness a piece of the record has by design, read off the preview (its own size and weight sit inside it). */
+function designWeight(selector: string): number | undefined {
+  if (typeof document === "undefined") return undefined;
+  const el = document.querySelector<HTMLElement>(selector);
+  const w = el ? Number(getComputedStyle(el).fontWeight) : NaN;
+  return Number.isFinite(w) ? w : undefined;
+}
+
 /** The record's looks with these pieces changed: a look set, or null to put the piece back as designed. */
 function withLooks(current: unknown, updates: Record<string, PieceLook | null>): Record<string, PieceLook> {
   const next = { ...((current ?? {}) as Record<string, PieceLook>) };
   for (const [id, l] of Object.entries(updates)) {
-    if (l && (l.x !== 0 || l.y !== 0 || l.size !== 100)) next[id] = l;
+    if (l && !isDesigned(l)) next[id] = l;
     else delete next[id];
   }
   return next;

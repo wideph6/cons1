@@ -897,8 +897,9 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
   - Labels ("Attestation number" waghera) ka naam badal sakte hain; un ke neeche ki value har document se aati hai.
   - **Verification record ka har hissa — size aur jagah:** record card ki chhoti heading, title, certificate ka logo, title aur
     subtitle, har entry ke lafz (label) aur value, officer ka naam, designation, signature aur neeche wala note — kisi par bhi click
-    karen to settings mein **Position and size** aata hai. **X / Y** (design pixels; teer ←↑↓→, Shift ke saath 10) se jagah, aur
-    **Size** (− / +, slider ya % likh kar, 30% se 300% tak) se chhota/bara. Chuna hua hissa (aur chuni hui entry ke lafz/value)
+    karen to settings mein **Position, size and boldness** aata hai. **X / Y** (design pixels; teer ←↑↓→, Shift ke saath 10) se
+    jagah, **Size** (− / +, slider ya % likh kar, 30% se 300% tak) se chhota/bara, aur **Bold** (− / + ya list: 100 Thin se 900
+    Black tak; "(as designed)" asal wala) se text patla ya zyada bold. Logo aur signature par Bold nahi aata (tasveer hain). Chuna hua hissa (aur chuni hui entry ke lafz/value)
     page par **dashed** lakeer mein aata hai — use **mouse se ghaseet** kar bhi hila sakte hain. Bara text apne box ke andar hi
     lapet jata hai; logo bara ho to neeche wali cheezein khisak jati hain; signature apne beech se bari hoti hai. **Put back** /
     **Put all back as designed** se wapas. Desktop aur mobile ki settings alag alag hain. Phir **Save**.
@@ -1056,11 +1057,12 @@ Page design → kisi bhi entry par click karen (ya "Everything on the page" list
 - **Text across the box:** Left / Centre / Right — box ke andar text kis taraf ho.
 - **Position and size of the text in the box:** har box ke andar number, lafz aur value (officer ke box mein naam, designation aur
   signature; certificate box mein us ka text) alag alag hilayen — X/Y likh kar, teer (←↑↓→, Shift ke saath 10) se, ya entry chun kar
-  page par dashed text ko **mouse se ghaseet** kar — aur **Size** (− / +, slider ya %, 30% se 300%) se har aik ko chhota/bara karen
-  (certificate box ke text ka size us ke apne **Text size** se). Baqi box apni jagah rehta hai. **Put back** / **Put all back as
+  page par dashed text ko **mouse se ghaseet** kar — **Size** (− / +, slider ya %, 30% se 300%) se har aik ko chhota/bara, aur
+  **Bold** (100 Thin se 900 Black) se patla ya zyada bold karen (certificate box ke text ka size aur bold us ke apne **Text size** aur
+  **Bold** se; signature par Bold nahi). Baqi box apni jagah rehta hai. **Put back** / **Put all back as
   designed** se wapas. Desktop aur mobile ki jagah alag alag set hoti hai.
 - **Record card ke baqi hissay:** chhoti heading, title, certificate ka logo, title, subtitle aur neeche wala note — har aik par click
-  kar ke bhi **Position and size** milta hai (New M jaisa, Hissa 13.9). Signature ya designation par click karen to **Move or resize
+  kar ke bhi **Position, size and boldness** milta hai (New M jaisa, Hissa 13.9). Signature ya designation par click karen to **Move or resize
   it — Approving officer entry…** button officer wali entry khol deta hai.
 - **Earlier / Later** se entry ko list mein oper neeche karen (position badalna). **Hide from the page** se chhupayen.
 - **Certificate box** (4 aur 5 ke darmiyan, sirf page par — sticker par nahi): text, font, size, bold/italic, CAPITAL, letter

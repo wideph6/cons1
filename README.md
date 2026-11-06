@@ -272,20 +272,23 @@ Both stickers let the super admin **ungroup** a set in the background editor, mo
 by piece id) are saved inside `*_settings.background_placement`, so New M needs no database change for it; the placement travels
 to the browser URI-encoded in the `x-background-placement` header.
 
-## Verification record: position and size of every piece
+## Verification record: position, size and boldness of every piece
 
-On both systems' verification pages (desktop and mobile, each view on its own), every piece of the record card can be moved and
-made larger or smaller from Page design: the card's small heading and title, the certificate's logo, title and subtitle, each
+On both systems' verification pages (desktop and mobile, each view on its own), every piece of the record card can be moved,
+made larger or smaller, and (text) made thinner or bolder from Page design: the card's small heading and title, the certificate's logo, title and subtitle, each
 entry's words and value (New M: its labels and values, the officer's name, designation and signature; Appo: each entry's
-number, words, value, designation and signature in `record.rows[].moves` / `sizes`), and the note under the record.
-`src/lib/record-looks.ts` holds the shared model (`{ x, y, size }`: a move in the view's design pixels, ±600, and a size in
-percent, 30–300) with its cleaner and CSS; `record.looks` keeps the pieces outside Appo's entries (New M: all of its pieces,
+number, words, value, designation and signature in `record.rows[].moves` / `sizes` / `weights`), and the note under the record.
+`src/lib/record-looks.ts` holds the shared model (`{ x, y, size, weight? }`: a move in the view's design pixels, ±600, a size in
+percent, 30–300, and a CSS font weight, 100–900 in hundreds, left out for the design's own) with its cleaner and CSS; `record.looks` keeps the pieces outside Appo's entries (New M: all of its pieces,
 `RECORD_PIECES`). A move shifts the piece where it is drawn (a transform, or a relative offset for text that runs inline) without
-pushing anything aside; a size zooms the piece's text in place (`RecordSized.tsx`), so it grows and wraps within its box, the logo
+pushing anything aside; a size zooms the piece's text in place and a weight sets its `font-weight` (`RecordSized.tsx`, an inner
+span), so it grows and wraps within its box, the logo
 zooms itself (its move divided by the zoom, which would otherwise scale it), and a signature scales round its middle. As designed,
 the markup is exactly what it was. The editors share `RecordLookFields.tsx` (X / Y with arrows, size with − / +, a slider and a
-percent box) and drag a picked piece (`data-look`) with one Undo step per drag. **Copy from desktop** leaves the phone's own looks;
-copying the other system's page design brings only the shared pieces' looks.
+percent box, boldness with − / + and a list that marks the design's own weight, read off the preview; none for a logo or signature) and drag a picked piece (`data-look`) with one Undo step per drag. **Copy from desktop** leaves the phone's own looks;
+copying the other system's page design brings only the shared pieces' looks. The desktop sans font
+gains a light (100–300) and a black (800–900) face (Segoe UI Light / Black, else Selawik) so thinner and bolder text shows; the
+serif keeps regular and bold, and the phone's Roboto and Noto Serif cover every weight.
 
 ## Document numbers
 

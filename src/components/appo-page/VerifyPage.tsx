@@ -152,13 +152,17 @@ export function VerifyPage({ content: c, record, assets, editor, preview }: Veri
     return c.record.looks[id]?.size;
   }
 
+  function weightOf(id: RecordPiece): number | undefined {
+    return c.record.looks[id]?.weight;
+  }
+
   /** A line of the record card's text, moved and sized. */
   function recText(item: PText, path: string, className: string, id: RecordPiece, tag: "span" | "h2" | "p" = "span") {
     if (!visible(item)) return null;
     const Tag = tag;
     return (
       <Tag {...ed(path, item.hidden, className)} {...look(id)}>
-        <Sized size={sizeOf(id)}>{item.text}</Sized>
+        <Sized size={sizeOf(id)} weight={weightOf(id)}>{item.text}</Sized>
       </Tag>
     );
   }

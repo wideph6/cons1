@@ -64,9 +64,13 @@ export function RecordRows({ p, rec, r, unit, fonts, ed, visible, editing, sampl
     return moveCss(row.moves[part], unit, placed ? "shift" : "flow", scale);
   }
 
-  /** A set of text at the size the super admin set. */
+  /** A set of text at the size and boldness the super admin set. */
   function sized(row: RecordRow, part: RowPart, children: ReactNode): ReactNode {
-    return <Sized size={row.sizes?.[part]}>{children}</Sized>;
+    return (
+      <Sized size={row.sizes?.[part]} weight={row.weights?.[part]}>
+        {children}
+      </Sized>
+    );
   }
 
   /** Marks a set of text for dragging in the editor. */

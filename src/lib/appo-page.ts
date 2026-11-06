@@ -9,7 +9,7 @@
  * No server imports: the editor, the public page and the API all read and check content with this file.
  */
 
-import { cleanLooks, cleanSizes, type PieceLook } from "./record-looks";
+import { cleanLooks, cleanSizes, cleanWeights, type PieceLook } from "./record-looks";
 import type { CSSProperties } from "react";
 
 export type PageView = "desktop" | "mobile";
@@ -357,6 +357,8 @@ export interface RecordRow {
   moves: Partial<Record<RowPart, PartMove>>;
   /** The sets of text (and the signature) made larger or smaller, in percent; only the ones changed. */
   sizes: Partial<Record<RowPart, number>>;
+  /** The sets of text made thinner or bolder (100 to 900); only the ones changed. */
+  weights: Partial<Record<RowPart, number>>;
   hidden: boolean;
 }
 
@@ -423,7 +425,7 @@ function social(id: string, icon: SocialIcon, label: string): PSocial {
 }
 
 function row(id: RecordRowId, number: string, text: string, layout: RowLayout = "stacked", value = ""): RecordRow {
-  return { id, number, text, value, layout, align: id === "certificate" ? "center" : "left", format: "long", moves: {}, sizes: {}, hidden: false };
+  return { id, number, text, value, layout, align: id === "certificate" ? "center" : "left", format: "long", moves: {}, sizes: {}, weights: {}, hidden: false };
 }
 
 /** The entries as the super admin first described them; every word can be changed under Page design. */
@@ -987,6 +989,7 @@ function cleanRow(o: Record<string, unknown>, d: RecordRow): RecordRow {
     format: d.id === "issue_date" && DATE_FORMATS.some((f) => f.value === o.format) ? (o.format as DateFormat) : d.format,
     moves: cleanMoves(o.moves),
     sizes: cleanSizes(o.sizes, ROW_PARTS),
+    weights: cleanWeights(o.weights, ROW_PARTS),
     hidden: bool(o.hidden, d.hidden),
   };
 }

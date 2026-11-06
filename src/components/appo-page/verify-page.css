@@ -36,6 +36,22 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* Lighter and heavier faces, for record text the super admin made thinner or bolder under Page design. */
+@font-face {
+  font-family: "NMP Sans";
+  src: local("Segoe UI Light"), local("SegoeUI-Light"), url("/appo-assets/fonts/selawik-vf.woff2") format("woff2");
+  font-weight: 100 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "NMP Sans";
+  src: local("Segoe UI Black"), local("SegoeUI-Black"), url("/appo-assets/fonts/selawik-vf.woff2") format("woff2");
+  font-weight: 800 900;
+  font-style: normal;
+  font-display: swap;
+}
 @font-face {
   font-family: "NMP Serif";
   src: local("Georgia"), url("/appo-assets/fonts/gelasio-latin-wght.woff2") format("woff2");
