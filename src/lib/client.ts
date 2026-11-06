@@ -172,6 +172,11 @@ export function downloadSvgFile(svg: string, filename: string): void {
  * external URL taints the canvas and makes toBlob return null on most browsers.
  */
 export async function downloadSvgAsPng(svg: string, filename: string, scale = 3): Promise<void> {
+  downloadBlob(await svgToPng(svg, scale), filename);
+}
+
+/** Rasterises a self-contained SVG string to a PNG, on white, at `scale` times its own size. */
+export async function svgToPng(svg: string, scale = 3): Promise<Blob> {
   const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   try {
@@ -195,7 +200,7 @@ export async function downloadSvgAsPng(svg: string, filename: string, scale = 3)
 
     const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
     if (!png) throw new Error("The image could not be converted to PNG");
-    downloadBlob(png, filename);
+    return png;
   } finally {
     URL.revokeObjectURL(url);
   }

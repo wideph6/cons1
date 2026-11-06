@@ -9,7 +9,17 @@ import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } fr
 import { needsApproval, type PendingEditInfo } from "@/lib/pending-shared";
 import { api, ClientError } from "@/lib/client";
 import { uploadNewMFile, type UploadedObject } from "@/lib/new-m-client";
-import { NUMBER_EXAMPLE, NUMBER_RE, randomNumber, resolveLink, tidyNumber } from "@/lib/new-m-link";
+import {
+  DOC_NUMBER_EXAMPLE,
+  DOC_NUMBER_RE,
+  NUMBER_EXAMPLE,
+  NUMBER_RE,
+  randomDocNumber,
+  randomNumber,
+  resolveLink,
+  tidyDocNumber,
+  tidyNumber,
+} from "@/lib/new-m-link";
 import type { NewMDomain, NewMLists, NewMOfficer, NewMOption, NewMOptionKind, NewMRecord } from "@/lib/types";
 import { fileExtension, formatBytes } from "@/lib/utils";
 
@@ -32,6 +42,8 @@ interface Draft {
   /** One of the domain's links, or CURRENT_LINK. */
   link: string;
   attestation_number: string;
+  /** 7 digits; empty on a new upload lets the database draw one. */
+  doc_number: string;
   issue_date: string;
   document_type: string;
   issuing_office: string;
@@ -93,6 +105,7 @@ export function NewMForm({
     domain_id: "",
     link: "",
     attestation_number: "",
+    doc_number: "",
     issue_date: todayLocalIso(),
     document_type: "",
     issuing_office: "",
@@ -131,6 +144,7 @@ export function NewMForm({
         domain_id: record.domain_id,
         link: linkStillThere ? (record.link_id as string) : CURRENT_LINK,
         attestation_number: record.attestation_number,
+        doc_number: record.doc_number ?? "",
         issue_date: record.issue_date.slice(0, 10),
         document_type: record.document_type,
         issuing_office: record.issuing_office,
@@ -149,6 +163,7 @@ export function NewMForm({
         domain_id: first?.id ?? "",
         link: first?.links[0]?.id ?? "",
         attestation_number: "",
+        doc_number: "",
         issue_date: todayLocalIso(),
         document_type: "",
         issuing_office: "",
@@ -225,6 +240,9 @@ export function NewMForm({
       link: back && !next?.links.some((l) => l.id === record.link_id) ? CURRENT_LINK : back ? (record.link_id as string) : (next?.links[0]?.id ?? ""),
     }));
   }
+
+  const docNumber = tidyDocNumber(draft.doc_number);
+  const docNumberError = docNumber && !DOC_NUMBER_RE.test(docNumber) ? `Must be 7 digits, e.g. ${DOC_NUMBER_EXAMPLE}.` : null;
 
   const pickedOfficer: NewMOfficer | null = officers.find((o) => o.id === draft.officer) ?? null;
   // The document carries an officer who is no longer in the saved list, so the picker must offer to keep them.
@@ -303,6 +321,8 @@ export function NewMForm({
     }
     if (!editing && !doc) return setError("Choose the PDF to upload.");
     if (numberError) return setError(numberError);
+    if (docNumberError) return setError(`Document number: ${docNumberError}`);
+    if (editing && record?.doc_number && !docNumber) return setError("Enter the 7-digit document number, or press Generate for a new one.");
     if (editing && !number) return setError("Enter the attestation number, or press Generate for a new one.");
     if (draft.officer === NEW_OFFICER && !officer.name.trim()) return setError("Enter the approving officer's name.");
 
@@ -350,6 +370,8 @@ export function NewMForm({
         // Left out to keep the link the document already carries.
         ...(draft.link === CURRENT_LINK ? {} : { link_id: draft.link }),
         attestation_number: number,
+        // Sent only when typed or changed; left out on a new upload, the database draws one.
+        ...(docNumber && docNumber !== (record?.doc_number ?? "") ? { doc_number: docNumber } : {}),
         issue_date: draft.issue_date || todayLocalIso(),
         document_type: draft.document_type,
         issuing_office: draft.issuing_office,
@@ -525,6 +547,38 @@ export function NewMForm({
               disabled={busy}
               onClick={() => set("attestation_number", randomNumber())}
               title="Fill in a new random number"
+            >
+              Generate
+            </Button>
+          </div>
+        </Field>
+
+        <Field
+          label="Document number (7 digits)"
+          error={docNumberError}
+          hint={
+            editing
+              ? "Shown in the list, found by search, and printed on the sticker where the super admin placed it."
+              : `Left empty, a random one is made, e.g. ${DOC_NUMBER_EXAMPLE}. Type your own to use it instead; it must be unique.`
+          }
+        >
+          <div className="flex gap-2">
+            <Input
+              value={draft.doc_number}
+              disabled={busy}
+              invalid={Boolean(docNumberError)}
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={11}
+              placeholder={editing ? "" : "•••••••  (auto)"}
+              className="font-mono"
+              onChange={(e) => set("doc_number", e.target.value.replace(/[^\d\s-]/g, ""))}
+            />
+            <Button
+              icon={<RefreshCw className="size-4" />}
+              disabled={busy}
+              onClick={() => set("doc_number", randomDocNumber())}
+              title="Fill in a new random 7-digit number"
             >
               Generate
             </Button>

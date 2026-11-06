@@ -41,7 +41,9 @@ import {
   errorMessage,
   useToast,
 } from "@/components/ui";
+import { RecordLookFields } from "@/components/admin/RecordLookFields";
 import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
+import { AS_DESIGNED, clampMove, type PieceLook } from "@/lib/record-looks";
 import { withoutFakeTransparency } from "@/lib/fake-transparency";
 import {
   cleanDesktop,
@@ -66,6 +68,7 @@ import {
   SOCIAL_ICONS,
   VIEWER_TOOLS,
   getAt,
+  recordPiecesAt,
   imageKeys,
   listOf,
   mobileFromDesktop,
@@ -502,6 +505,24 @@ export function NewMPageEditor() {
 
   const update = useCallback((path: string, value: unknown) => edit(view, (c) => setAt(c, path, value)), [edit, view]);
 
+  /** Remembers the view as it is, so a drag that follows is one step for Undo. */
+  const checkpoint = useCallback((v: PageView) => {
+    setDocs((d) => {
+      if (!d) return d;
+      const cur = d[v] as ViewDoc<AnyContent>;
+      return { ...d, [v]: { ...cur, past: [...cur.past.slice(-99), cur.content], future: [] } } as Docs;
+    });
+  }, []);
+
+  /** Changes a view while something is being dragged, without a step for Undo each time the pointer moves. */
+  const liveEdit = useCallback((v: PageView, fn: (c: AnyContent) => AnyContent) => {
+    setDocs((d) => {
+      if (!d) return d;
+      const cur = d[v] as ViewDoc<AnyContent>;
+      return { ...d, [v]: { ...cur, content: fn(cur.content) } } as Docs;
+    });
+  }, []);
+
   function undo() {
     setDocs((d) => {
       if (!d) return d;
@@ -728,7 +749,75 @@ export function NewMPageEditor() {
 
   const menuOpen = view === "mobile" && (menuPinned || Boolean(selected?.startsWith("menu.")));
 
+  /** Set when a drag ends, so the click that follows does not pick something else. */
+  const dragEnded = useRef(false);
+
+  /** A drag of a piece of the record card (its heading, logo, an entry's words or value…), under way. */
+  const lookDrag = useRef<{ id: number; x: number; y: number; unitPx: number; piece: string; from: PieceLook; moved: boolean } | null>(null);
+
+  /**
+   * Pressing on a piece of the record card that the side panel moves and sizes (the picked piece, or the
+   * words and value of the picked entry) starts moving it. The move is in the view's design pixels, so it
+   * keeps its place at every window or phone width. True when a drag started.
+   */
+  function startLookDrag(e: React.PointerEvent<HTMLDivElement>): boolean {
+    if (e.button !== 0 || !docs || !selected) return false;
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-look]");
+    if (!el) return false;
+    const piece = el.dataset.look as string;
+    if (!recordPiecesAt(selected).some((p) => p.id === piece)) return false;
+    const looks = (getAt(docs[view].content, "record.looks") ?? {}) as Record<string, PieceLook | undefined>;
+    // One design pixel of this view, measured where the piece is drawn (outside its own size).
+    const host = el.parentElement ?? el;
+    const probe = document.createElement("span");
+    probe.style.cssText = `position:absolute;visibility:hidden;width:calc(var(${view === "mobile" ? "--mu" : "--u"}) * 100)`;
+    host.appendChild(probe);
+    const unitPx = probe.getBoundingClientRect().width / 100 || 1;
+    probe.remove();
+    e.preventDefault();
+    lookDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, unitPx, piece, from: looks[piece] ?? AS_DESIGNED, moved: false };
+    const v = view;
+
+    const onMove = (ev: PointerEvent) => {
+      const d = lookDrag.current;
+      if (!d || ev.pointerId !== d.id) return;
+      const sx = ev.clientX - d.x;
+      const sy = ev.clientY - d.y;
+      if (!d.moved) {
+        if (Math.abs(sx) < 3 && Math.abs(sy) < 3) return;
+        d.moved = true;
+        checkpoint(v);
+      }
+      const next = { ...d.from, x: clampMove(d.from.x + sx / d.unitPx), y: clampMove(d.from.y + sy / d.unitPx) };
+      liveEdit(v, (c) => setAt(c, "record.looks", withLooks(getAt(c, "record.looks"), { [d.piece]: next })));
+    };
+    const onUp = (ev: PointerEvent) => {
+      const d = lookDrag.current;
+      if (!d || ev.pointerId !== d.id) return;
+      if (d.moved) dragEnded.current = true;
+      lookDrag.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return true;
+  }
+
+  function onPreviewPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    startLookDrag(e);
+  }
+
   function onPreviewClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (dragEnded.current) {
+      // The end of a drag, not a click: nothing else is picked.
+      dragEnded.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const target = e.target as HTMLElement;
     const add = target.closest<HTMLElement>("[data-add]");
     const hit = target.closest<HTMLElement>("[data-edit]");
@@ -909,7 +998,12 @@ export function NewMPageEditor() {
               <MousePointer2 className="size-3.5" />
               Click anything to edit it · hidden pieces are striped · <span className="font-medium text-text">+</span> adds an item to a list
             </div>
-            <div ref={previewRef} className="max-h-[calc(100vh-14rem)] overflow-y-auto" onClickCapture={onPreviewClick}>
+            <div
+              ref={previewRef}
+              className="max-h-[calc(100vh-14rem)] overflow-y-auto"
+              onClickCapture={onPreviewClick}
+              onPointerDownCapture={onPreviewPointerDown}
+            >
               <VerifyPage content={desktop} record={shownRecord} assets={assets} editor={{ selected }} />
             </div>
           </div>
@@ -956,6 +1050,7 @@ export function NewMPageEditor() {
                 <div
                   ref={previewRef}
                   onClickCapture={onPreviewClick}
+                  onPointerDownCapture={onPreviewPointerDown}
                   className="overflow-y-auto overflow-x-hidden bg-white rounded-[1.6rem] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   style={{ width: phone, height: "max(32rem, calc(100vh - 17rem))" }}
                 >
@@ -1524,6 +1619,22 @@ function Inspector({
     }
   }
 
+  // The picked piece of the record card can be moved and sized (with an entry's words and value).
+  const lookPieces = value === undefined ? [] : recordPiecesAt(path);
+  if (lookPieces.length) {
+    const looks = ((content as { record: { looks?: Record<string, PieceLook> } }).record.looks ?? {}) as Record<string, PieceLook | undefined>;
+    body = (
+      <>
+        {body}
+        <RecordLookFields
+          pieces={lookPieces}
+          looks={looks}
+          onChange={(updates) => onChange("record.looks", withLooks(looks, updates))}
+        />
+      </>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-start gap-2 px-4 py-3 border-b">
@@ -1563,6 +1674,16 @@ function Inspector({
       ) : null}
     </div>
   );
+}
+
+/** The record's looks with these pieces changed: a look set, or null to put the piece back as designed. */
+function withLooks(current: unknown, updates: Record<string, PieceLook | null>): Record<string, PieceLook> {
+  const next = { ...((current ?? {}) as Record<string, PieceLook>) };
+  for (const [id, l] of Object.entries(updates)) {
+    if (l && (l.x !== 0 || l.y !== 0 || l.size !== 100)) next[id] = l;
+    else delete next[id];
+  }
+  return next;
 }
 
 function VisibleToggle({ hidden, onChange }: { hidden: boolean; onChange: (hidden: boolean) => void }) {

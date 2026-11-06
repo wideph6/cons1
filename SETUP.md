@@ -662,6 +662,7 @@ Sidebar → **New M** → **Upload document**. Aik waqt mein aik PDF. Sab se nay
 | Domain | New M ke apne domains mein se |
 | Link | Us domain ke links mein se |
 | Date of attestation | Khali chhoren to aaj ki tareekh. Link ke date formula mein `DDMMYYYY` ban kar jati hai (31-10-2026 → `31102026`) |
+| Document number (7 digits) | Khali chhoren to khud random 7 digit number banta hai (jaise `4827153`). **Generate** se pehle hi nazar aa jata hai; apna 7 digit number bhi likh sakte hain. Har number New M mein aik hi dafa (Appo mein Appo ke andar aik dafa). List, search aur sticker par aata hai (Hissa 16) |
 | Attestation number | Khali chhoren to khud banta hai. **Generate** dabane se pehle hi nazar aa jata hai. Apna likhna ho to format `GEN-NMPD-SSTI-FBDS` — pehle teen huroof hamesha `GEN`, phir chaar chaar capital English huroof ke teen hisse. Har number poore system mein aik hi dafa use ho sakta hai, chahe domain alag ho |
 | Document type, Issuing office, Issuing authority | List se chunen, ya **+ Add new…** se naya likhen. Naya likha hua save hote hi aage hamesha list mein milega. Super admin ko list mein har saved value ke saamne **dustbin** nazar aata hai (aage dekhen) |
 | Approving officer | List se officer chunen to us ka naam, designation aur signature **teeno aik saath** lag jate hain. **+ Add a new officer…** chunen to teeno ke alag khane khulte hain (naam, designation, signature image) aur ye officer aage ke liye save ho jata hai |
@@ -677,7 +678,7 @@ https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SS
 - **Edit** (pencil): har cheez badli ja sakti hai — domain, link, number, date, sab tafseelat, officer. **Replace PDF** mein nayi file chunen to purani storage se hat jati hai.
   Domain, link, number ya date badalne se **poora link bhi badal jata hai**.
 - **Delete** (dustbin): document aur us ki PDF dono hamesha ke liye chali jati hain.
-- **Search**: upar wala aik hi box saare domains mein dhoondta hai — number, document type, office, authority, officer, domain, link ka naam, file ka naam, aur date (`31102026`, `31-10-2026`, `31/10/26` ya `2026-10-31`). Saath wale dropdown se aik domain tak mehdood bhi kar sakte hain.
+- **Search**: upar wala aik hi box saare domains mein dhoondta hai — attestation number, 7 digit document number, document type, office, authority, officer, domain, link ka naam, file ka naam, aur date (`31102026`, `31-10-2026`, `31/10/26` ya `2026-10-31`). Saath wale dropdown se aik domain tak mehdood bhi kar sakte hain.
 - **Saved values**: wahan saari saved lists aur officers nazar aate hain. Kisi ghalat value ya officer ko wahan se hata sakte hain — jo documents pehle se us ko use kar rahe hain un par koi asar nahi parta.
 - **Form ke andar se hatana:** naya case add karte (ya edit karte) waqt Document type, office, authority (Appo mein har field) aur
   Approving officer ki list kholen — super admin (aur jis admin ko "Remove saved values" ki ijazat ho) ko har saved value ke saamne
@@ -702,8 +703,9 @@ Har document ke **poore link** (domain/subdomain samet) ka QR code **khud ban ja
 
 Har document ka "General Attestation" sticker list se hi bante hain:
 
-- **View sticker** — sticker dikhata hai, wahin se **Download PNG** (aur SVG).
-- **Download PNG** — seedha PNG download (dekhe baghair).
+- **View sticker** — sticker dikhata hai, wahin se **Download PDF** (aur SVG).
+- **Download PDF** — seedha PDF download (dekhe baghair). PDF ka size asal sticker jitna: background PDF se bani ho to usi PDF
+  ke page jitna (jaise 4 × 3 inch), image se bani ho to 96 units fi inch. Andar sticker 3 guna (ya background jitni) tezi se bana hota hai.
 
 Sticker **har dafa document ke mojooda data** se banta hai, is liye edit ke baad agla sticker khud naya data aur naya QR dikhata hai.
 
@@ -731,7 +733,7 @@ honi chahiyein — app inhein nahi banata. App sirf ye khud banata hai (saaf, bl
   chokor mote ho jate hain aur test mein QR bilkul scan nahi hua; is tareeqe se faasle wale purane tareeqe se bhi behtar scan hota hai.
 
 Koi value apne khane se lambi ho to wo thori chhoti likhi jati hai taake agle khane mein na ghuse.
-PNG 3 guna bari banti hai (print ke liye saaf); background bari image ho to usi ke size par.
+PDF ke andar sticker 3 guna bara bana hota hai (print ke liye saaf); background bari image ho to usi ke size par.
 
 **Font:** sticker Georgia font mein banta hai, jo Windows aur Mac mein hota hai. Android phone par font thora mukhtalif dikh sakta hai —
 sticker computer se download karna behtar hai.
@@ -739,12 +741,15 @@ sticker computer se download karna behtar hai.
 ## 13.5b Background image (sirf super admin)
 
 Sticker hamesha super admin ki upload ki hui background image par banta hai. App ke andar koi background nahi, aur app khud koi
-background nahi banata. Jab tak image upload na ho, **View sticker** aur **Download PNG** sirf error dete hain ke background image na
+background nahi banata. Jab tak image upload na ho, **View sticker** aur **Download PDF** sirf error dete hain ke background image na
 hone ki wajah se sticker nahi ban sakta.
 
 New M page par **Background image** button sirf super admin ko nazar aata hai. Wahan:
 
-- **Upload an image / Choose a new image** — JPG, PNG ya WebP (4 MB tak).
+- **Upload an image or PDF / Choose a new image or PDF** — JPG, PNG ya WebP (4 MB tak), ya **PDF** (30 MB tak). PDF ka
+  **pehla page** browser mein hi tasveer ban kar (lambi taraf 3200 px) upload hota hai; PDF ke kai page hon to bataya jata hai ke
+  page 1 use hua. Sticker khud us page ki lambai le leta hai, aur values pehle ki tarah us par hila kar set hoti hain. Download hone
+  wali PDF sticker us PDF ke asal size ki banti hai — editor mein likha aata hai (jaise "10.2 × 7.6 cm").
 - Preview mein image ke upar list ke **pehle document ka asal data** (values, signature, QR) usi jagah dikhta hai jahan har sticker
   par aata hai. Koi document na ho to sample values.
 - Image ko **mouse se ghaseet kar** kisi bhi taraf (upar, neeche, daen, baen) hilayen, **arrow keys** se 1 (Shift ke saath 10) qadam,
@@ -890,6 +895,13 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
     chahiye to **Upload it as it was**. Favicon aur Appo ke page par bhi yehi hota hai. Pehle se upload kiya hua dots wala logo dobara
     upload karen, phir **Save**.
   - Labels ("Attestation number" waghera) ka naam badal sakte hain; un ke neeche ki value har document se aati hai.
+  - **Verification record ka har hissa — size aur jagah:** record card ki chhoti heading, title, certificate ka logo, title aur
+    subtitle, har entry ke lafz (label) aur value, officer ka naam, designation, signature aur neeche wala note — kisi par bhi click
+    karen to settings mein **Position and size** aata hai. **X / Y** (design pixels; teer ←↑↓→, Shift ke saath 10) se jagah, aur
+    **Size** (− / +, slider ya % likh kar, 30% se 300% tak) se chhota/bara. Chuna hua hissa (aur chuni hui entry ke lafz/value)
+    page par **dashed** lakeer mein aata hai — use **mouse se ghaseet** kar bhi hila sakte hain. Bara text apne box ke andar hi
+    lapet jata hai; logo bara ho to neeche wali cheezein khisak jati hain; signature apne beech se bari hoti hai. **Put back** /
+    **Put all back as designed** se wapas. Desktop aur mobile ki settings alag alag hain. Phir **Save**.
   - **PDF viewer**: thumbnails khuli/band se shuru, aur toolbar ka har button dikhana/chhupana.
 - **Mobile view tab:** phone ke frame mein mobile page bilkul waisa jaisa phone par. Yahan bhi **har** cheez par click se us ki settings
   khulti hain — desktop ki tarah naam, link, nayi tab, icon, hide/show, tarteeb, add/duplicate/delete, logo upload (R2).
@@ -1042,10 +1054,14 @@ Page design → kisi bhi entry par click karen (ya "Everything on the page" list
 - **Date format** (sirf Date wali entry): **29th of October 2026** ya **29 Oct 2026** — jo chunen wohi page par aata hai. Banner aur
   sticker apna apna format rakhte hain.
 - **Text across the box:** Left / Centre / Right — box ke andar text kis taraf ho.
-- **Position of the text in the box:** har box ke andar number, lafz aur value (officer ke box mein naam, designation aur signature;
-  certificate box mein us ka text) alag alag hilayen — X/Y likh kar, teer (←↑↓→, Shift ke saath 10) se, ya entry chun kar page par
-  dashed text ko **mouse se ghaseet** kar. Baqi box apni jagah rehta hai. **Put back** / **Put all text back** se wapas. Desktop aur
-  mobile ki jagah alag alag set hoti hai.
+- **Position and size of the text in the box:** har box ke andar number, lafz aur value (officer ke box mein naam, designation aur
+  signature; certificate box mein us ka text) alag alag hilayen — X/Y likh kar, teer (←↑↓→, Shift ke saath 10) se, ya entry chun kar
+  page par dashed text ko **mouse se ghaseet** kar — aur **Size** (− / +, slider ya %, 30% se 300%) se har aik ko chhota/bara karen
+  (certificate box ke text ka size us ke apne **Text size** se). Baqi box apni jagah rehta hai. **Put back** / **Put all back as
+  designed** se wapas. Desktop aur mobile ki jagah alag alag set hoti hai.
+- **Record card ke baqi hissay:** chhoti heading, title, certificate ka logo, title, subtitle aur neeche wala note — har aik par click
+  kar ke bhi **Position and size** milta hai (New M jaisa, Hissa 13.9). Signature ya designation par click karen to **Move or resize
+  it — Approving officer entry…** button officer wali entry khol deta hai.
 - **Earlier / Later** se entry ko list mein oper neeche karen (position badalna). **Hide from the page** se chhupayen.
 - **Certificate box** (4 aur 5 ke darmiyan, sirf page par — sticker par nahi): text, font, size, bold/italic, CAPITAL, letter
   spacing, chorai (%), oonchai, kone, aur **text / background / border ke rang** (border: oopar-neeche line ya chaaron taraf).
@@ -1065,7 +1081,8 @@ Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote ha
 - **Sticker ka size image ke mutabiq (New M aur Appo dono):** nayi background image chunen to sticker khud usi image ki shakal
   le leta hai (chorai 958, oonchai image ke tanasub se) aur image poora sticker bhar deti hai. Pehle se save background par
   **Match the image** dabayen to sticker us image ki shakal le leta hai. Sticker ka size "Sticker 958 × …" mein nazar aata hai
-  aur database mein save hota hai. Download PNG bhi isi shakal mein banta hai.
+  aur database mein save hota hai. Download bhi isi shakal mein banta hai (New M: PDF, Appo: PNG). Purana sticker abhi tak
+  fix size (958 × 761) par ho aur image ki shakal alag ho to New M ka editor peela paigham dikhata hai — **Match the image** dabayen.
 
 - **View** (− / + / Fit): sirf editor ki tasveer bari karta hai (100% se 400%). Bari karne par scroll aa jata hai, taake lambi image
   par bhi har cheez bilkul sahi jagah rakhi ja sake. Sticker ka asal size 958 × 761 hi rehta hai.
@@ -1125,6 +1142,21 @@ appo.sql ke baad). Dobara chalana theek hai. Jab tak ye na chale, Finance page y
   aur PDF badli ho to purani aur nayi PDF saath saath. **Approve** se change live, **Turn down** se kuch nahi badalta (bheji hui
   nayi PDF mit jati hai).
 - Aik document par aik waqt mein aik hi change waiting reh sakta hai. Super admin ke apne changes foran live hote hain.
+
+# Hissa 16 — 7 digit document number
+
+**Pehle:** Supabase → SQL Editor → `supabase/doc-number.sql` ka poora content paste karen → **Run** (new-m.sql aur appo.sql ke
+baad). Ye har pehle se bane New M aur Appo record ko apna alag random 7 digit number de deta hai, aur aage har naye record ko khud
+deta hai. Dobara chalana mehfooz hai — number nahi badalte. Jab tak ye SQL na chale, upload pehle ki tarah hota hai magar number
+nahi banta (aur khud number likhne par yehi SQL chalane ka kehta hai).
+
+- **Upload / Edit form:** *Document number (7 digits)* — khali chhoren to khud banta hai, **Generate** se random number pehle hi
+  dekh len, ya apna 7 digit number likhen. Kisi aur document ka number ho to save par bata deta hai. Edit mein bhi badal sakte hain.
+- **List:** attestation number ke neeche **Doc no. 4827153**.
+- **Search:** upar wale search box mein 7 digit number (ya us ka hissa) likhen — wohi case list mein aa jata hai.
+- **Sticker (New M aur Appo):** sirf number (bina kisi label ke) sticker par aata hai — shuru mein QR code ke neeche. Super admin
+  **Background image → Move text & QR** mein "Document number (7 digits)" ko ghaseet kar jahan chahe rakhe, phir **Save position**.
+  Appo mein **Size** se chhota/bara bhi.
 
 # Hissa 14 — Database functions sirf server ke liye
 

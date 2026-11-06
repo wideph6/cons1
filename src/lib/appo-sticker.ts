@@ -101,6 +101,8 @@ export const SLOTS = {
   dateShort: { x: 86, y: 604, size: 19, weight: "bold", anchor: "start", maxWidth: 470, after: "dateShort.label", georgia: true },
   /** Centred under the signature: the approving officer's name. */
   officerName: { x: 730, y: 662, size: 16, weight: "normal", anchor: "middle", maxWidth: 380 },
+  /** The 7-digit document number on its own, with no words. Starts centred under the QR code; the super admin moves it. */
+  docNumber: { x: 777, y: 334, size: 19, weight: "bold", anchor: "middle", maxWidth: 220 },
 } satisfies Record<string, TextSlot>;
 
 /** The signature is fitted inside this box, centred, keeping its proportions. */
@@ -137,6 +139,7 @@ export const STICKER_SETS = [
   { id: "dateShort", name: "Date:" },
   { id: "signature", name: "Signature" },
   { id: "officerName", name: "Officer's name" },
+  { id: "docNumber", name: "Document number (7 digits)" },
   { id: "qr", name: "QR code" },
 ] as const;
 
@@ -647,6 +650,8 @@ export interface StickerValues {
   attestationNumber: string;
   /** Written under the signature. */
   officerName: string;
+  /** The 7-digit document number, written on its own; empty for a document saved before it existed. */
+  docNumber: string;
   /** The signature as a data: URI, or null for none. */
   signature: string | null;
   /** The saved QR code, and the complete link it holds. */
@@ -700,7 +705,7 @@ export function partShift(layout: StickerLayout | undefined, set: StickerSetId, 
 }
 
 /** The sets drawn in one piece: they have no words of their own to ungroup from. */
-type WholeSet = "officerName";
+type WholeSet = "officerName" | "docNumber";
 
 /**
  * The SVG transform for a move and a size: the size is set around the middle of r (where the thing is
@@ -739,7 +744,7 @@ function contentEl(input: StickerContent, measure: Measure): string {
   if (input.drawFrame) parts.push(frameEl(moved, input.texts));
 
   for (const [set, value] of valueTexts(input)) {
-    if (set === "officerName") continue;
+    if (set === "officerName" || set === "docNumber") continue;
     parts.push(moved(set, "value", valueEl(placeSlot(SLOTS[set], input.texts, measure), value, measure)));
   }
 
@@ -755,6 +760,7 @@ function contentEl(input: StickerContent, measure: Measure): string {
     );
   }
   parts.push(moved("officerName", null, valueEl(SLOTS.officerName, input.officerName, measure)));
+  parts.push(moved("docNumber", null, valueEl(SLOTS.docNumber, input.docNumber, measure)));
   parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl)));
   return parts.join("");
 }
@@ -772,6 +778,7 @@ function valueTexts(input: StickerValues): Array<[keyof typeof SLOTS, string]> {
     ["number", input.attestationNumber],
     ["dateShort", shortDate(input.issueDate)],
     ["officerName", input.officerName],
+    ["docNumber", input.docNumber],
   ];
 }
 
@@ -825,7 +832,7 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
     width,
     height: size * 1.1,
   });
-  const whole: WholeSet[] = ["officerName"];
+  const whole: WholeSet[] = ["officerName", "docNumber"];
 
   if (input.drawFrame) {
     for (const p of PIECES) {

@@ -4,7 +4,7 @@ import { Crop, Download, FileCode, Group, ImageUp, Minus, Move, Plus, RotateCcw,
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Checkbox, Field, Input, Loading, Modal, errorMessage, useToast } from "@/components/ui";
 import { api, downloadSvgAsPng, downloadSvgFile } from "@/lib/client";
-import { numberExample, resolveLink, STANDARD_TEMPLATE } from "@/lib/appo-link";
+import { DOC_NUMBER_EXAMPLE, numberExample, resolveLink, STANDARD_TEMPLATE } from "@/lib/appo-link";
 import {
   buildStickerOverlaySvg,
   buildStickerSvg,
@@ -186,6 +186,7 @@ function recordValues(record: AppoRecord, signature: string | null): StickerValu
     officeName: record.office_name,
     attestationNumber: record.attestation_number,
     officerName: record.officer_name,
+    docNumber: record.doc_number ?? "",
     signature,
     qrSvg: record.qr_svg,
     qrUrl: record.qr_url ?? record.verify_url,
@@ -329,6 +330,7 @@ function sampleValues(): StickerValues {
     officeName: "Ministry of Foreign Affairs",
     attestationNumber: numberExample(),
     officerName: "Muhammad Junaid Khalid",
+    docNumber: DOC_NUMBER_EXAMPLE,
     signature: null,
     qrSvg: null,
     qrUrl: resolveLink("example.com", STANDARD_TEMPLATE, numberExample(), iso),
@@ -1245,7 +1247,7 @@ export function AppoBackgroundDialog({
                   ? `${pickedName(selected)}: moved ${Math.round(selectedOffset.dx)} across, ${Math.round(selectedOffset.dy)} down · drag it, or nudge it with the arrow keys by 1, with Shift by 10.${
                       canSplit(selected.set) && !isSplit(selected.set) ? " Ungroup to move its words and its value apart." : ""
                     }`
-                  : "Click a value with its words, the QR code, the signature or the officer's name, and drag it where it belongs. The signature and the name under it move on their own. A picked value can be ungrouped from its words, and the words changed for the sticker."
+                  : "Click a value with its words, the QR code, the signature, the officer's name or the 7-digit document number, and drag it where it belongs. The signature, the name under it and the document number move on their own. A picked value can be ungrouped from its words, and the words changed for the sticker."
                 : cropping
                   ? `Drag the white handles on the image's edges to cut off what is not wanted; the faded part is cut off. Cut: top ${pct(crop.top)}, right ${pct(crop.right)}, bottom ${pct(crop.bottom)}, left ${pct(crop.left)}.`
                   : `Drag the image to move it in any direction · arrow keys nudge by 1, with Shift by 10 · left ${Math.round(placement.x)}, top ${Math.round(placement.y)}.`}{" "}

@@ -80,6 +80,8 @@ export interface AppoRecord {
   /** Copy of the link last used to build the document's address, for when the link is removed. */
   link_template: string;
   attestation_number: string;
+  /** 7 digits, unique; drawn at random unless the admin typed one. Missing until supabase/doc-number.sql has run. */
+  doc_number?: string | null;
   /** ISO date (YYYY-MM-DD); the link carries it as DDMMYYYY. */
   issue_date: string;
   document_type: string;

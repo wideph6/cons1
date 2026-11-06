@@ -2,6 +2,9 @@ import { issuedToIso, pad2, parseIssuedOn, todayIso } from "./dates";
 import { ApiError } from "./errors";
 import {
   cleanTemplate,
+  DOC_NUMBER_EXAMPLE,
+  DOC_NUMBER_RE,
+  tidyDocNumber,
   DEFAULT_NUMBER_PREFIX,
   hashNameFromKey,
   NUMBER_RE,
@@ -61,6 +64,7 @@ export function isMissingTable(error: { code?: string } | null | undefined): boo
 /** A query error as an ApiError, pointing at the setup step when Appo's tables or columns are missing. */
 export function dbError(error: { code?: string; message: string }): ApiError {
   if (isMissingTable(error)) return new ApiError(500, APPO_MISSING);
+  if (missingDocNumberColumn(error)) return new ApiError(500, DOC_NUMBER_MISSING);
   // 42703: a column added by a newer appo.sql than the database has seen.
   if (error.code === "42703") {
     return new ApiError(500, "The database needs the latest Appo update. Run supabase/appo.sql in Supabase → SQL Editor again, then retry.");
@@ -119,6 +123,35 @@ export async function uniqueNumber(prefix: string, attempts = 8): Promise<string
     if (!(await numberTaken(candidate))) return candidate;
   }
   throw new ApiError(500, "Could not generate a free attestation number. Please try again.");
+}
+
+/* ---------------- Document numbers ---------------- */
+
+const DOC_NUMBER_MISSING =
+  "The database has no document numbers yet. Run supabase/doc-number.sql in Supabase → SQL Editor, then retry.";
+
+/**
+ * True when a query failed only because the database has no doc_number yet (supabase/doc-number.sql has
+ * not run). A new document is then saved without one, and the list is searched without it.
+ */
+export function missingDocNumberColumn(error: { code?: string; message?: string } | null | undefined): boolean {
+  return Boolean(error && (error.code === "PGRST204" || error.code === "42703") && error.message?.includes("doc_number"));
+}
+
+/** A typed document number: spaces and dashes dropped, then exactly 7 digits. */
+export function normalizeDocNumber(input: unknown): string {
+  const n = tidyDocNumber(String(input ?? ""));
+  if (!DOC_NUMBER_RE.test(n)) throw new ApiError(400, `Document number must be 7 digits, e.g. ${DOC_NUMBER_EXAMPLE}`);
+  return n;
+}
+
+/** Document numbers are unique across every domain. */
+export async function docNumberTaken(number: string, exceptId?: string): Promise<boolean> {
+  let q = db().from("appo_records").select("id").eq("doc_number", number);
+  if (exceptId) q = q.neq("id", exceptId);
+  const { data, error } = await q.limit(1);
+  if (error) throw dbError(error);
+  return (data?.length ?? 0) > 0;
 }
 
 /* ---------------- Dates ---------------- */
@@ -565,6 +598,7 @@ export async function refreshQrWhere(column: "domain_id" | "link_id", id: string
 /** Columns the common search box looks through, on every domain at once. */
 export const SEARCH_COLUMNS = [
   "attestation_number",
+  "doc_number",
   "document_type",
   "signed_by",
   "signed_capacity",

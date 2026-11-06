@@ -1577,3 +1577,18 @@ a.apo-flink:hover {
 .apo.is-editing .apov {
   pointer-events: none;
 }
+
+/*
+ * In the editor, the pieces of the record card that the side panel moves and sizes can be dragged while
+ * they are picked: the picked piece itself, or the words and value inside a picked entry.
+ */
+.apo.is-editing .is-selected[data-look] {
+  cursor: move;
+  touch-action: none;
+}
+.apo.is-editing .is-selected [data-look] {
+  cursor: move;
+  outline: U(1) dashed rgba(13, 148, 136, 0.7);
+  outline-offset: U(2);
+  touch-action: none;
+}

@@ -10,6 +10,8 @@ import {
   getRecord,
   getNumberPrefix,
   missingHashColumn,
+  docNumberTaken,
+  normalizeDocNumber,
   normalizeNumber,
   numberTaken,
   officerColumns,
@@ -44,6 +46,8 @@ export interface PatchBody {
   domain_id?: string;
   link_id?: string;
   attestation_number?: string;
+  /** 7 digits; blank keeps the current one. */
+  doc_number?: string;
   issue_date?: string;
   document_type?: string;
   signed_by?: string;
@@ -77,6 +81,7 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
   // a document keeps a number made under an earlier prefix for as long as it is not changed.
   const nextNumber = body.attestation_number !== undefined ? normalizeNumber(body.attestation_number) : undefined;
   const nextDate = body.issue_date !== undefined ? parseIssueDate(body.issue_date) : undefined;
+  const nextDocNumber = String(body.doc_number ?? "").trim() ? normalizeDocNumber(body.doc_number) : undefined;
   const typed: Partial<Record<AppoOptionKind, string>> = {};
   for (const kind of OPTION_KINDS) {
     if (body[kind] !== undefined) typed[kind] = cleanText(body[kind], OPTION_LABELS[kind]);
@@ -87,13 +92,14 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
   // The document and everything the edit might need are read side by side, in one round. A lookup
   // that fails only matters if the edit really changes that part, so failures are held until then.
   const held = <T,>(p: Promise<T>) => p.catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
-  const [existing, prefix, linkRead, numberRead, officerRead, docRead] = await Promise.all([
+  const [existing, prefix, linkRead, numberRead, officerRead, docRead, docNumberRead] = await Promise.all([
     getRecord(id),
     nextNumber !== undefined ? getNumberPrefix() : null,
     body.link_id !== undefined ? held(getLinkWithHost(body.link_id)) : null,
     nextNumber !== undefined ? held(numberTaken(nextNumber, id)) : null,
     officerId ? held(officerColumns(officerId)) : null,
     body.doc_key !== undefined ? held(docColumns(body.doc_key, body.doc_filename, body.doc_content_type)) : null,
+    nextDocNumber !== undefined ? held(docNumberTaken(nextDocNumber, id)) : null,
   ]);
   const use = <T,>(read: T | Error | null): T | null => {
     if (read instanceof Error) throw read;
@@ -106,6 +112,7 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
   // A new domain always needs one of its own links.
   if (domainChanged && !linkChanged) throw new ApiError(400, "Pick one of the new domain's links");
   const numberChanged = nextNumber !== undefined && nextNumber !== existing.attestation_number;
+  const docNumberChanged = nextDocNumber !== undefined && nextDocNumber !== existing.doc_number;
   // An officer removed from the saved list leaves officer_id empty but the copy in place, so taking
   // the officer off has to look at the copy as well as the id.
   const hasOfficer = Boolean(existing.officer_id || existing.officer_name || existing.officer_signature_r2_key);
@@ -116,6 +123,7 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
   const link = linkFound ? checkLinkDomain(linkFound, domainId) : null;
   if (numberChanged && prefix) normalizeNumber(nextNumber, prefix);
   if (numberChanged && use(numberRead)) throw new ApiError(409, `${nextNumber} is already used by another document`);
+  if (docNumberChanged && use(docNumberRead)) throw new ApiError(409, `Document number ${nextDocNumber} is already used by another document`);
   const officer = officerChanged ? (officerId ? use(officerRead) : await officerColumns(null)) : null;
   const doc = docChanged ? use(docRead) : null;
 
@@ -126,6 +134,7 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
     patch.link_template = link.template;
   }
   if (numberChanged) patch.attestation_number = nextNumber;
+  if (docNumberChanged) patch.doc_number = nextDocNumber;
   if (nextDate !== undefined && nextDate !== existing.issue_date) patch.issue_date = nextDate;
   for (const kind of OPTION_KINDS) {
     if (typed[kind] !== undefined && typed[kind] !== existing[kind]) patch[kind] = typed[kind];
@@ -195,7 +204,14 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
     rememberOptions(user, changedTexts).catch((e) => console.error("[appo] saving list values failed", e)),
   ]);
   if (error) {
-    if (error.code === "23505") throw new ApiError(409, "That attestation number is already used by another document");
+    if (error.code === "23505") {
+      throw new ApiError(
+        409,
+        /doc_number/.test(`${error.message} ${error.details ?? ""}`)
+          ? "That document number is already used by another document"
+          : "That attestation number is already used by another document",
+      );
+    }
     // No row came back: the document was deleted while this edit was open.
     if (error.code === "PGRST116") throw new ApiError(404, "Document not found");
     throw dbError(error);
@@ -258,6 +274,7 @@ function summarize(existing: AppoRecord, patch: Record<string, unknown>, link: {
   if ("domain_id" in patch) add("domain", "Domain", existing.domain_hostname, link?.hostname);
   if ("link_id" in patch) add("link", "Link", existing.link_name ?? "(removed link)", link ? link.name || "Untitled link" : "");
   if ("attestation_number" in patch) add("attestation_number", "Attestation number", existing.attestation_number, patch.attestation_number);
+  if ("doc_number" in patch) add("doc_number", "Document number", existing.doc_number ?? "", patch.doc_number);
   if ("issue_date" in patch) add("issue_date", "Date", formatIssued(existing.issue_date), formatIssued(String(patch.issue_date)));
   for (const kind of OPTION_KINDS) if (kind in patch) add(kind, OPTION_LABELS[kind], was[kind], patch[kind]);
   if ("officer_name" in patch) add("officer", "Approving officer", existing.officer_name, patch.officer_name);

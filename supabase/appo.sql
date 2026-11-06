@@ -170,7 +170,18 @@ as $$
   select public.appo_random_text(40, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
 $$;
 
+-- The document number: 7 digits, never starting with 0, e.g. 4827153.
+create or replace function public.appo_doc_number()
+returns text
+language sql
+volatile
+set search_path = public
+as $$
+  select public.appo_random_text(1, '123456789') || public.appo_random_text(6, '0123456789')
+$$;
+
 -- Only the server's service_role, which saves documents, may call these.
+revoke all on function public.appo_doc_number() from public;
 revoke all on function public.appo_random_text(integer, text) from public;
 revoke all on function public.appo_storage_number() from public;
 revoke all on function public.appo_hash_name() from public;
@@ -180,6 +191,7 @@ begin
     grant execute on function public.appo_random_text(integer, text) to service_role;
     grant execute on function public.appo_storage_number() to service_role;
     grant execute on function public.appo_hash_name() to service_role;
+    grant execute on function public.appo_doc_number() to service_role;
   end if;
 end $$;
 
@@ -292,6 +304,24 @@ end $$;
 
 create unique index if not exists appo_records_storage_number_idx on public.appo_records (doc_storage_number);
 create unique index if not exists appo_records_hash_name_idx on public.appo_records (doc_hash_name);
+
+-- The document number: 7 random digits, unique, shown in the list, searchable and placed on the sticker.
+-- Every document already saved draws its own here; the admin may type another (see supabase/doc-number.sql).
+alter table public.appo_records add column if not exists doc_number text not null default public.appo_doc_number();
+do $$
+begin
+  loop
+    update public.appo_records r
+       set doc_number = public.appo_doc_number()
+     where exists (select 1 from public.appo_records o where o.doc_number = r.doc_number and o.id < r.id);
+    exit when not found;
+  end loop;
+  if not exists (select 1 from pg_constraint where conname = 'appo_records_doc_number_check') then
+    alter table public.appo_records
+      add constraint appo_records_doc_number_check check (doc_number ~ '^[0-9]{7}$');
+  end if;
+end $$;
+create unique index if not exists appo_records_doc_number_idx on public.appo_records (doc_number);
 
 create index if not exists appo_link_templates_domain_idx on public.appo_link_templates (domain_id);
 create index if not exists appo_records_domain_idx on public.appo_records (domain_id);

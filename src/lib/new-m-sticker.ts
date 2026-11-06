@@ -71,6 +71,8 @@ export const SLOTS = {
   dateShort: { x: 139, y: 392, size: 19, weight: "bold", anchor: "start", maxWidth: 733 },
   /** Centred under the signature. */
   designation: { x: 678.5, y: 515, size: 16, weight: "normal", anchor: "middle", maxWidth: 380 },
+  /** The 7-digit document number on its own, with no words. Starts centred under the QR code; the super admin moves it. */
+  docNumber: { x: 759.6, y: 334, size: 19, weight: "bold", anchor: "middle", maxWidth: 220 },
 } satisfies Record<string, TextSlot>;
 
 /** The signature is fitted inside this box, centred, keeping its proportions. */
@@ -109,10 +111,14 @@ export const STICKER_SETS = [
   { id: "dateShort", name: "Date (Date:)" },
   { id: "signature", name: "Signature" },
   { id: "designation", name: "Designation" },
+  { id: "docNumber", name: "Document number (7 digits)" },
   { id: "qr", name: "QR code" },
 ] as const;
 
 export type StickerSetId = (typeof STICKER_SETS)[number]["id"];
+
+/** The sets drawn in one piece, with no words of their own to ungroup from. */
+const WHOLE_SETS: ReadonlyArray<StickerSetId> = ["designation", "docNumber"];
 
 /** The two halves of an ungrouped set: its fixed words, and the value written after or under them. */
 export type SetPart = "label" | "value";
@@ -333,6 +339,41 @@ export interface BackgroundPlacement {
   texts?: StickerTexts;
   /** The sticker's own size, following the image; left out for the size every sticker had at first (STICKER_W x STICKER_H). */
   size?: StickerSize;
+  /**
+   * The page size, in points (1/72 inch), of the PDF the background was made from; left out for an image.
+   * It gives the downloaded PDF sticker its real size: the background prints as large as its PDF page was.
+   */
+  pdfPage?: PdfPage;
+}
+
+/** A PDF page's width and height in points (1/72 inch). */
+export interface PdfPage {
+  width: number;
+  height: number;
+}
+
+/** The largest page a PDF reader accepts (200 inches), in points. */
+export const MAX_PDF_SIDE = 14400;
+/** Points per sticker unit for a background that says nothing of its size: 96 units to the inch, as on screen. */
+export const DEFAULT_POINTS_PER_UNIT = 0.75;
+
+/** The placement with the PDF page its background came from, or with none for an image. */
+export function withPdfPage(p: BackgroundPlacement, page: PdfPage | null | undefined): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.pdfPage;
+  return page ? { ...rest, pdfPage: { width: n(page.width), height: n(page.height) } } : rest;
+}
+
+/**
+ * How many points one sticker unit prints as. A background made from a PDF keeps that PDF's size (its page
+ * spans the background's width on the sticker); an image prints at 96 units to the inch. Kept within what
+ * a PDF page may measure.
+ */
+export function pointsPerUnit(p: BackgroundPlacement | null | undefined): number {
+  const size = stickerSize(p);
+  const raw = p?.pdfPage && p.width > 0 ? p.pdfPage.width / p.width : DEFAULT_POINTS_PER_UNIT;
+  const most = MAX_PDF_SIDE / Math.max(size.width, size.height);
+  return Math.min(Math.max(raw, 0.01), most);
 }
 
 /** No position saved: the image is stretched over the whole sticker. */
@@ -484,6 +525,14 @@ function cleanSize(v: unknown): StickerSize | null {
   return { width: n(width), height: n(height) };
 }
 
+/** A PDF page size sent or saved, or null when it is not a sane one. */
+function cleanPdfPage(v: unknown): PdfPage | null {
+  if (!v || typeof v !== "object") return null;
+  const { width, height } = v as Record<string, unknown>;
+  const ok = (k: unknown) => typeof k === "number" && Number.isFinite(k) && k >= 1 && k <= MAX_PDF_SIDE;
+  return ok(width) && ok(height) ? { width: n(width as number), height: n(height as number) } : null;
+}
+
 /** Four shares between 0 and 1 that leave something of the image, or null when they are not. */
 function cleanCrop(v: unknown): BackgroundCrop | null {
   if (!v || typeof v !== "object") return null;
@@ -532,7 +581,12 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     if (!t) return null;
     texts = t;
   }
-  const placed = withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size);
+  let pdfPage: PdfPage | null = null;
+  if (raw.pdfPage !== undefined && raw.pdfPage !== null) {
+    pdfPage = cleanPdfPage(raw.pdfPage);
+    if (!pdfPage) return null;
+  }
+  const placed = withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage);
   const s = visibleRect(placed);
   const onSticker = s.x < size.width && s.y < size.height && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;
@@ -561,6 +615,8 @@ export interface StickerValues {
   issuingAuthority: string;
   attestationNumber: string;
   designation: string;
+  /** The 7-digit document number, written on its own; empty for a document saved before it existed. */
+  docNumber: string;
   /** The signature as a data: URI, or null for none. */
   signature: string | null;
   /** The saved QR code, and the complete link it holds. */
@@ -621,7 +677,7 @@ function contentEl(input: StickerContent, measure: Measure): string {
   if (input.drawFrame) parts.push(frameEl(moved, input.texts));
 
   for (const [set, value] of valueTexts(input)) {
-    if (set !== "designation") parts.push(moved(set, "value", valueEl(SLOTS[set], value, measure)));
+    if (!WHOLE_SETS.includes(set)) parts.push(moved(set, "value", valueEl(SLOTS[set], value, measure)));
   }
 
   if (input.signature) {
@@ -636,6 +692,7 @@ function contentEl(input: StickerContent, measure: Measure): string {
     );
   }
   parts.push(moved("designation", null, valueEl(SLOTS.designation, input.designation, measure)));
+  parts.push(moved("docNumber", null, valueEl(SLOTS.docNumber, input.docNumber, measure)));
   parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, input.drawFrame)));
   return parts.join("");
 }
@@ -650,6 +707,7 @@ function valueTexts(input: StickerValues): Array<[keyof typeof SLOTS, string]> {
     ["number", input.attestationNumber],
     ["dateShort", shortDate(input.issueDate)],
     ["designation", input.designation],
+    ["docNumber", input.docNumber],
   ];
 }
 
@@ -715,7 +773,7 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
     const t = value.trim();
     // A value too wide for its cell is set smaller, so it never reaches past maxWidth.
     const width = t ? Math.min(measure(t, fontFor(slot)), slot.maxWidth) : 0;
-    const part = set === "designation" ? "whole" : "value";
+    const part = WHOLE_SETS.includes(set) ? "whole" : "value";
     if (width) add(set, part, textBox(slot.x, slot.y, slot.size, width, slot.anchor));
     else blank[set] = textBox(slot.x, slot.y, slot.size, Math.min(EMPTY_VALUE_WIDTH, slot.maxWidth), slot.anchor);
   }
@@ -730,7 +788,7 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
       boxes[set] = { whole: union(d.whole), parts: {} };
       continue;
     }
-    if (set === "designation") {
+    if (WHOLE_SETS.includes(set)) {
       if (empty) boxes[set] = { whole: empty, parts: {} };
       continue;
     }

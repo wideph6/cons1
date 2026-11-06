@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
-import { type MobileContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText } from "@/lib/appo-page";
+import { type MobileContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText, type RecordPiece } from "@/lib/appo-page";
+import { Sized } from "@/components/RecordSized";
+import { moveCss, zoomOf } from "@/lib/record-looks";
 import { MobileMenu } from "./MobileMenu";
 import { MobilePdf } from "./MobilePdf";
 import { hasNumbers, RecordRows } from "./RecordRows";
@@ -118,7 +120,13 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
     return <span {...p}>{item.text}</span>;
   }
 
-  function image(img: PImage, path: string, className: string, tone: "green" | "white") {
+  function image(
+    img: PImage,
+    path: string,
+    className: string,
+    tone: "green" | "white",
+    extra?: { style?: CSSProperties; attrs?: Record<string, string> },
+  ) {
     if (!visible(img)) return null;
     const url = img.key ? assets[img.key] : null;
     const inner = url ? (
@@ -131,16 +139,58 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
     const p = ed(path, img.hidden, className);
     if (img.href && img.href !== "#") {
       return (
-        <a {...p} {...linkProps(img.href, img.new_tab)} aria-label={img.alt || undefined}>
+        <a {...p} {...linkProps(img.href, img.new_tab)} style={extra?.style} {...extra?.attrs} aria-label={img.alt || undefined}>
           {inner}
         </a>
       );
     }
     return (
-      <span {...p} role={url ? undefined : "img"} aria-label={url ? undefined : img.alt || undefined}>
+      <span {...p} style={extra?.style} {...extra?.attrs} role={url ? undefined : "img"} aria-label={url ? undefined : img.alt || undefined}>
         {inner}
       </span>
     );
+  }
+
+  /* ----- The verification record: every piece moved and sized as the super admin set it ----- */
+
+  /** In the editor, marks a piece so it can be dragged while it is picked. */
+  function lookAttrs(id: RecordPiece): Record<string, string> {
+    return editing ? { "data-look": id } : {};
+  }
+
+  /** A piece's move, as style, and its drag mark. */
+  function look(id: RecordPiece, scaleSelf = false) {
+    const l = c.record.looks[id];
+    return { style: moveCss(l, m, "shift", scaleSelf ? (l?.size ?? 100) / 100 : 1), ...lookAttrs(id) };
+  }
+
+  function sizeOf(id: RecordPiece): number | undefined {
+    return c.record.looks[id]?.size;
+  }
+
+  /** A line of the record card's text, moved and sized. */
+  function recText(item: PText, path: string, className: string, id: RecordPiece, tag: "span" | "h2" | "p" = "span") {
+    if (!visible(item)) return null;
+    const Tag = tag;
+    return (
+      <Tag {...ed(path, item.hidden, className)} {...look(id)}>
+        <Sized size={sizeOf(id)}>{item.text}</Sized>
+      </Tag>
+    );
+  }
+
+  /**
+   * The certificate's logo, grown in place (the content under it moves down with it). A zoomed box's own
+   * move grows with it too, so the move is divided by as much.
+   */
+  function recLogo(className: string) {
+    const l = c.record.looks.logo;
+    const z = zoomOf(l?.size) ?? 1;
+    const move = l ? { x: l.x / z, y: l.y / z } : undefined;
+    return image(c.record.logo, "record.logo", className, "green", {
+      style: { ...moveCss(move, m, "shift"), ...(z !== 1 ? { zoom: z } : {}) },
+      attrs: lookAttrs("logo"),
+    });
   }
 
   function link(item: PLink, path: string, className: string, children?: ReactNode, style?: CSSProperties) {
@@ -310,15 +360,15 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
             <>
               <article className="apom-card apom-card-record">
                 <header className="apom-card-head">
-                  {text(rec.eyebrow, "record.eyebrow", "apom-card-eyebrow")}
-                  {visible(rec.title) ? <h2 {...ed("record.title", rec.title.hidden, "apom-card-title")}>{rec.title.text}</h2> : null}
+                  {recText(rec.eyebrow, "record.eyebrow", "apom-card-eyebrow", "eyebrow")}
+                  {recText(rec.title, "record.title", "apom-card-title", "title", "h2")}
                 </header>
                 <div className="apom-card-body">
                   <div className={cx("apom-cert", numbered && "has-numbers")}>
                     <div className="apom-cert-head">
-                      {image(rec.logo, "record.logo", "apom-cert-logo", "green")}
-                      {text(rec.cert_title, "record.cert_title", "apom-cert-title")}
-                      {text(rec.cert_subtitle, "record.cert_subtitle", "apom-cert-sub")}
+                      {recLogo("apom-cert-logo")}
+                      {recText(rec.cert_title, "record.cert_title", "apom-cert-title", "cert_title")}
+                      {recText(rec.cert_subtitle, "record.cert_subtitle", "apom-cert-sub", "cert_subtitle")}
                     </div>
                     <RecordRows
                       p="apom"
@@ -331,7 +381,7 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                       editing={editing}
                       sampleSignature={<SampleSignature />}
                     />
-                    {visible(rec.disclaimer) ? <p {...ed("record.disclaimer", rec.disclaimer.hidden, "apom-disclaimer")}>{rec.disclaimer.text}</p> : null}
+                    {recText(rec.disclaimer, "record.disclaimer", "apom-disclaimer", "disclaimer", "p")}
                   </div>
                 </div>
               </article>

@@ -1130,3 +1130,18 @@
   cursor: pointer;
   align-self: center;
 }
+
+/*
+ * In the editor, the pieces of the record card that the side panel moves and sizes can be dragged while
+ * they are picked: the picked piece itself, or the words and value inside a picked entry.
+ */
+.apom.is-editing .is-selected[data-look] {
+  cursor: move;
+  touch-action: none;
+}
+.apom.is-editing .is-selected [data-look] {
+  cursor: move;
+  outline: calc(var(--mu) * 1) dashed rgba(13, 148, 136, 0.7);
+  outline-offset: calc(var(--mu) * 2);
+  touch-action: none;
+}

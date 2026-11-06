@@ -57,6 +57,23 @@ export function tidyNumber(input: string): string {
   return input.trim().toUpperCase().replace(/\s+/g, "");
 }
 
+/**
+ * The document number: 7 digits, never starting with 0 when drawn at random, e.g. 4827153. Unique within
+ * New M; the admin may type another (any 7 digits). Shown in the list, searchable, and on the sticker.
+ */
+export const DOC_NUMBER_RE = /^\d{7}$/;
+export const DOC_NUMBER_EXAMPLE = "4827153";
+
+/** A fresh random document number. Not checked against existing ones. */
+export function randomDocNumber(): string {
+  return randomLetters(1, "123456789") + randomLetters(6, "0123456789");
+}
+
+/** How a typed document number is read: spaces and dashes dropped. */
+export function tidyDocNumber(input: string): string {
+  return input.replace(/[\s-]+/g, "");
+}
+
 /** `2026-10-31` -> `31102026`, the form the link carries. */
 export function issueDateParam(isoDate: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate ?? "");

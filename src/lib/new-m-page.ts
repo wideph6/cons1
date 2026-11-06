@@ -9,6 +9,8 @@
  * No server imports: the editor, the public page and the API all read and check content with this file.
  */
 
+import { cleanLooks, type PieceLook } from "./record-looks";
+
 export type PageView = "desktop" | "mobile";
 export const PAGE_VIEWS: PageView[] = ["desktop", "mobile"];
 
@@ -165,6 +167,8 @@ export interface DesktopContent {
     designation: { hidden: boolean };
     signature: { hidden: boolean };
     disclaimer: PText;
+    /** Where each piece of the record sits and how large it is, as the super admin set it; only the ones changed. */
+    looks: Partial<Record<RecordPiece, PieceLook>>;
   };
   document: {
     eyebrow: PText;
@@ -260,6 +264,50 @@ export const RECORD_FIELDS = [
   "officer",
 ] as const;
 export type RecordField = (typeof RECORD_FIELDS)[number];
+
+/**
+ * The pieces of the record card the super admin can move and size (record-looks.ts), besides its entries.
+ * Saved per view in record.looks; only the ones changed.
+ */
+export const SHARED_RECORD_PIECES = ["eyebrow", "title", "logo", "cert_title", "cert_subtitle"] as const;
+
+/**
+ * Every piece of New M's record card that can be moved and sized: the card's heading and title, the
+ * certificate's logo, title and subtitle, each entry's words and value (the officer's name is the officer
+ * entry's value), the officer's designation and signature, and the note under the record.
+ */
+export const RECORD_PIECES = [
+  ...SHARED_RECORD_PIECES,
+  ...RECORD_FIELDS.flatMap((f) => [`${f}.label`, `${f}.value`] as const),
+  "officer.designation",
+  "officer.signature",
+  "disclaimer",
+] as const;
+export type RecordPiece = (typeof RECORD_PIECES)[number];
+
+/** The pieces the editor offers to move and size when this part of the record is picked. */
+export function recordPiecesAt(path: string): Array<{ id: RecordPiece; name: string }> {
+  const single: Record<string, [RecordPiece, string]> = {
+    "record.eyebrow": ["eyebrow", "Small heading"],
+    "record.title": ["title", "Title"],
+    "record.logo": ["logo", "Logo"],
+    "record.cert_title": ["cert_title", "Certificate title"],
+    "record.cert_subtitle": ["cert_subtitle", "Certificate subtitle"],
+    "record.disclaimer": ["disclaimer", "Note"],
+    "record.designation": ["officer.designation", "Designation"],
+    "record.signature": ["officer.signature", "Signature"],
+  };
+  if (single[path]) return [{ id: single[path][0], name: single[path][1] }];
+  const m = /^record\.labels\.([a-z_]+)$/.exec(path);
+  const field = m && (RECORD_FIELDS as readonly string[]).includes(m[1]) ? (m[1] as RecordField) : null;
+  if (!field) return [];
+  const out: Array<{ id: RecordPiece; name: string }> = [
+    { id: `${field}.label`, name: "Words" },
+    { id: `${field}.value`, name: field === "officer" ? "Officer's name" : "Value" },
+  ];
+  if (field === "officer") out.push({ id: "officer.designation", name: "Designation" }, { id: "officer.signature", name: "Signature" });
+  return out;
+}
 
 /* ---------------- Defaults (the reference design) ---------------- */
 
@@ -390,6 +438,7 @@ export const DEFAULT_DESKTOP: DesktopContent = {
     disclaimer: t(
       "This verification confirms that a General Attestation record matches the document number and date provided. It does not verify the contents of the underlying document.",
     ),
+    looks: {},
   },
   document: {
     eyebrow: t("SUPPORTING DOCUMENT"),
@@ -787,6 +836,7 @@ function cleanRecord(record: Record<string, unknown>, d: RecordSection): RecordS
     designation: { hidden: bool(obj(record.designation).hidden, d.designation.hidden) },
     signature: { hidden: bool(obj(record.signature).hidden, d.signature.hidden) },
     disclaimer: cleanText(record.disclaimer, d.disclaimer),
+    looks: cleanLooks(record.looks, RECORD_PIECES),
   };
 }
 
@@ -908,7 +958,8 @@ export function mobileFromDesktop(desk: DesktopContent, mob: MobileContent): Mob
     },
     hero: desk.hero,
     result: desk.result,
-    record: desk.record,
+    // Moves and sizes are in each view's own design pixels, so the phone keeps its own.
+    record: { ...desk.record, looks: mob.record.looks },
     document: { ...mob.document, eyebrow: desk.document.eyebrow, title: desk.document.title, open: desk.document.open },
     cta: desk.cta,
     footer: {
@@ -932,6 +983,11 @@ export function keepRecordEntries<T extends DesktopContent | MobileContent>(copi
       designation: { ...own.record.designation },
       signature: { ...own.record.signature },
       disclaimer: { ...own.record.disclaimer },
+      // The shared pieces' moves and sizes come with the copy; the entries' and the note's stay New M's own.
+      looks: {
+        ...Object.fromEntries(Object.entries(own.record.looks).filter(([k]) => !(SHARED_RECORD_PIECES as readonly string[]).includes(k))),
+        ...Object.fromEntries(Object.entries(copied.record.looks ?? {}).filter(([k]) => (SHARED_RECORD_PIECES as readonly string[]).includes(k))),
+      },
     },
   };
 }

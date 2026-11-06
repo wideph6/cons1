@@ -69,7 +69,7 @@ export function NewMManager() {
   const [domainsOpen, setDomainsOpen] = useState(false);
   const [qrFor, setQrFor] = useState<NewMRecord | null>(null);
   const [stickerFor, setStickerFor] = useState<NewMRecord | null>(null);
-  /** The document whose sticker PNG is being made straight from the list. */
+  /** The document whose sticker PDF is being made straight from the list. */
   const [stickerBusy, setStickerBusy] = useState<string | null>(null);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [del, setDel] = useState<NewMRecord | null>(null);
@@ -275,7 +275,7 @@ export function NewMManager() {
           <div className="flex gap-2">
             <Input
               value={query}
-              placeholder="Attestation number, document type, office, authority, officer, domain, file name or date"
+              placeholder="Attestation or 7-digit document number, document type, office, authority, officer, domain, file name or date"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
@@ -372,6 +372,11 @@ export function NewMManager() {
                     </td>
                     <td>
                       <div className="font-mono text-[13px] font-medium whitespace-nowrap">{r.attestation_number}</div>
+                      {r.doc_number ? (
+                        <div className="text-[12px] text-text-muted whitespace-nowrap">
+                          Doc no. <span className="font-mono font-medium text-text">{r.doc_number}</span>
+                        </div>
+                      ) : null}
                       {r.pending_edit ? (
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           <Badge tone="warn">
@@ -401,7 +406,7 @@ export function NewMManager() {
                           loading={stickerBusy === r.id}
                           onClick={() => saveSticker(r)}
                         >
-                          Download PNG
+                          Download PDF
                         </Button>
                       </div>
                     </td>

@@ -9,6 +9,7 @@
  * No server imports: the editor, the public page and the API all read and check content with this file.
  */
 
+import { cleanLooks, cleanSizes, type PieceLook } from "./record-looks";
 import type { CSSProperties } from "react";
 
 export type PageView = "desktop" | "mobile";
@@ -166,6 +167,11 @@ export interface DesktopContent {
     designation: { hidden: boolean };
     signature: { hidden: boolean };
     disclaimer: PText;
+    /**
+     * Where each piece of the record card outside its entries sits and how large it is, as the super admin
+     * set it; only the ones changed. The entries' own parts move and size within their boxes (RecordRow).
+     */
+    looks: Partial<Record<RecordPiece, PieceLook>>;
   };
   document: {
     eyebrow: PText;
@@ -311,6 +317,28 @@ export interface PartMove {
 /** The furthest a set of text may be moved, in design pixels either way. */
 export const MAX_MOVE = 600;
 
+/**
+ * The pieces of the record card the super admin can move and size (record-looks.ts), besides its entries.
+ * Saved per view in record.looks; only the ones changed.
+ */
+export const SHARED_RECORD_PIECES = ["eyebrow", "title", "logo", "cert_title", "cert_subtitle"] as const;
+/** The pieces of Appo's record card outside its entries that can be moved and sized. */
+export const RECORD_PIECES = [...SHARED_RECORD_PIECES, "disclaimer"] as const;
+export type RecordPiece = (typeof RECORD_PIECES)[number];
+
+/** The pieces the editor offers to move and size when this part of the record is picked (an entry has its own). */
+export function recordPiecesAt(path: string): Array<{ id: RecordPiece; name: string }> {
+  const single: Record<string, [RecordPiece, string]> = {
+    "record.eyebrow": ["eyebrow", "Small heading"],
+    "record.title": ["title", "Title"],
+    "record.logo": ["logo", "Logo"],
+    "record.cert_title": ["cert_title", "Certificate title"],
+    "record.cert_subtitle": ["cert_subtitle", "Certificate subtitle"],
+    "record.disclaimer": ["disclaimer", "Note"],
+  };
+  return single[path] ? [{ id: single[path][0], name: single[path][1] }] : [];
+}
+
 /** One entry of the verification record. */
 export interface RecordRow {
   id: RecordRowId;
@@ -327,6 +355,8 @@ export interface RecordRow {
   format: DateFormat;
   /** The sets of text moved within the box; only the ones moved. */
   moves: Partial<Record<RowPart, PartMove>>;
+  /** The sets of text (and the signature) made larger or smaller, in percent; only the ones changed. */
+  sizes: Partial<Record<RowPart, number>>;
   hidden: boolean;
 }
 
@@ -393,7 +423,7 @@ function social(id: string, icon: SocialIcon, label: string): PSocial {
 }
 
 function row(id: RecordRowId, number: string, text: string, layout: RowLayout = "stacked", value = ""): RecordRow {
-  return { id, number, text, value, layout, align: id === "certificate" ? "center" : "left", format: "long", moves: {}, hidden: false };
+  return { id, number, text, value, layout, align: id === "certificate" ? "center" : "left", format: "long", moves: {}, sizes: {}, hidden: false };
 }
 
 /** The entries as the super admin first described them; every word can be changed under Page design. */
@@ -540,6 +570,7 @@ export const DEFAULT_DESKTOP: DesktopContent = {
     disclaimer: t(
       "This verification confirms that a General Attestation record matches the document number and date provided. It does not verify the contents of the underlying document.",
     ),
+    looks: {},
   },
   document: {
     eyebrow: t("SUPPORTING DOCUMENT"),
@@ -955,6 +986,7 @@ function cleanRow(o: Record<string, unknown>, d: RecordRow): RecordRow {
     align: ROW_ALIGNS.some((a) => a.value === o.align) ? (o.align as RowAlign) : d.align,
     format: d.id === "issue_date" && DATE_FORMATS.some((f) => f.value === o.format) ? (o.format as DateFormat) : d.format,
     moves: cleanMoves(o.moves),
+    sizes: cleanSizes(o.sizes, ROW_PARTS),
     hidden: bool(o.hidden, d.hidden),
   };
 }
@@ -1029,6 +1061,7 @@ function cleanRecord(record: Record<string, unknown>, d: RecordSection): RecordS
     designation: { hidden: bool(obj(record.designation).hidden, d.designation.hidden) },
     signature: { hidden: bool(obj(record.signature).hidden, d.signature.hidden) },
     disclaimer: cleanText(record.disclaimer, d.disclaimer),
+    looks: cleanLooks(record.looks, RECORD_PIECES),
   };
 }
 
@@ -1150,7 +1183,8 @@ export function mobileFromDesktop(desk: DesktopContent, mob: MobileContent): Mob
     },
     hero: desk.hero,
     result: desk.result,
-    record: desk.record,
+    // Moves and sizes are in each view's own design pixels, so the phone keeps its own.
+    record: { ...desk.record, looks: mob.record.looks },
     document: { ...mob.document, eyebrow: desk.document.eyebrow, title: desk.document.title, open: desk.document.open },
     cta: desk.cta,
     footer: {
@@ -1175,6 +1209,11 @@ export function keepRecordEntries<T extends DesktopContent | MobileContent>(copi
       designation: { ...own.record.designation },
       signature: { ...own.record.signature },
       disclaimer: { ...own.record.disclaimer },
+      // The shared pieces' moves and sizes come with the copy; the note's stays Appo's own.
+      looks: {
+        ...Object.fromEntries(Object.entries(own.record.looks).filter(([k]) => !(SHARED_RECORD_PIECES as readonly string[]).includes(k))),
+        ...Object.fromEntries(Object.entries(copied.record.looks ?? {}).filter(([k]) => (SHARED_RECORD_PIECES as readonly string[]).includes(k))),
+      },
     },
   };
 }

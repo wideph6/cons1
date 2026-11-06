@@ -9,6 +9,9 @@ import {
   linkFor,
   mapRecord,
   missingHashColumn,
+  docNumberTaken,
+  missingDocNumberColumn,
+  normalizeDocNumber,
   normalizeNumber,
   numberTaken,
   officerColumns,
@@ -38,6 +41,8 @@ interface CreateBody {
   link_id?: string;
   /** Blank means generate one. */
   attestation_number?: string;
+  /** 7 digits. Blank means the database draws one. */
+  doc_number?: string;
   /** `YYYY-MM-DD`. Blank means today. */
   issue_date?: string;
   document_type?: string;
@@ -64,18 +69,24 @@ export async function GET(req: NextRequest) {
     const domainId = sp.get("domain_id");
     const q = (sp.get("q") ?? "").trim();
 
-    let query = db().from("appo_view").select("*", { count: "exact" });
-    if (domainId) query = query.eq("domain_id", domainId);
-    if (q) {
-      // , ( ) and quotes would break the or() filter; % _ * are wildcards there.
-      const safe = q.replace(/[%_*,()"'\\]/g, " ").trim();
-      const parts = safe ? SEARCH_COLUMNS.map((c) => `${c}.ilike.%${safe}%`) : [];
-      const date = searchDate(q);
-      if (date) parts.push(`issue_date.eq.${date}`);
-      if (parts.length) query = query.or(parts.join(","));
-    }
-
-    const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    const list = (columns: readonly string[]) => {
+      let query = db().from("appo_view").select("*", { count: "exact" });
+      if (domainId) query = query.eq("domain_id", domainId);
+      if (q) {
+        // , ( ) and quotes would break the or() filter; % _ * are wildcards there.
+        const safe = q.replace(/[%_*,()"'\\]/g, " ").trim();
+        const parts = safe ? columns.map((c) => `${c}.ilike.%${safe}%`) : [];
+        const date = searchDate(q);
+        if (date) parts.push(`issue_date.eq.${date}`);
+        if (parts.length) query = query.or(parts.join(","));
+      }
+      return query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    };
+    // The 7-digit document number is searched too; a database without it yet (supabase/doc-number.sql
+    // not run) is searched without it.
+    let res = await list(SEARCH_COLUMNS);
+    if (res.error && missingDocNumberColumn(res.error)) res = await list(SEARCH_COLUMNS.filter((c) => c !== "doc_number"));
+    const { data, error, count } = res;
     if (error) throw dbError(error);
 
     const listed = await withCurrentQr((data ?? []).map((r) => mapRecord(r as never)));
@@ -102,8 +113,18 @@ async function insertRecord(row: Record<string, unknown>) {
       row = rest;
       continue;
     }
-    const clash = res.error?.code === "23505" && /storage_number/.test(`${res.error.message} ${res.error.details ?? ""}`);
-    if (!clash || attempt >= 3) return res;
+    // A database without document numbers yet saves the document without one.
+    if (missingDocNumberColumn(res.error) && "doc_number" in row) {
+      const { doc_number: _, ...rest } = row;
+      row = rest;
+      continue;
+    }
+    // The database draws the PDF's address number, and the 7-digit document number when none was typed;
+    // a draw that matches another document's is made again.
+    const where = `${res.error?.message ?? ""} ${res.error?.details ?? ""}`;
+    const clash =
+      res.error?.code === "23505" && (/storage_number/.test(where) || (/doc_number/.test(where) && !("doc_number" in row)));
+    if (!clash || attempt >= 5) return res;
   }
 }
 
@@ -118,6 +139,7 @@ export async function POST(req: NextRequest) {
 
     // Everything that needs no database is checked first, so a typing mistake costs no round trip.
     const typed = (body.attestation_number ?? "").trim();
+    const typedDocNumber = (body.doc_number ?? "").trim() ? normalizeDocNumber(body.doc_number) : null;
     const issueDate = parseIssueDate(body.issue_date);
     const texts = Object.fromEntries(OPTION_KINDS.map((k) => [k, cleanText(body[k], OPTION_LABELS[k])])) as Record<AppoOptionKind, string>;
 
@@ -135,6 +157,11 @@ export async function POST(req: NextRequest) {
         : uniqueNumber(prefix),
       officerColumns(body.officer_id || null),
       docColumns(body.doc_key, body.doc_filename, body.doc_content_type),
+      typedDocNumber
+        ? docNumberTaken(typedDocNumber).then((taken) => {
+            if (taken) throw new ApiError(409, `Document number ${typedDocNumber} is already used by another document`);
+          })
+        : null,
     ]);
 
     const row: Record<string, unknown> = {
@@ -142,6 +169,8 @@ export async function POST(req: NextRequest) {
       link_id: link.id,
       link_template: link.template,
       attestation_number: number,
+      // Left out, the database draws a random one.
+      ...(typedDocNumber ? { doc_number: typedDocNumber } : {}),
       issue_date: issueDate,
       ...texts,
       ...officer,
@@ -163,7 +192,9 @@ export async function POST(req: NextRequest) {
           409,
           /doc_r2_key/.test(`${error.message} ${error.details ?? ""}`)
             ? "This PDF is already attached to another document. Choose the file again."
-            : `${number} is already used by another document`,
+            : /doc_number/.test(`${error.message} ${error.details ?? ""}`)
+              ? `Document number ${typedDocNumber ?? ""} is already used by another document`.replace("  ", " ")
+              : `${number} is already used by another document`,
         );
       }
       throw dbError(error);
@@ -185,7 +216,7 @@ export async function POST(req: NextRequest) {
         // activity_log.domain_id points at the Domains page's table, so Appo domains go by name only.
         domain: { id: null, hostname: link.hostname },
         file: { id: null, filename: item.doc_filename },
-        details: { attestation_number: item.attestation_number, issue_date: item.issue_date, verify_url: item.verify_url },
+        details: { attestation_number: item.attestation_number, doc_number: item.doc_number ?? null, issue_date: item.issue_date, verify_url: item.verify_url },
       }),
     );
     return ok({ item }, { status: 201 });

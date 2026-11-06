@@ -284,7 +284,7 @@ export function AppoManager() {
           <div className="flex gap-2">
             <Input
               value={query}
-              placeholder="Number, document type, signed by, capacity, seal, office city or name, officer, domain, file or date"
+              placeholder="Number, 7-digit document number, document type, signed by, capacity, seal, office city or name, officer, domain, file or date"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
@@ -382,6 +382,11 @@ export function AppoManager() {
                     </td>
                     <td>
                       <div className="font-mono text-[13px] font-medium whitespace-nowrap">{r.attestation_number}</div>
+                      {r.doc_number ? (
+                        <div className="text-[12px] text-text-muted whitespace-nowrap">
+                          Doc no. <span className="font-mono font-medium text-text">{r.doc_number}</span>
+                        </div>
+                      ) : null}
                       {r.pending_edit ? (
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           <Badge tone="warn">

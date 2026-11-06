@@ -41,7 +41,9 @@ import {
   errorMessage,
   useToast,
 } from "@/components/ui";
+import { RecordLookFields } from "@/components/admin/RecordLookFields";
 import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
+import { AS_DESIGNED, clampMove, type PieceLook } from "@/lib/record-looks";
 import { withoutFakeTransparency } from "@/lib/fake-transparency";
 import {
   CERTIFICATE_BORDER_SIDES,
@@ -74,6 +76,7 @@ import {
   SOCIAL_ICONS,
   VIEWER_TOOLS,
   getAt,
+  recordPiecesAt,
   imageKeys,
   listOf,
   mobileFromDesktop,
@@ -800,12 +803,67 @@ export function AppoPageEditor() {
   /** Set when a drag ends, so the click that follows does not pick something else. */
   const dragEnded = useRef(false);
 
+  /** A drag of a piece of the record card (its heading, logo, an entry's words or value…), under way. */
+  const lookDrag = useRef<{ id: number; x: number; y: number; unitPx: number; piece: string; from: PieceLook; moved: boolean } | null>(null);
+
+  /**
+   * Pressing on a piece of the record card that the side panel moves and sizes (the picked piece, or the
+   * words and value of the picked entry) starts moving it. The move is in the view's design pixels, so it
+   * keeps its place at every window or phone width. True when a drag started.
+   */
+  function startLookDrag(e: React.PointerEvent<HTMLDivElement>): boolean {
+    if (e.button !== 0 || !docs || !selected) return false;
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-look]");
+    if (!el) return false;
+    const piece = el.dataset.look as string;
+    if (!recordPiecesAt(selected).some((p) => p.id === piece)) return false;
+    const looks = (getAt(docs[view].content, "record.looks") ?? {}) as Record<string, PieceLook | undefined>;
+    // One design pixel of this view, measured where the piece is drawn (outside its own size).
+    const host = el.parentElement ?? el;
+    const probe = document.createElement("span");
+    probe.style.cssText = `position:absolute;visibility:hidden;width:calc(var(${view === "mobile" ? "--mu" : "--u"}) * 100)`;
+    host.appendChild(probe);
+    const unitPx = probe.getBoundingClientRect().width / 100 || 1;
+    probe.remove();
+    e.preventDefault();
+    lookDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, unitPx, piece, from: looks[piece] ?? AS_DESIGNED, moved: false };
+    const v = view;
+
+    const onMove = (ev: PointerEvent) => {
+      const d = lookDrag.current;
+      if (!d || ev.pointerId !== d.id) return;
+      const sx = ev.clientX - d.x;
+      const sy = ev.clientY - d.y;
+      if (!d.moved) {
+        if (Math.abs(sx) < 3 && Math.abs(sy) < 3) return;
+        d.moved = true;
+        checkpoint(v);
+      }
+      const next = { ...d.from, x: clampMove(d.from.x + sx / d.unitPx), y: clampMove(d.from.y + sy / d.unitPx) };
+      liveEdit(v, (c) => setAt(c, "record.looks", withLooks(getAt(c, "record.looks"), { [d.piece]: next })));
+    };
+    const onUp = (ev: PointerEvent) => {
+      const d = lookDrag.current;
+      if (!d || ev.pointerId !== d.id) return;
+      if (d.moved) dragEnded.current = true;
+      lookDrag.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return true;
+  }
+
   /**
    * Pressing on the number, the words or the value (or the officer's designation or signature) of the
    * record entry open in the side panel starts moving it within its box. The move is in the view's
    * design pixels, like the rest of the page, so it keeps its place at every window or phone width.
    */
   function onPreviewPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (startLookDrag(e)) return;
     if (e.button !== 0 || !docs) return;
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-move]");
     if (!el) return;
@@ -1640,6 +1698,9 @@ function Inspector({
             ? "The signature image belongs to the approving officer picked for each document (saved under Appo → Saved values)."
             : "The designation belongs to the approving officer picked for each document."}
         </Alert>
+        <Button size="sm" onClick={() => onPick("record.rows.officer")}>
+          Move or resize it — Approving officer entry…
+        </Button>
       </>
     );
   } else if (path === "hero.art") {
@@ -1673,6 +1734,22 @@ function Inspector({
     } else if ("text" in v) {
       body = <TextFields value={value as PText} set={set} multiline={MULTILINE.has(path)} />;
     }
+  }
+
+  // The picked piece of the record card can be moved and sized (with an entry's words and value).
+  const lookPieces = value === undefined ? [] : recordPiecesAt(path);
+  if (lookPieces.length) {
+    const looks = ((content as { record: { looks?: Record<string, PieceLook> } }).record.looks ?? {}) as Record<string, PieceLook | undefined>;
+    body = (
+      <>
+        {body}
+        <RecordLookFields
+          pieces={lookPieces}
+          looks={looks}
+          onChange={(updates) => onChange("record.looks", withLooks(looks, updates))}
+        />
+      </>
+    );
   }
 
   return (
@@ -1802,87 +1879,41 @@ function partName(row: RecordRow, part: RowPart): string {
 }
 
 /**
- * Moves each set of text of an entry within its box, by design pixels: typed in, nudged with the
- * arrows (Shift: 10 at a time), or dragged on the page itself while the entry is open here.
+ * Moves and sizes each set of text of an entry within its box: moves by design pixels (typed in, nudged
+ * with the arrows, Shift: 10 at a time, or dragged on the page itself while the entry is open here), sizes
+ * in percent of the design. The certificate box's text keeps the size set in its own look.
  */
 function PartMoves({ row, set }: { row: RecordRow; set: (f: string, v: unknown) => void }) {
   const parts = rowParts(row);
-  const at = (part: RowPart): PartMove => row.moves[part] ?? { x: 0, y: 0 };
-  const put = (part: RowPart, m: PartMove) => {
-    const clamp = (n: number) => Math.round(Math.min(MAX_MOVE, Math.max(-MAX_MOVE, n)) * 10) / 10;
-    const next = { ...row.moves };
-    const c = { x: clamp(m.x), y: clamp(m.y) };
-    if (c.x === 0 && c.y === 0) delete next[part];
-    else next[part] = c;
-    set("moves", next);
-  };
-  const anyMoved = parts.some((part) => row.moves[part]);
+  const looks: Record<string, PieceLook | undefined> = {};
+  for (const part of parts) {
+    const m = row.moves[part];
+    const size = row.sizes?.[part];
+    if (m || size) looks[part] = { x: m?.x ?? 0, y: m?.y ?? 0, size: size ?? 100 };
+  }
   return (
-    <div className="rounded-md border bg-surface-2 p-2.5 space-y-2">
-      <div>
-        <div className="text-[13px] font-medium">Position of the text in the box</div>
-        <p className="text-[12px] text-text-muted mt-0.5">
-          Drag the dashed text on the page, or move it here (design pixels; Shift + arrow moves 10). The rest of the
-          box stays where it is.
-        </p>
-      </div>
-      {parts.map((part) => {
-        const m = at(part);
-        const nudge = (dx: number, dy: number) => (e: React.MouseEvent) => {
-          const step = e.shiftKey ? 10 : 1;
-          put(part, { x: m.x + dx * step, y: m.y + dy * step });
-        };
-        return (
-          <div key={part} className="flex flex-wrap items-center gap-1.5">
-            <span className="w-24 text-[12.5px] font-medium truncate">{partName(row, part)}</span>
-            <label className="inline-flex items-center gap-1 text-[12px] text-text-muted">
-              X
-              <Input
-                type="number"
-                step={1}
-                value={m.x}
-                className="w-16 h-7 py-0 text-[12.5px]"
-                onChange={(e) => e.target.value !== "" && put(part, { ...m, x: Number(e.target.value) })}
-              />
-            </label>
-            <label className="inline-flex items-center gap-1 text-[12px] text-text-muted">
-              Y
-              <Input
-                type="number"
-                step={1}
-                value={m.y}
-                className="w-16 h-7 py-0 text-[12.5px]"
-                onChange={(e) => e.target.value !== "" && put(part, { ...m, y: Number(e.target.value) })}
-              />
-            </label>
-            <span className="inline-flex">
-              <button type="button" className="px-1.5 h-7 border rounded-l-md hover:bg-surface" title="Left" onClick={nudge(-1, 0)}>
-                ←
-              </button>
-              <button type="button" className="px-1.5 h-7 border-y hover:bg-surface" title="Up" onClick={nudge(0, -1)}>
-                ↑
-              </button>
-              <button type="button" className="px-1.5 h-7 border-y border-l hover:bg-surface" title="Down" onClick={nudge(0, 1)}>
-                ↓
-              </button>
-              <button type="button" className="px-1.5 h-7 border rounded-r-md hover:bg-surface" title="Right" onClick={nudge(1, 0)}>
-                →
-              </button>
-            </span>
-            {row.moves[part] ? (
-              <button type="button" className="text-[12px] text-teal-700 hover:underline" onClick={() => put(part, { x: 0, y: 0 })}>
-                Put back
-              </button>
-            ) : null}
-          </div>
-        );
-      })}
-      {anyMoved ? (
-        <Button size="sm" icon={<RotateCcw className="size-3.5" />} onClick={() => set("moves", {})}>
-          Put all text back
-        </Button>
-      ) : null}
-    </div>
+    <RecordLookFields
+      title="Position and size of the text in the box"
+      hint={
+        row.id === "certificate"
+          ? "Drag the dashed text on the page, or move it here (design pixels; Shift + arrow moves 10). Its size is the box's own (Text size above)."
+          : "Drag the dashed text on the page, or set it here: moves in design pixels (Shift + arrow moves 10), size in percent of the design. The rest of the box stays where it is; larger text wraps within the box."
+      }
+      pieces={parts.map((part) => ({ id: part, name: partName(row, part), noSize: row.id === "certificate" }))}
+      looks={looks}
+      onChange={(updates) => {
+        const moves = { ...row.moves };
+        const sizes = { ...(row.sizes ?? {}) };
+        for (const [part, l] of Object.entries(updates) as Array<[RowPart, PieceLook | null]>) {
+          if (l && (l.x !== 0 || l.y !== 0)) moves[part] = { x: l.x, y: l.y };
+          else delete moves[part];
+          if (l && l.size !== 100) sizes[part] = l.size;
+          else delete sizes[part];
+        }
+        if (JSON.stringify(moves) !== JSON.stringify(row.moves)) set("moves", moves);
+        if (JSON.stringify(sizes) !== JSON.stringify(row.sizes ?? {})) set("sizes", sizes);
+      }}
+    />
   );
 }
 
@@ -2050,6 +2081,16 @@ function CertificateFields({
       </p>
     </>
   );
+}
+
+/** The record's looks with these pieces changed: a look set, or null to put the piece back as designed. */
+function withLooks(current: unknown, updates: Record<string, PieceLook | null>): Record<string, PieceLook> {
+  const next = { ...((current ?? {}) as Record<string, PieceLook>) };
+  for (const [id, l] of Object.entries(updates)) {
+    if (l && (l.x !== 0 || l.y !== 0 || l.size !== 100)) next[id] = l;
+    else delete next[id];
+  }
+  return next;
 }
 
 function VisibleToggle({ hidden, onChange }: { hidden: boolean; onChange: (hidden: boolean) => void }) {

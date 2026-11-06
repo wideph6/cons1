@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
-import { type MobileContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText } from "@/lib/new-m-page";
+import { type MobileContent, type PageRecord, type PImage, type PLink, type PLinkText, type PText, type RecordPiece } from "@/lib/new-m-page";
+import { Sized } from "@/components/RecordSized";
+import { moveCss, zoomOf } from "@/lib/record-looks";
 import { MobileMenu } from "./MobileMenu";
 import { MobilePdf } from "./MobilePdf";
 import { ArrowNE, Emblem, ShieldTick, Social } from "./icons";
@@ -110,7 +112,13 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
     return <span {...p}>{item.text}</span>;
   }
 
-  function image(img: PImage, path: string, className: string, tone: "green" | "white") {
+  function image(
+    img: PImage,
+    path: string,
+    className: string,
+    tone: "green" | "white",
+    extra?: { style?: CSSProperties; attrs?: Record<string, string> },
+  ) {
     if (!visible(img)) return null;
     const url = img.key ? assets[img.key] : null;
     const inner = url ? (
@@ -123,16 +131,58 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
     const p = ed(path, img.hidden, className);
     if (img.href && img.href !== "#") {
       return (
-        <a {...p} {...linkProps(img.href, img.new_tab)} aria-label={img.alt || undefined}>
+        <a {...p} {...linkProps(img.href, img.new_tab)} style={extra?.style} {...extra?.attrs} aria-label={img.alt || undefined}>
           {inner}
         </a>
       );
     }
     return (
-      <span {...p} role={url ? undefined : "img"} aria-label={url ? undefined : img.alt || undefined}>
+      <span {...p} style={extra?.style} {...extra?.attrs} role={url ? undefined : "img"} aria-label={url ? undefined : img.alt || undefined}>
         {inner}
       </span>
     );
+  }
+
+  /* ----- The verification record: every piece moved and sized as the super admin set it ----- */
+
+  /** In the editor, marks a piece so it can be dragged while it is picked. */
+  function lookAttrs(id: RecordPiece): Record<string, string> {
+    return editing ? { "data-look": id } : {};
+  }
+
+  /** A piece's move, as style, and its drag mark. */
+  function look(id: RecordPiece, scaleSelf = false) {
+    const l = c.record.looks[id];
+    return { style: moveCss(l, m, "shift", scaleSelf ? (l?.size ?? 100) / 100 : 1), ...lookAttrs(id) };
+  }
+
+  function sizeOf(id: RecordPiece): number | undefined {
+    return c.record.looks[id]?.size;
+  }
+
+  /** A line of the record card's text, moved and sized. */
+  function recText(item: PText, path: string, className: string, id: RecordPiece, tag: "span" | "h2" | "p" = "span") {
+    if (!visible(item)) return null;
+    const Tag = tag;
+    return (
+      <Tag {...ed(path, item.hidden, className)} {...look(id)}>
+        <Sized size={sizeOf(id)}>{item.text}</Sized>
+      </Tag>
+    );
+  }
+
+  /**
+   * The certificate's logo, grown in place (the content under it moves down with it). A zoomed box's own
+   * move grows with it too, so the move is divided by as much.
+   */
+  function recLogo(className: string) {
+    const l = c.record.looks.logo;
+    const z = zoomOf(l?.size) ?? 1;
+    const move = l ? { x: l.x / z, y: l.y / z } : undefined;
+    return image(c.record.logo, "record.logo", className, "green", {
+      style: { ...moveCss(move, m, "shift"), ...(z !== 1 ? { zoom: z } : {}) },
+      attrs: lookAttrs("logo"),
+    });
   }
 
   function link(item: PLink, path: string, className: string, children?: ReactNode, style?: CSSProperties) {
@@ -300,15 +350,15 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
             <>
               <article className="nmpm-card nmpm-card-record">
                 <header className="nmpm-card-head">
-                  {text(rec.eyebrow, "record.eyebrow", "nmpm-card-eyebrow")}
-                  {visible(rec.title) ? <h2 {...ed("record.title", rec.title.hidden, "nmpm-card-title")}>{rec.title.text}</h2> : null}
+                  {recText(rec.eyebrow, "record.eyebrow", "nmpm-card-eyebrow", "eyebrow")}
+                  {recText(rec.title, "record.title", "nmpm-card-title", "title", "h2")}
                 </header>
                 <div className="nmpm-card-body">
                   <div className="nmpm-cert">
                     <div className="nmpm-cert-head">
-                      {image(rec.logo, "record.logo", "nmpm-cert-logo", "green")}
-                      {text(rec.cert_title, "record.cert_title", "nmpm-cert-title")}
-                      {text(rec.cert_subtitle, "record.cert_subtitle", "nmpm-cert-sub")}
+                      {recLogo("nmpm-cert-logo")}
+                      {recText(rec.cert_title, "record.cert_title", "nmpm-cert-title", "cert_title")}
+                      {recText(rec.cert_subtitle, "record.cert_subtitle", "nmpm-cert-sub", "cert_subtitle")}
                     </div>
                     {(
                       [
@@ -321,22 +371,32 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                     ).map(([key, value]) =>
                       visible(rec.labels[key]) ? (
                         <div key={key} {...ed(`record.labels.${key}`, rec.labels[key].hidden, "nmpm-row")}>
-                          <span className="nmpm-row-label">{rec.labels[key].text}</span>
-                          <span className="nmpm-row-value">{dash(value)}</span>
+                          <span className="nmpm-row-label" {...look(`${key}.label`)}>
+                            <Sized size={sizeOf(`${key}.label`)}>{rec.labels[key].text}</Sized>
+                          </span>
+                          <span className="nmpm-row-value" {...look(`${key}.value`)}>
+                            <Sized size={sizeOf(`${key}.value`)}>{dash(value)}</Sized>
+                          </span>
                         </div>
                       ) : null,
                     )}
                     {visible(rec.labels.officer) ? (
                       <div {...ed("record.labels.officer", rec.labels.officer.hidden, "nmpm-row nmpm-row-officer")}>
                         <div className="nmpm-officer-text">
-                          <span className="nmpm-row-label">{rec.labels.officer.text}</span>
-                          <span className="nmpm-row-value">{dash(r.officer_name)}</span>
+                          <span className="nmpm-row-label" {...look("officer.label")}>
+                            <Sized size={sizeOf("officer.label")}>{rec.labels.officer.text}</Sized>
+                          </span>
+                          <span className="nmpm-row-value" {...look("officer.value")}>
+                            <Sized size={sizeOf("officer.value")}>{dash(r.officer_name)}</Sized>
+                          </span>
                           {visible(rec.designation) && r.officer_designation ? (
-                            <span {...ed("record.designation", rec.designation.hidden, "nmpm-officer-role")}>{r.officer_designation}</span>
+                            <span {...ed("record.designation", rec.designation.hidden, "nmpm-officer-role")} {...look("officer.designation")}>
+                              <Sized size={sizeOf("officer.designation")}>{r.officer_designation}</Sized>
+                            </span>
                           ) : null}
                         </div>
                         {visible(rec.signature) && (r.signature_url || editing) ? (
-                          <span {...ed("record.signature", rec.signature.hidden, "nmpm-signature")}>
+                          <span {...ed("record.signature", rec.signature.hidden, "nmpm-signature")} {...look("officer.signature", true)}>
                             {r.signature_url ? (
                               // Signatures are signed R2 links that expire.
                               // eslint-disable-next-line @next/next/no-img-element
@@ -348,7 +408,7 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
                         ) : null}
                       </div>
                     ) : null}
-                    {visible(rec.disclaimer) ? <p {...ed("record.disclaimer", rec.disclaimer.hidden, "nmpm-disclaimer")}>{rec.disclaimer.text}</p> : null}
+                    {recText(rec.disclaimer, "record.disclaimer", "nmpm-disclaimer", "disclaimer", "p")}
                   </div>
                 </div>
               </article>
