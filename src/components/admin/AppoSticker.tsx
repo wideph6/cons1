@@ -21,6 +21,7 @@ import {
   stickerSize,
   pointsPerUnit,
   withPdfPage,
+  withPrintWidth,
   type PdfPage,
   withSize,
   type StickerSize,
@@ -64,7 +65,7 @@ import {
 } from "@/lib/appo-sticker";
 import type { AppoRecord } from "@/lib/appo-types";
 import { formatDateTime } from "@/lib/utils";
-import { QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
+import { PrintSizeField, QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
 import type { StyleKey, TextStyle } from "@/lib/sticker-style";
 
 /* ---------------- Shared pieces ---------------- */
@@ -203,7 +204,7 @@ function drawnPlacement(bg: Background, values: StickerValues): BackgroundPlacem
   if (p?.size) return p;
   const boxes = stickerSetBoxes({ drawFrame: !bg.hasFrame, texts: p?.texts, layout: p?.layout, ...values }, measure);
   const f = fitToBackground(p ?? FULL_PLACEMENT, { width: bg.width, height: bg.height }, p?.layout ?? {}, boxes);
-  return withPdfPage(withSize(withTexts(withLayout(f.placement, f.layout), p?.texts ?? {}), f.size), p?.pdfPage);
+  return withPrintWidth(withPdfPage(withSize(withTexts(withLayout(f.placement, f.layout), p?.texts ?? {}), f.size), p?.pdfPage), p?.printWidth);
 }
 
 /** The officer's signature a document carries, inline, or null for none. */
@@ -225,6 +226,7 @@ function recordValues(record: AppoRecord, signature: string | null): StickerValu
     officeName: record.office_name,
     attestationNumber: record.attestation_number,
     officerName: record.officer_name,
+    designation: record.officer_designation,
     docNumber: record.doc_number ?? "",
     signature,
     qrSvg: record.qr_svg,
@@ -278,8 +280,8 @@ export async function downloadSticker(record: AppoRecord): Promise<void> {
 const MAX_BACKGROUND = 4 * 1024 * 1024;
 
 /** How large the PDF sticker prints, e.g. "10.2 × 8.1 cm (4.0 × 3.2 in)". */
-function pageSizeText(size: StickerSize, page: PdfPage | null, placement: BackgroundPlacement): string {
-  const points = pointsPerUnit(withPdfPage(withSize(placement, size), page));
+function pageSizeText(size: StickerSize, page: PdfPage | null, placement: BackgroundPlacement, printWidth: number | null): string {
+  const points = pointsPerUnit(withPrintWidth(withPdfPage(withSize(placement, size), page), printWidth));
   const cm = (v: number) => (((v * points) / 72) * 2.54).toFixed(1);
   const inch = (v: number) => ((v * points) / 72).toFixed(1);
   return `${cm(size.width)} × ${cm(size.height)} cm (${inch(size.width)} × ${inch(size.height)} in)`;
@@ -401,6 +403,7 @@ function sampleValues(): StickerValues {
     officeName: "Ministry of Foreign Affairs",
     attestationNumber: numberExample(),
     officerName: "Muhammad Junaid Khalid",
+    designation: "Assistant Director",
     docNumber: DOC_NUMBER_EXAMPLE,
     signature: null,
     qrSvg: null,
@@ -419,6 +422,7 @@ function box(p: BackgroundPlacement): BackgroundPlacement {
 
 function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean {
   if (Boolean(a.pdfPage) !== Boolean(b.pdfPage)) return false;
+  if (Math.abs((a.printWidth ?? 0) - (b.printWidth ?? 0)) >= 0.01) return false;
   if (a.pdfPage && b.pdfPage && (Math.abs(a.pdfPage.width - b.pdfPage.width) >= 0.01 || Math.abs(a.pdfPage.height - b.pdfPage.height) >= 0.01)) {
     return false;
   }
@@ -521,6 +525,8 @@ export function AppoBackgroundDialog({
   const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
   /** The page size of the PDF the background was drawn from, which gives the PDF sticker its real size; null for an image. */
   const [pdfPage, setPdfPage] = useState<PdfPage | null>(null);
+  /** How wide the whole sticker prints, in points, as the super admin set it; null for as made. */
+  const [printWidth, setPrintWidth] = useState<number | null>(null);
   /** Reading a chosen PDF. */
   const [reading, setReading] = useState(false);
   /** The sticker had the old fixed size and was just made its background's length here, not saved yet. */
@@ -564,6 +570,7 @@ export function AppoBackgroundDialog({
     setPlacement(box(p ?? fullPlacement(stickerSize(p))));
     setSize(stickerSize(p));
     setPdfPage(p?.pdfPage ?? null);
+    setPrintWidth(p?.printWidth ?? null);
     setCrop(p?.crop ?? NO_CROP);
     setLayout(p?.layout ?? {});
     setTexts(p?.texts ?? {});
@@ -713,7 +720,10 @@ export function AppoBackgroundDialog({
     if (!image) return;
     setBusy(true);
     try {
-      const sent = withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage);
+      const sent = withPrintWidth(
+        withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage),
+        printWidth,
+      );
       let next: BackgroundInfo;
       if (image.file) {
         const form = new FormData();
@@ -995,7 +1005,7 @@ export function AppoBackgroundDialog({
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
         !samePlacement(
-          withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage),
+          withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage), printWidth),
           info?.placement ?? FULL_PLACEMENT,
         )),
   );
@@ -1061,7 +1071,7 @@ export function AppoBackgroundDialog({
         {image?.file ? (
           <Alert tone={ratioOff ? "warn" : "info"}>
             {image.fromPdf
-              ? `New PDF: ${image.fromPdf.name}${image.fromPdf.pages > 1 ? ` (page 1 of ${image.fromPdf.pages} is used)` : ""}, drawn at ${image.width} × ${image.height}. The PDF sticker will be ${pageSizeText(size, pdfPage, placement)}.`
+              ? `New PDF: ${image.fromPdf.name}${image.fromPdf.pages > 1 ? ` (page 1 of ${image.fromPdf.pages} is used)` : ""}, drawn at ${image.width} × ${image.height}. The PDF sticker will be ${pageSizeText(size, pdfPage, placement, printWidth)}.`
               : `New image: ${image.file.name} (${image.width} × ${image.height}).`}{" "}
             {ratioOff
               ? `Its proportions differ from the sticker (${size.width} × ${size.height}) — move, zoom and crop it to fit.`
@@ -1075,7 +1085,7 @@ export function AppoBackgroundDialog({
               In use: {info.filename ?? "uploaded image"}
               {info.placement?.pdfPage ? " (from a PDF)" : ""}
               {info.updated_at ? `, set ${formatDateTime(info.updated_at)}` : ""}. PDF stickers come out{" "}
-              {pageSizeText(size, pdfPage, placement)}.
+              {pageSizeText(size, pdfPage, placement, printWidth)}.
             </p>
             {fitted ? (
               <Alert tone="info">
@@ -1120,7 +1130,7 @@ export function AppoBackgroundDialog({
                 </Button>
               ) : null}
               <span className="text-text-faint">
-                Only magnifies this view — scroll to move around. The sticker itself stays {size.width} × {size.height}.
+                Only magnifies this view — scroll to move around. The sticker itself stays {Math.round(size.width)} × {Math.round(size.height)}.
               </span>
             </div>
             <div className="max-h-[70vh] overflow-auto border rounded bg-surface-2">
@@ -1130,7 +1140,13 @@ export function AppoBackgroundDialog({
               role="group"
               aria-label="Background position: drag to move, arrow keys to nudge"
               className="relative overflow-hidden bg-white select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
-              style={{ aspectRatio: `${size.width} / ${size.height}`, width: `${viewZoom * 100}%` }}
+              style={{
+                aspectRatio: `${size.width} / ${size.height}`,
+                // At 100% the whole sticker shows, however long it is: as wide as the box, or as tall as it (the box is
+                // 70% of the window high); larger views magnify that, and the box scrolls.
+                width: `calc(${viewZoom} * min(100%, calc((70vh - 2px) * ${Math.round((size.width / size.height) * 10000) / 10000})))`,
+                marginInline: "auto",
+              }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -1373,6 +1389,13 @@ export function AppoBackgroundDialog({
                 </Button>
               ) : null}
             </div>
+            <PrintSizeField
+              size={size}
+              madePoints={pointsPerUnit(withPdfPage(withSize(placement, size), pdfPage))}
+              value={printWidth}
+              disabled={busy}
+              onChange={setPrintWidth}
+            />
             {arranging && selected && (styleKeys(selected.set).length || selected.set === "qr") ? (
               <div className="rounded-md border bg-surface-2 p-3 space-y-2">
                 <div className="text-[12.5px] font-medium">

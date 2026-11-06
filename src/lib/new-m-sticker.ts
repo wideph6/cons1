@@ -429,6 +429,22 @@ export interface BackgroundPlacement {
    * It gives the downloaded PDF sticker its real size: the background prints as large as its PDF page was.
    */
   pdfPage?: PdfPage;
+  /**
+   * How wide the whole sticker prints, in points (1/72 inch), as the super admin set it: the background and
+   * everything on it print together, at this width and the height that keeps its shape. Left out: as made
+   * (the background PDF's own size, or 96 units to the inch).
+   */
+  printWidth?: number;
+}
+
+/** The narrowest a sticker may be set to print (1 cm), in points. */
+export const MIN_PRINT_WIDTH = 28.35;
+
+/** The placement with the width the sticker prints at, or with none for as made. */
+export function withPrintWidth(p: BackgroundPlacement, width: number | null | undefined): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.printWidth;
+  return width ? { ...rest, printWidth: n(width) } : rest;
 }
 
 /** A PDF page's width and height in points (1/72 inch). */
@@ -456,7 +472,12 @@ export function withPdfPage(p: BackgroundPlacement, page: PdfPage | null | undef
  */
 export function pointsPerUnit(p: BackgroundPlacement | null | undefined): number {
   const size = stickerSize(p);
-  const raw = p?.pdfPage && p.width > 0 ? p.pdfPage.width / p.width : DEFAULT_POINTS_PER_UNIT;
+  // The width the super admin set for the whole sticker comes first; then the background PDF's own size.
+  const raw = p?.printWidth
+    ? p.printWidth / size.width
+    : p?.pdfPage && p.width > 0
+      ? p.pdfPage.width / p.width
+      : DEFAULT_POINTS_PER_UNIT;
   const most = MAX_PDF_SIDE / Math.max(size.width, size.height);
   return Math.min(Math.max(raw, 0.01), most);
 }
@@ -713,7 +734,13 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     pdfPage = cleanPdfPage(raw.pdfPage);
     if (!pdfPage) return null;
   }
-  const placed = withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage);
+  let printWidth: number | null = null;
+  if (raw.printWidth !== undefined && raw.printWidth !== null) {
+    const w = raw.printWidth;
+    if (typeof w !== "number" || !Number.isFinite(w) || w < MIN_PRINT_WIDTH - 0.01 || w > MAX_PDF_SIDE) return null;
+    printWidth = w;
+  }
+  const placed = withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage), printWidth);
   const s = visibleRect(placed);
   const onSticker = s.x < size.width && s.y < size.height && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;

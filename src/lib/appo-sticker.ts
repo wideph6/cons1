@@ -128,6 +128,8 @@ export const SLOTS = {
   dateShort: { x: 86, y: 604, size: 19, weight: "bold", anchor: "start", maxWidth: 470, after: "dateShort.label", georgia: true },
   /** Centred under the signature: the approving officer's name. */
   officerName: { x: 730, y: 662, size: 16, weight: "normal", anchor: "middle", maxWidth: 380 },
+  /** The approving officer's designation, under the name; off until the super admin turns it on. */
+  designation: { x: 730, y: 684, size: 15, weight: "normal", anchor: "middle", maxWidth: 380 },
   /** The 7-digit document number on its own, with no words. Starts centred under the QR code; the super admin moves it. */
   docNumber: { x: 777, y: 334, size: 19, weight: "bold", anchor: "middle", maxWidth: 220, family: NUMBER_FAMILY },
 } satisfies Record<string, TextSlot>;
@@ -166,6 +168,7 @@ export const STICKER_SETS = [
   { id: "dateShort", name: "Date:" },
   { id: "signature", name: "Signature" },
   { id: "officerName", name: "Officer's name" },
+  { id: "designation", name: "Designation" },
   { id: "docNumber", name: "Document number (7 digits)" },
   { id: "qr", name: "QR code" },
 ] as const;
@@ -211,13 +214,15 @@ export const MAX_SCALE = 3;
 export type StickerLayout = Partial<Record<StickerSetId, SetLayout>>;
 
 /** The sets drawn in one piece, with no words of their own to ungroup from. */
-export const WHOLE_SETS: ReadonlyArray<StickerSetId> = ["officerName", "docNumber"];
+export const WHOLE_SETS: ReadonlyArray<StickerSetId> = ["officerName", "designation", "docNumber"];
 /** The sets that are pictures, not text: no boldness or colour. */
 export const PICTURE_SETS: ReadonlyArray<StickerSetId> = ["signature", "qr"];
+/** The sets a sticker leaves off until the super admin turns them on. */
+export const OFF_UNTIL_ON: ReadonlyArray<StickerSetId> = ["designation"];
 
-/** Whether a set is on the sticker: every set is, until the super admin turns it off. */
+/** Whether a set is on the sticker: as the super admin set it, or its own default. */
 export function setShown(layout: StickerLayout | undefined, set: StickerSetId): boolean {
-  return layout?.[set]?.show ?? true;
+  return layout?.[set]?.show ?? !OFF_UNTIL_ON.includes(set);
 }
 
 /** The text halves of a set a style can be set for: its words and its value, or the whole of a one-piece set. */
@@ -498,6 +503,22 @@ export interface BackgroundPlacement {
    * It gives the downloaded PDF sticker its real size: the background prints as large as its PDF page was.
    */
   pdfPage?: PdfPage;
+  /**
+   * How wide the whole sticker prints, in points (1/72 inch), as the super admin set it: the background and
+   * everything on it print together, at this width and the height that keeps its shape. Left out: as made
+   * (the background PDF's own size, or 96 units to the inch).
+   */
+  printWidth?: number;
+}
+
+/** The narrowest a sticker may be set to print (1 cm), in points. */
+export const MIN_PRINT_WIDTH = 28.35;
+
+/** The placement with the width the sticker prints at, or with none for as made. */
+export function withPrintWidth(p: BackgroundPlacement, width: number | null | undefined): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.printWidth;
+  return width ? { ...rest, printWidth: n(width) } : rest;
 }
 
 /** A PDF page's width and height in points (1/72 inch). */
@@ -525,7 +546,12 @@ export function withPdfPage(p: BackgroundPlacement, page: PdfPage | null | undef
  */
 export function pointsPerUnit(p: BackgroundPlacement | null | undefined): number {
   const size = stickerSize(p);
-  const raw = p?.pdfPage && p.width > 0 ? p.pdfPage.width / p.width : DEFAULT_POINTS_PER_UNIT;
+  // The width the super admin set for the whole sticker comes first; then the background PDF's own size.
+  const raw = p?.printWidth
+    ? p.printWidth / size.width
+    : p?.pdfPage && p.width > 0
+      ? p.pdfPage.width / p.width
+      : DEFAULT_POINTS_PER_UNIT;
   const most = MAX_PDF_SIDE / Math.max(size.width, size.height);
   return Math.min(Math.max(raw, 0.01), most);
 }
@@ -590,12 +616,13 @@ function tidySet(set: StickerSetId, o: SetLayout | undefined): SetLayout | null 
     if (st) styles[key] = st;
   }
   if (Object.keys(styles).length) out.styles = styles;
-  if (o.show === false) out.show = false;
+  const shown = o.show ?? !OFF_UNTIL_ON.includes(set);
+  if (shown !== !OFF_UNTIL_ON.includes(set)) out.show = shown;
   if (set === "qr") {
     const fill = cleanFill(o.fill);
     if (fill) out.fill = fill;
   }
-  return out.split || out.parts || moves(out) || sized(out) || out.styles || out.show === false || out.fill ? out : null;
+  return out.split || out.parts || moves(out) || sized(out) || out.styles || out.show !== undefined || out.fill ? out : null;
 }
 
 /** The placement with only the sets that were really moved or ungrouped, or with no layout when none were. */
@@ -651,7 +678,7 @@ function cleanLayout(v: unknown): StickerLayout | null {
     const raw = o as Record<string, unknown>;
     const entry: SetLayout = { ...move };
     if (raw.split === true) entry.split = true;
-    if (raw.show === false) entry.show = false;
+    if (typeof raw.show === "boolean") entry.show = raw.show;
     if (raw.fill !== undefined && raw.fill !== null) {
       const fill = cleanFill(raw.fill);
       if (fill) entry.fill = fill;
@@ -781,7 +808,13 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     pdfPage = cleanPdfPage(raw.pdfPage);
     if (!pdfPage) return null;
   }
-  const placed = withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage);
+  let printWidth: number | null = null;
+  if (raw.printWidth !== undefined && raw.printWidth !== null) {
+    const w = raw.printWidth;
+    if (typeof w !== "number" || !Number.isFinite(w) || w < MIN_PRINT_WIDTH - 0.01 || w > MAX_PDF_SIDE) return null;
+    printWidth = w;
+  }
+  const placed = withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage), printWidth);
   const s = visibleRect(placed);
   const onSticker = s.x < size.width && s.y < size.height && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;
@@ -815,6 +848,8 @@ export interface StickerValues {
   attestationNumber: string;
   /** Written under the signature. */
   officerName: string;
+  /** The officer's designation, written under the name only when the super admin turns it on. */
+  designation: string;
   /** The 7-digit document number, written on its own; empty for a document saved before it existed. */
   docNumber: string;
   /** The signature as a data: URI, or null for none. */
@@ -870,7 +905,7 @@ export function partShift(layout: StickerLayout | undefined, set: StickerSetId, 
 }
 
 /** The sets drawn in one piece: they have no words of their own to ungroup from. */
-type WholeSet = "officerName" | "docNumber";
+type WholeSet = "officerName" | "designation" | "docNumber";
 
 /**
  * The SVG transform for a move and a size: the size is set around the middle of r (where the thing is
@@ -927,6 +962,7 @@ function contentEl(input: StickerContent, measure: Measure): string {
     );
   }
   if (on("officerName")) parts.push(moved("officerName", null, valueEl(SLOTS.officerName, input.officerName, measure, styleOf("officerName", "whole"))));
+  if (on("designation")) parts.push(moved("designation", null, valueEl(SLOTS.designation, input.designation, measure, styleOf("designation", "whole"))));
   if (on("docNumber")) parts.push(moved("docNumber", null, valueEl(SLOTS.docNumber, input.docNumber, measure, styleOf("docNumber", "whole"))));
   if (on("qr")) parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, input.layout?.qr?.fill ?? QR_PAPER)));
   return parts.join("");
@@ -945,6 +981,7 @@ function valueTexts(input: StickerValues): Array<[keyof typeof SLOTS, string]> {
     ["number", input.attestationNumber],
     ["dateShort", shortDate(input.issueDate)],
     ["officerName", input.officerName],
+    ["designation", input.designation],
     ["docNumber", input.docNumber],
   ];
 }
@@ -999,7 +1036,7 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
     width,
     height: size * 1.1,
   });
-  const whole: WholeSet[] = ["officerName", "docNumber"];
+  const whole: WholeSet[] = ["officerName", "designation", "docNumber"];
 
   if (input.drawFrame) {
     for (const p of PIECES) {

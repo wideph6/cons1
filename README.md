@@ -303,7 +303,13 @@ text's colour (`SERIF_STEPS` for Georgia / Times, regular and bold only; `POPPIN
 `public/appo-assets/fonts`, of which only the weights a sticker writes travel inside it, `poppinsWeights`). Anything as made is left
 out, so a sticker nobody restyled is drawn exactly as before. The editors share `StickerLookFields.tsx` (boldness and colour rows,
 the QR colour, and the "On the sticker" checkboxes). New M gains an **Approving officer's name** set, off until turned on; both
-stickers write the 7-digit document number in Times New Roman Bold.
+stickers write the 7-digit document number in Times New Roman Bold. Appo gains a **Designation** set (the officer's designation
+under the name), off until turned on.
+
+**Print size.** The background and everything on it print as one: `printWidth` in the placement (points, at least 1 cm) sets how
+wide the whole sticker prints, its height following its shape; `pointsPerUnit` uses it before the background PDF's own size.
+`PrintSizeField` in the editors takes width or height in cm, mm or inches. Appo's editor view fits the whole sticker in its box at
+100%, however long.
 
 ## Document numbers
 

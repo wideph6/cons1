@@ -781,6 +781,8 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
   - **On the sticker** list: har set ke saath checkbox — tick hata den to woh set har sticker se gayab, tick karen to wapas.
   - New M mein **Approving officer's name** naya set hai (shuru mein off): tick karen to officer ka naam designation ke neeche aata
     hai; phir hila kar, size aur bold/rang set karen.
+  - Appo mein **Designation** naya set hai (shuru mein off): **On the sticker** list mein tick karen to officer ki designation
+    us ke naam ke neeche aati hai; phir hila kar, size aur bold/rang set karen.
   - **7 digit document number** sticker par **Times New Roman Bold** mein likha jata hai (seedhe, aik oonchai wale number).
 - Ye sab (jagah, size, ungroup, badle hue lafz, bold, rang, on/off, QR ka rang) **database** mein background ki position ke saath
   save hota hai — code mein kahin nahi. Pehle ki tarah **Save position** dabayen.
@@ -1101,6 +1103,13 @@ Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote ha
   background ki lambai leta hai — download bhi isi lambai mein banta hai. Har value, QR code aur signature background ke khaanon ke
   saath hi khisak jate hain (khinchi hui image wapas sahi tanasub mein; khaali pattiyan kat jati hain). Editor kholen to neela
   paigham batata hai; sab theek ho to **Save position** dabayen taake ye database mein bhi save ho jaye.
+- **Print size of the whole sticker (New M aur Appo):** Background image editor mein ye panel hamesha nazar aata hai. Background
+  (image ya PDF) aur us par saari values, lafz, signature aur QR code **aik set ki tarah** aik saath print hote hain — yahan poore
+  sticker ki **Width** ya **Height** likhen (cm, mm ya inch); doosri khud usi tanasub se ban jati hai, kuch nahi khinchta. Download
+  hone wali PDF bilkul itni hi jagah leti hai (print par 100% / "Actual size" chunen). **As made** se wapas: background PDF ka apna
+  size, ya image ke liye 96 units fi inch. Phir **Save position**.
+- **View (Appo):** 100% par poora sticker box mein nazar aata hai, chahe kitna lamba ho; − / + se bara kar ke scroll karen, **Fit** se
+  wapas poora.
 - **Match the background** (pehle "Match the image"): image hilane/crop karne ke baad sticker ko dobara background ki lambai par
   laata hai — values apni jagah background par wahin rehti hain.
 - **Appo mein bhi PDF:** list ka **Download PDF** aur sticker window ka **Download PDF** — PDF asal sticker ke size ki banti hai

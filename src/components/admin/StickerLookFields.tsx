@@ -1,6 +1,7 @@
 "use client";
 
 import { Minus, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button, Checkbox, Select } from "@/components/ui";
 import { BOLD_MAX, BOLD_MIN, BOLD_NAMES, clampBold, INK, NO_FILL, QR_PAPER, type StyleKey, type TextStyle } from "@/lib/sticker-style";
 
@@ -187,6 +188,116 @@ export function StickerSetsShown<Id extends string>({
         {sets.map((s) => (
           <Checkbox key={s.id} label={s.name} checked={shown(s.id)} disabled={disabled} onChange={(e) => onChange(s.id, e.target.checked)} />
         ))}
+      </div>
+    </div>
+  );
+}
+
+const PRINT_UNITS = [
+  { id: "cm", label: "cm", points: 72 / 2.54, step: 0.1 },
+  { id: "mm", label: "mm", points: 72 / 25.4, step: 1 },
+  { id: "in", label: "inch", points: 72, step: 0.05 },
+] as const;
+type PrintUnit = (typeof PRINT_UNITS)[number]["id"];
+
+/**
+ * The size the whole sticker prints at: the background (image or PDF) with every value, word and the QR code
+ * on it, as one. Width or height can be typed; the other follows, so the sticker keeps its shape. Stored as
+ * the width in points (printWidth); left out, it prints as made.
+ */
+export function PrintSizeField({
+  size,
+  madePoints,
+  value,
+  disabled,
+  onChange,
+}: {
+  /** The sticker's own size, in sticker units. */
+  size: { width: number; height: number };
+  /** Points per sticker unit as made: the background PDF's own size, or 96 units to the inch. */
+  madePoints: number;
+  /** The width set, in points; null for as made. */
+  value: number | null;
+  disabled?: boolean;
+  onChange: (printWidth: number | null) => void;
+}) {
+  const [unit, setUnit] = useState<PrintUnit>("cm");
+  const u = PRINT_UNITS.find((x) => x.id === unit)!;
+  const widthPt = value ?? size.width * madePoints;
+  const heightPt = (widthPt * size.height) / size.width;
+  /** A length in points, in the chosen unit: whole millimetres, or hundredths of a centimetre or inch. */
+  const shown = (pt: number) => String(Number((pt / u.points).toFixed(unit === "mm" ? 0 : 2)));
+  const [draft, setDraft] = useState<{ w: string; h: string } | null>(null);
+  useEffect(() => setDraft(null), [value, unit, size.width, size.height]);
+  const put = (side: "w" | "h", text: string) => {
+    setDraft(side === "w" ? { w: text, h: shown(heightPt) } : { w: shown(widthPt), h: text });
+    const n = Number(text);
+    if (!text.trim() || !Number.isFinite(n) || n <= 0) return;
+    const pt = n * u.points;
+    const w = side === "w" ? pt : (pt * size.width) / size.height;
+    if (w < 28.35 || w > 14400) return;
+    onChange(Math.round(w * 100) / 100);
+  };
+  return (
+    <div className="rounded-md border bg-surface-2 p-3 space-y-2">
+      <div className="text-[12.5px] font-medium">
+        Print size of the whole sticker
+        <span className="font-normal text-text-muted">
+          {" "}
+          · the background and everything on it (words, values, signature, QR code) print together as one set, at this size.
+          Type the width or the height; the other follows, so nothing is stretched.
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+        <label className="inline-flex items-center gap-1.5">
+          Width
+          <input
+            type="number"
+            min={0}
+            step={u.step}
+            value={draft?.w ?? shown(widthPt)}
+            disabled={disabled}
+            aria-label="Printed width"
+            className="w-24 rounded-md border border-line-strong bg-surface px-2 h-8"
+            onChange={(e) => put("w", e.target.value)}
+            onBlur={() => setDraft(null)}
+          />
+        </label>
+        <span>×</span>
+        <label className="inline-flex items-center gap-1.5">
+          Height
+          <input
+            type="number"
+            min={0}
+            step={u.step}
+            value={draft?.h ?? shown(heightPt)}
+            disabled={disabled}
+            aria-label="Printed height"
+            className="w-24 rounded-md border border-line-strong bg-surface px-2 h-8"
+            onChange={(e) => put("h", e.target.value)}
+            onBlur={() => setDraft(null)}
+          />
+        </label>
+        <select
+          value={unit}
+          disabled={disabled}
+          aria-label="Unit"
+          className="rounded-md border border-line-strong bg-surface px-2 h-8"
+          onChange={(e) => setUnit(e.target.value as PrintUnit)}
+        >
+          {PRINT_UNITS.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+        {value !== null ? (
+          <Button size="sm" disabled={disabled} onClick={() => onChange(null)}>
+            As made ({(Math.round(((size.width * madePoints) / u.points) * 100) / 100).toString()} {u.label} wide)
+          </Button>
+        ) : (
+          <span className="text-text-muted">as made</span>
+        )}
       </div>
     </div>
   );
