@@ -876,6 +876,11 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
     **Add after**, **Duplicate**, **Delete**. Har list ke aakhir mein **+** naya item jorta hai.
   - **Logo** (header, certificate, footer): **Upload logo** — PNG/JPG/WebP/GIF/SVG, 2 MB tak, **R2** mein `new-m/page/` ke neeche
     save hota hai. **Use the built-in emblem** wapas design wala emblem.
+  - Internet se li gayi bahut si "transparent PNG" asal mein transparent nahi hotin — grey/white khaane (dots) tasveer ke andar bane hote
+    hain aur page par logo ke peechhe dikhte. Ab upload karte waqt system ye khaane khud pehchaan kar **asal transparent** kar deta hai
+    (logo, us ke white hisse samet, waisa hi rehta hai; file PNG ban kar jati hai). Aisa ho to neeche note aata hai; asal tasveer hi
+    chahiye to **Upload it as it was**. Favicon aur Appo ke page par bhi yehi hota hai. Pehle se upload kiya hua dots wala logo dobara
+    upload karen, phir **Save**.
   - Labels ("Attestation number" waghera) ka naam badal sakte hain; un ke neeche ki value har document se aati hai.
   - **PDF viewer**: thumbnails khuli/band se shuru, aur toolbar ka har button dikhana/chhupana.
 - **Mobile view tab:** phone ke frame mein mobile page bilkul waisa jaisa phone par. Yahan bhi **har** cheez par click se us ki settings

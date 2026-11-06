@@ -201,6 +201,10 @@ Text, links and settings are saved as JSON in `new_m_page_settings` (one row per
 default); logos go to R2 under `new-m/page/` and are deleted when replaced or removed and no longer used by either view. The content
 is checked on the server (`cleanDesktop` / `cleanMobile`): links must be http(s), mailto, tel or same-site, and logo keys must be under `new-m/page/`. A save made against an
 older copy than the one stored is refused with a reload hint.
+A logo or favicon that only looks transparent — the grey and white squares of an image editor painted into the picture, common in
+"transparent PNG" downloads — has the squares made truly see-through in the browser before it uploads (`src/lib/fake-transparency.ts`:
+it finds two greys alternating on one square grid and clears them, keeping the logo, white parts included; the result goes up as a
+PNG). Images without the pattern go up untouched, and **Upload it as it was** sends the original. The same holds on Appo's page.
 
 A New M domain still has to point at this deployment (DNS, and attached in Vercel) before its links can answer.
 

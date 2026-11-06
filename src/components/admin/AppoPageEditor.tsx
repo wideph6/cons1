@@ -41,6 +41,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { api, ClientError, postFormWithProgress, qs } from "@/lib/client";
+import { withoutFakeTransparency } from "@/lib/fake-transparency";
 import {
   CERTIFICATE_BORDER_SIDES,
   CERTIFICATE_FONTS,
@@ -2056,12 +2057,16 @@ function FaviconField({
   const input = useRef<HTMLInputElement>(null);
   const url = value.key ? assets[value.key] : null;
 
-  async function upload(file: File) {
+  /** The image as chosen, when the squares painted behind it were taken out before uploading. */
+  const [original, setOriginal] = useState<{ key: string; file: File } | null>(null);
+
+  async function upload(file: File, asIs = false) {
     setBusy(true);
     setProgress(0);
     try {
+      const sent = asIs ? { file, cleared: false } : await withoutFakeTransparency(file, MAX_FAVICON_BYTES);
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", sent.file);
       form.append("kind", "favicon");
       const r = await postFormWithProgress<{ key: string; url: string; content_type: string; filename: string }>(
         "/api/admin/appo/page/asset",
@@ -2070,7 +2075,12 @@ function FaviconField({
       );
       onUploaded(r.key, r.url);
       onChange({ key: r.key, content_type: r.content_type, filename: r.filename });
-      toast("Favicon uploaded. Save the page to put it live.");
+      setOriginal(sent.cleared ? { key: r.key, file } : null);
+      toast(
+        sent.cleared
+          ? "Favicon uploaded. The grey and white squares painted behind it were made see-through. Save the page to put it live."
+          : "Favicon uploaded. Save the page to put it live.",
+      );
     } catch (e) {
       toast(errorMessage(e), "danger");
     } finally {
@@ -2114,10 +2124,30 @@ function FaviconField({
           </Button>
         ) : null}
       </div>
+      {original && original.key === value.key ? (
+        <SquaresNote what="favicon" busy={busy} onAsIs={() => void upload(original.file, true)} />
+      ) : null}
       <p className="text-[12.5px] text-text-muted mt-1.5">
         A square image: ICO or PNG (at least 48 × 48, best 512 × 512) shows in every browser; SVG in most, but not
         Safari. Up to 1 MB, stored in R2. Visitors see it after the page is saved.
       </p>
+    </div>
+  );
+}
+
+/** The most a logo and a favicon may be; the same limits as the upload route's. */
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const MAX_FAVICON_BYTES = 1024 * 1024;
+
+/** Says the painted squares were taken out of the image, with a way to upload it as it was. */
+function SquaresNote({ what, busy, onAsIs }: { what: string; busy: boolean; onAsIs: () => void }) {
+  return (
+    <div className="rounded-md border border-dashed px-2.5 py-2 text-[12.5px] text-text-muted">
+      This {what} had grey and white squares painted behind it (a picture that only looks transparent). They were
+      made see-through before uploading, so they do not show on the page.{" "}
+      <button type="button" className="underline hover:text-text disabled:opacity-50" disabled={busy} onClick={onAsIs}>
+        Upload it as it was
+      </button>
     </div>
   );
 }
@@ -2143,13 +2173,17 @@ function ImageFields({
   const input = useRef<HTMLInputElement>(null);
   const url = value.key ? assets[value.key] : null;
   const white = path === "footer.logo";
+  /** The image as chosen, when the squares painted behind it were taken out before uploading. */
+  const [original, setOriginal] = useState<{ key: string; file: File } | null>(null);
 
-  async function upload(file: File) {
+  async function upload(file: File, asIs = false) {
     setBusy(true);
     setProgress(0);
     try {
+      // Grey and white squares painted into a "transparent" logo would show behind it on the page.
+      const sent = asIs ? { file, cleared: false } : await withoutFakeTransparency(file, MAX_LOGO_BYTES);
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", sent.file);
       const r = await postFormWithProgress<{ key: string; url: string; content_type: string; filename: string }>(
         "/api/admin/appo/page/asset",
         form,
@@ -2157,7 +2191,12 @@ function ImageFields({
       );
       onUploaded(r.key, r.url);
       onChange(path, { ...value, key: r.key, content_type: r.content_type, filename: r.filename });
-      toast("Logo uploaded. Save the page to put it live.");
+      setOriginal(sent.cleared ? { key: r.key, file } : null);
+      toast(
+        sent.cleared
+          ? "Logo uploaded. The grey and white squares painted behind it were made see-through. Save the page to put it live."
+          : "Logo uploaded. Save the page to put it live.",
+      );
     } catch (e) {
       toast(errorMessage(e), "danger");
     } finally {
@@ -2197,9 +2236,13 @@ function ImageFields({
           </Button>
         ) : null}
       </div>
+      {original && original.key === value.key ? (
+        <SquaresNote what="logo" busy={busy} onAsIs={() => void upload(original.file, true)} />
+      ) : null}
       <p className="text-[12.5px] text-text-muted">
         PNG, JPG, WebP, GIF or SVG up to 2 MB, stored in R2. A square logo fits best; it is scaled to the space in the
-        design. {white ? "This one sits on the dark green footer, so a white or light logo reads best." : null}
+        design. Grey and white squares painted behind a &quot;transparent&quot; logo are made see-through as it uploads.{" "}
+        {white ? "This one sits on the dark green footer, so a white or light logo reads best." : null}
       </p>
       <Field label="Description" hint="Read out by screen readers in place of the logo.">
         <Input value={value.alt} onChange={(e) => set("alt", e.target.value)} />
