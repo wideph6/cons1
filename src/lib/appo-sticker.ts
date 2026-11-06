@@ -43,8 +43,8 @@ export interface StickerSize {
 }
 export const DEFAULT_SIZE: StickerSize = { width: STICKER_W, height: STICKER_H };
 /** The narrowest/widest and shortest/tallest a sticker may be, in sticker units. */
-export const MIN_SIDE = 150;
-export const MAX_SIDE = 6000;
+export const MIN_SIDE = 60;
+export const MAX_SIDE = 12000;
 
 /** The sticker for an image of these pixels: STICKER_W wide and as tall as the image's proportions make it. */
 export function sizeForImage(imageWidth: number, imageHeight: number): StickerSize {
@@ -1100,3 +1100,76 @@ export function clampOffset(box: Rect, o: SetOffset, size: StickerSize = DEFAULT
     dy: Math.min(Math.max(o.dy, -box.y), size.height - box.y - box.height),
   };
 }
+
+/** A sticker made the shape of its background: the background's place, the sticker's size, and the moved sets. */
+export interface FittedSticker {
+  /** Where the background sits, and what is cropped off it (unchanged). */
+  placement: BackgroundPlacement;
+  size: StickerSize;
+  layout: StickerLayout;
+}
+
+/**
+ * The sticker made the shape of its background image, with everything on it kept where it sits on the
+ * background: a background stretched out of its proportions is put back in them (each set moves down or up
+ * with the cell it sits in), and then the sticker becomes the part of the background shown on it, STICKER_W
+ * wide (sets move and size with it). For a sticker made before stickers followed their background, and for
+ * Match the image. boxes are the sets' boxes as drawn before any move (stickerSetBoxes).
+ */
+export function fitToBackground(
+  p: BackgroundPlacement,
+  image: { width: number; height: number },
+  layout: StickerLayout,
+  boxes: Partial<Record<StickerSetId, SetBoxes>>,
+): FittedSticker {
+  const size0 = stickerSize(p);
+  const crop = p.crop;
+  // 1. Back in proportion: only the height changes, everything on the sticker moving with it.
+  const ky = image.width > 0 && image.height > 0 && p.height > 0 ? (p.width * image.height) / image.width / p.height : 1;
+  let box = { x: p.x, y: p.y * ky, width: p.width, height: p.height * ky };
+  const tall = { width: size0.width, height: size0.height * ky };
+  const moved: StickerLayout = {};
+  const centre = (set: StickerSetId) => {
+    const b = boxes[set];
+    if (!b) return null;
+    const g = groupRect(b, layout[set]);
+    return { x: g.x + g.width / 2, y: g.y + g.height / 2 };
+  };
+  for (const { id } of STICKER_SETS) {
+    const l = layout[id];
+    const c = centre(id);
+    if (!c) {
+      if (l) moved[id] = { ...l };
+      continue;
+    }
+    const dy = (c.y + (l?.dy ?? 0)) * ky - c.y;
+    moved[id] = { ...(l ?? { dx: 0 }), dx: l?.dx ?? 0, dy };
+  }
+  // 2. The sticker becomes the part of the background shown on it, STICKER_W wide.
+  const shown = visibleRect({ ...box, crop });
+  const left = Math.max(0, shown.x);
+  const top = Math.max(0, shown.y);
+  const right = Math.min(tall.width, shown.x + shown.width);
+  const bottom = Math.min(tall.height, shown.y + shown.height);
+  if (right - left < 1 || bottom - top < 1) {
+    return { placement: fitPlacement(image.width, image.height, sizeForImage(image.width, image.height)), size: sizeForImage(image.width, image.height), layout };
+  }
+  const k = STICKER_W / (right - left);
+  const height = Math.min(MAX_SIDE, Math.max(MIN_SIDE, (bottom - top) * k));
+  box = { x: (box.x - left) * k, y: (box.y - top) * k, width: box.width * k, height: box.height * k };
+  const out: StickerLayout = {};
+  for (const [set, l] of Object.entries(moved) as Array<[StickerSetId, SetLayout]>) {
+    const c = centre(set);
+    if (!c) {
+      out[set] = l;
+      continue;
+    }
+    const next: SetLayout = { ...l, dx: (c.x + l.dx - left) * k - c.x, dy: (c.y + l.dy - top) * k - c.y };
+    const sc = Math.round((l.scale ?? 1) * k * 1000) / 1000;
+    if (Math.abs(sc - 1) > 0.0005) next.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, sc));
+    else delete next.scale;
+    out[set] = next;
+  }
+  return { placement: crop ? { ...box, crop } : box, size: { width: STICKER_W, height }, layout: out };
+}
+

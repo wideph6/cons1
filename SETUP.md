@@ -1094,11 +1094,15 @@ Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote ha
 ## 13A.6 Background image: view zoom aur size
 
 - **Sticker ka size image ke mutabiq (New M aur Appo dono):** nayi background image chunen to sticker khud usi image ki shakal
-  le leta hai (chorai 958, oonchai image ke tanasub se) aur image poora sticker bhar deti hai. Pehle se save background par
-  **Match the image** dabayen to sticker us image ki shakal le leta hai. Sticker ka size "Sticker 958 × …" mein nazar aata hai
-  aur database mein save hota hai. Download bhi isi shakal mein banta hai (New M aur Appo dono: PDF). Purana sticker abhi tak
-  fix size (958 × 761) par ho aur image ki shakal alag ho to editor (New M aur Appo dono) peela paigham dikhata hai — **Match the
-  image** dabayen.
+  le leta hai (chorai 958, oonchai image ke tanasub se) aur image poora sticker bhar deti hai. **Lambai free hai** — lambi ya chhoti
+  jaisi bhi image ho (oonchai 60 se 12000 tak), sticker usi ki lambai leta hai. Sticker ka size "Sticker 958 × …" mein nazar aata
+  hai aur database mein save hota hai. Download bhi isi shakal mein banta hai (New M aur Appo dono: PDF).
+- **Purana fix size wala sticker:** jo background us waqt save hui thi jab sticker 958 × 761 par fix hota tha, woh ab **khud** apni
+  background ki lambai leta hai — download bhi isi lambai mein banta hai. Har value, QR code aur signature background ke khaanon ke
+  saath hi khisak jate hain (khinchi hui image wapas sahi tanasub mein; khaali pattiyan kat jati hain). Editor kholen to neela
+  paigham batata hai; sab theek ho to **Save position** dabayen taake ye database mein bhi save ho jaye.
+- **Match the background** (pehle "Match the image"): image hilane/crop karne ke baad sticker ko dobara background ki lambai par
+  laata hai — values apni jagah background par wahin rehti hain.
 - **Appo mein bhi PDF:** list ka **Download PDF** aur sticker window ka **Download PDF** — PDF asal sticker ke size ki banti hai
   (background PDF se bani ho to usi PDF jitni). Background image ki jagah **PDF** bhi upload ho sakti hai (pehla page; sticker us ki
   lambai le leta hai, values pehle ki tarah us par set hoti hain) — bilkul New M jaisa (Hissa 13.5a / 13.5b).

@@ -13,6 +13,7 @@ import {
   clampPlacement,
   cleanPlacement,
   fitPlacement,
+  fitToBackground,
   DEFAULT_SIZE,
   FULL_PLACEMENT,
   fullPlacement,
@@ -146,8 +147,24 @@ function loadBackground(): Promise<Background> {
 }
 
 /** PNGs come out at three times the layout size at least, or at the background's own resolution if higher. */
-function scaleFor(bg: Background): number {
-  return Math.max(3, bg.width / (bg.placement ?? FULL_PLACEMENT).width);
+function scaleFor(imageWidth: number, placement: BackgroundPlacement | null): number {
+  const want = Math.max(3, imageWidth / (placement ?? FULL_PLACEMENT).width);
+  const s = stickerSize(placement);
+  // A browser draws at most 16384 px a side and about 150 million pixels in all, so a very long sticker is drawn less sharp.
+  return Math.min(want, 16384 / Math.max(s.width, s.height), Math.sqrt(150e6 / (s.width * s.height)));
+}
+
+/**
+ * The placement a sticker is drawn with. One saved before stickers followed their background still has the
+ * old fixed size in the database; it is drawn at its background's length all the same (fitToBackground,
+ * everything moved with the background's cells), until the super admin saves it so.
+ */
+function drawnPlacement(bg: Background, values: StickerValues): BackgroundPlacement | null {
+  const p = bg.placement;
+  if (p?.size) return p;
+  const boxes = stickerSetBoxes({ drawFrame: !bg.hasFrame, texts: p?.texts, layout: p?.layout, ...values }, measure);
+  const f = fitToBackground(p ?? FULL_PLACEMENT, { width: bg.width, height: bg.height }, p?.layout ?? {}, boxes);
+  return withPdfPage(withSize(withTexts(withLayout(f.placement, f.layout), p?.texts ?? {}), f.size), p?.pdfPage);
 }
 
 /** The officer's signature a document carries, inline, or null for none. */
@@ -186,18 +203,20 @@ export interface MadeSticker {
 /** One document's sticker, built from its current values, its officer's signature and its saved QR code. */
 export async function renderSticker(record: NewMRecord): Promise<MadeSticker> {
   const [bg, signature] = await Promise.all([loadBackground(), recordSignature(record)]);
+  const values = recordValues(record, signature);
+  const placement = drawnPlacement(bg, values);
   const svg = buildStickerSvg(
     {
       background: bg.dataUri,
-      placement: bg.placement,
+      placement,
       drawFrame: !bg.hasFrame,
-      layout: bg.placement?.layout,
-      texts: bg.placement?.texts,
-      ...recordValues(record, signature),
+      layout: placement?.layout,
+      texts: placement?.texts,
+      ...values,
     },
     measure,
   );
-  return { svg, scale: scaleFor(bg), size: stickerSize(bg.placement), points: pointsPerUnit(bg.placement) };
+  return { svg, scale: scaleFor(bg.width, placement), size: stickerSize(placement), points: pointsPerUnit(placement) };
 }
 
 /** Saves a made sticker as a one-page PDF of the sticker's real size. */
@@ -456,6 +475,10 @@ export function NewMBackgroundDialog({
   const [pdfPage, setPdfPage] = useState<PdfPage | null>(null);
   /** Reading a chosen PDF. */
   const [reading, setReading] = useState(false);
+  /** The sticker had the old fixed size and was just made its background's length here, not saved yet. */
+  const [fitted, setFitted] = useState(false);
+  /** Set when the saved sticker has the old fixed size, so it is fitted once its sets can be measured. */
+  const fitOnOpen = useRef(false);
   /** Showing the crop handles and the cut-off parts. */
   const [cropping, setCropping] = useState(false);
   /** The sets moved off their measured places. */
@@ -487,6 +510,8 @@ export function NewMBackgroundDialog({
   useEffect(() => {
     if (!open) return;
     setInfo(null);
+    setFitted(false);
+    fitOnOpen.current = false;
     setSaved(null);
     setImage(null);
     setCropping(false);
@@ -508,6 +533,8 @@ export function NewMBackgroundDialog({
       const current = { dataUri: bg.dataUri, width: bg.width, height: bg.height, file: null };
       setSaved(current);
       setImage(current);
+      // Saved before stickers followed their background: fitted to it below, once the sets are measured.
+      if (!i.placement?.size) fitOnOpen.current = true;
     })()
       .catch((e) => {
         if (!cancelled) setError(errorMessage(e));
@@ -588,8 +615,27 @@ export function NewMBackgroundDialog({
     setHasFrame(false);
   }
 
+  /** The sticker made its background's length, everything on it moved with the background's cells. */
+  function fitSticker(): boolean {
+    if (!image) return false;
+    const f = fitToBackground(withCrop(placement, crop), image, layout, setBoxes);
+    if (Math.abs(f.size.height - size.height) < 1 && Math.abs(f.size.width - size.width) < 1) return false;
+    setSize(f.size);
+    setPlacement(box(f.placement));
+    setLayout(f.layout);
+    return true;
+  }
+
+  useEffect(() => {
+    if (!open || !fitOnOpen.current || !image || image.file || !Object.keys(setBoxes).length) return;
+    fitOnOpen.current = false;
+    if (fitSticker()) setFitted(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, image, setBoxes]);
+
   function discard() {
     setError(null);
+    setFitted(false);
     setImage(saved);
     setHasFrame(info?.has_frame ?? false);
     showSaved(info?.placement ?? null);
@@ -892,6 +938,10 @@ export function NewMBackgroundDialog({
   const ratioOff = image ? Math.abs(image.width / image.height / (size.width / size.height) - 1) > 0.015 : false;
   const stretched = samePlacement(withSize(placement, size), withSize(fullPlacement(size), size));
   const imageShape = image ? sizeForImage(image.width, image.height) : null;
+  /** The sticker the background would make: its length, with everything kept where it sits on the background. */
+  const fitSize = image ? fitToBackground(withCrop(placement, crop), image, layout, setBoxes).size : size;
+  const fitsBackground = Math.abs(fitSize.height - size.height) < 1 && Math.abs(fitSize.width - size.width) < 1;
+  const fitShape = { width: Math.round(fitSize.width), height: Math.round(fitSize.height) };
   /** The sticker already has the image's shape. */
   const matchesImage = imageShape ? Math.abs(imageShape.height - size.height) < 1 && Math.abs(imageShape.width - size.width) < 1 : true;
 
@@ -962,12 +1012,12 @@ export function NewMBackgroundDialog({
               {info.updated_at ? `, set ${formatDateTime(info.updated_at)}` : ""}. PDF stickers come out{" "}
               {pageSizeText(size, pdfPage, placement)}.
             </p>
-            {image && !matchesImage && imageShape ? (
-              <Alert tone="warn">
-                This sticker still has a fixed size ({Math.round(size.width)} × {Math.round(size.height)}), set before stickers
-                followed their background. The image is {image.width} × {image.height}: press <strong>Match the image</strong>{" "}
-                under it so the sticker takes the image&apos;s length, then line the values up again and save. A newly
-                uploaded image or PDF takes its own length by itself.
+            {fitted ? (
+              <Alert tone="info">
+                This sticker was saved at the old fixed size (958 × 761). It now takes its background&apos;s length (
+                {Math.round(size.width)} × {Math.round(size.height)}), every value, the QR code and the signature moved with the
+                background&apos;s cells — downloads are made so already. Check that everything sits right, then press{" "}
+                <strong>Save position</strong>. The length is free: a new image or PDF always brings its own.
               </Alert>
             ) : null}
           </>
@@ -1114,17 +1164,16 @@ export function NewMBackgroundDialog({
               >
                 Reset position
               </Button>
-              {!matchesImage && imageShape ? (
+              {!fitsBackground ? (
                 <Button
                   size="sm"
                   disabled={busy}
-                  title="Make the sticker the image's shape, with the image filling it"
+                  title="Make the sticker the background's length, with everything on it kept where it sits on the background"
                   onClick={() => {
-                    setSize(imageShape);
-                    setPlacement(kept(fitPlacement(image.width, image.height, imageShape)));
+                    fitSticker();
                   }}
                 >
-                  Match the image ({imageShape.width} × {imageShape.height})
+                  Match the background ({fitShape.width} × {fitShape.height})
                 </Button>
               ) : null}
               <span className="tabular-nums" title="The sticker's size, in sticker units. It follows the background image's shape.">
