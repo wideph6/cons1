@@ -109,7 +109,8 @@ export async function pdfToBackground(pdf: File, maxBytes: number): Promise<PdfB
 
 /**
  * A sticker as a one-page PDF: the sticker drawn at `scale` times its size (as sharp as the PNG was) on
- * a page of the sticker's real size, `pointsPerUnit` points for every sticker unit.
+ * a page of the sticker's real size, `pointsPerUnit` points for every sticker unit. creator names the
+ * system that made it (New M, Appo).
  */
 export async function stickerPdf(
   svg: string,
@@ -117,11 +118,12 @@ export async function stickerPdf(
   scale: number,
   pointsPerUnit: number,
   title: string,
+  creator = "New M",
 ): Promise<Blob> {
   const [png, { PDFDocument }] = await Promise.all([svgToPng(svg, scale), import("pdf-lib")]);
   const doc = await PDFDocument.create();
   doc.setTitle(title);
-  doc.setCreator("New M");
+  doc.setCreator(creator);
   const image = await doc.embedPng(new Uint8Array(await png.arrayBuffer()));
   const width = size.width * pointsPerUnit;
   const height = size.height * pointsPerUnit;

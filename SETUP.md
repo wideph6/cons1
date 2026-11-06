@@ -1096,8 +1096,12 @@ Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote ha
 - **Sticker ka size image ke mutabiq (New M aur Appo dono):** nayi background image chunen to sticker khud usi image ki shakal
   le leta hai (chorai 958, oonchai image ke tanasub se) aur image poora sticker bhar deti hai. Pehle se save background par
   **Match the image** dabayen to sticker us image ki shakal le leta hai. Sticker ka size "Sticker 958 × …" mein nazar aata hai
-  aur database mein save hota hai. Download bhi isi shakal mein banta hai (New M: PDF, Appo: PNG). Purana sticker abhi tak
-  fix size (958 × 761) par ho aur image ki shakal alag ho to New M ka editor peela paigham dikhata hai — **Match the image** dabayen.
+  aur database mein save hota hai. Download bhi isi shakal mein banta hai (New M aur Appo dono: PDF). Purana sticker abhi tak
+  fix size (958 × 761) par ho aur image ki shakal alag ho to editor (New M aur Appo dono) peela paigham dikhata hai — **Match the
+  image** dabayen.
+- **Appo mein bhi PDF:** list ka **Download PDF** aur sticker window ka **Download PDF** — PDF asal sticker ke size ki banti hai
+  (background PDF se bani ho to usi PDF jitni). Background image ki jagah **PDF** bhi upload ho sakti hai (pehla page; sticker us ki
+  lambai le leta hai, values pehle ki tarah us par set hoti hain) — bilkul New M jaisa (Hissa 13.5a / 13.5b).
 
 - **View** (− / + / Fit): sirf editor ki tasveer bari karta hai (100% se 400%). Bari karne par scroll aa jata hai, taake lambi image
   par bhi har cheez bilkul sahi jagah rakhi ja sake. Sticker ka asal size 958 × 761 hi rehta hai.

@@ -3,7 +3,8 @@
 import { Crop, Download, FileCode, Group, ImageUp, Minus, Move, Plus, RotateCcw, Ungroup, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Checkbox, Field, Input, Loading, Modal, errorMessage, useToast } from "@/components/ui";
-import { api, downloadSvgAsPng, downloadSvgFile } from "@/lib/client";
+import { api, downloadBlob, downloadSvgFile } from "@/lib/client";
+import { isPdfFile, MAX_PDF_BACKGROUND, pdfToBackground, stickerPdf } from "@/lib/sticker-pdf";
 import { DOC_NUMBER_EXAMPLE, numberExample, resolveLink, STANDARD_TEMPLATE } from "@/lib/appo-link";
 import {
   buildStickerOverlaySvg,
@@ -17,6 +18,9 @@ import {
   fullPlacement,
   sizeForImage,
   stickerSize,
+  pointsPerUnit,
+  withPdfPage,
+  type PdfPage,
   withSize,
   type StickerSize,
   MAX_PIECE_TEXT,
@@ -211,8 +215,17 @@ function recordValues(record: AppoRecord, signature: string | null): StickerValu
   };
 }
 
+/** A sticker ready to show and to save: the SVG, how much sharper than its size the PDF draws it, and its real size. */
+export interface MadeSticker {
+  svg: string;
+  scale: number;
+  size: StickerSize;
+  /** Points per sticker unit in the PDF: the background PDF's own size, or 96 units to the inch. */
+  points: number;
+}
+
 /** One document's sticker, built from its current values, its officer's signature and its saved QR code. */
-export async function renderSticker(record: AppoRecord): Promise<{ svg: string; scale: number }> {
+export async function renderSticker(record: AppoRecord): Promise<MadeSticker> {
   const bg = await loadBackground();
   // Only the weights of Poppins this sticker writes travel inside it.
   const [signature, valueFonts] = await Promise.all([recordSignature(record), loadValueFonts(poppinsWeights(bg.placement?.layout))]);
@@ -228,12 +241,29 @@ export async function renderSticker(record: AppoRecord): Promise<{ svg: string; 
     },
     measure,
   );
-  return { svg, scale: scaleFor(bg) };
+  return { svg, scale: scaleFor(bg), size: stickerSize(bg.placement), points: pointsPerUnit(bg.placement) };
 }
 
+/** Saves a made sticker as a one-page PDF of the sticker's real size. */
+export async function saveStickerPdf(record: AppoRecord, sticker: MadeSticker): Promise<void> {
+  const name = `${record.attestation_number}-sticker`;
+  downloadBlob(await stickerPdf(sticker.svg, sticker.size, sticker.scale, sticker.points, name, "Appo"), `${name}.pdf`);
+}
+
+/** One document's sticker, made and saved as a PDF straight from the list. */
 export async function downloadSticker(record: AppoRecord): Promise<void> {
-  const { svg, scale } = await renderSticker(record);
-  await downloadSvgAsPng(svg, `${record.attestation_number}-sticker.png`, scale);
+  await saveStickerPdf(record, await renderSticker(record));
+}
+
+/** The most a background image may weigh: it is served back through a function, capped near 4.5 MB. */
+const MAX_BACKGROUND = 4 * 1024 * 1024;
+
+/** How large the PDF sticker prints, e.g. "10.2 × 8.1 cm (4.0 × 3.2 in)". */
+function pageSizeText(size: StickerSize, page: PdfPage | null, placement: BackgroundPlacement): string {
+  const points = pointsPerUnit(withPdfPage(withSize(placement, size), page));
+  const cm = (v: number) => (((v * points) / 72) * 2.54).toFixed(1);
+  const inch = (v: number) => ((v * points) / 72).toFixed(1);
+  return `${cm(size.width)} × ${cm(size.height)} cm (${inch(size.width)} × ${inch(size.height)} in)`;
 }
 
 function svgDataUri(svg: string): string {
@@ -244,7 +274,7 @@ function svgDataUri(svg: string): string {
 
 export function AppoStickerDialog({ record, onClose }: { record: AppoRecord | null; onClose: () => void }) {
   const { toast } = useToast();
-  const [sticker, setSticker] = useState<{ svg: string; scale: number } | null>(null);
+  const [sticker, setSticker] = useState<MadeSticker | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -265,11 +295,11 @@ export function AppoStickerDialog({ record, onClose }: { record: AppoRecord | nu
     };
   }, [record]);
 
-  async function savePng() {
+  async function savePdf() {
     if (!record || !sticker) return;
     setBusy(true);
     try {
-      await downloadSvgAsPng(sticker.svg, `${record.attestation_number}-sticker.png`, sticker.scale);
+      await saveStickerPdf(record, sticker);
     } catch (e) {
       toast(errorMessage(e), "danger");
     } finally {
@@ -294,8 +324,8 @@ export function AppoStickerDialog({ record, onClose }: { record: AppoRecord | nu
             >
               Download SVG
             </Button>
-            <Button variant="primary" icon={<Download className="size-4" />} loading={busy} disabled={!sticker} onClick={savePng}>
-              Download PNG
+            <Button variant="primary" icon={<Download className="size-4" />} loading={busy} disabled={!sticker} onClick={savePdf}>
+              Download PDF
             </Button>
           </>
         ) : null
@@ -331,6 +361,8 @@ interface EditorImage {
   width: number;
   height: number;
   file: File | null;
+  /** Chosen as a PDF: its name and page count. Its first page was drawn into this image. */
+  fromPdf?: { name: string; pages: number };
 }
 
 type Side = keyof BackgroundCrop;
@@ -367,6 +399,10 @@ function box(p: BackgroundPlacement): BackgroundPlacement {
 }
 
 function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean {
+  if (Boolean(a.pdfPage) !== Boolean(b.pdfPage)) return false;
+  if (a.pdfPage && b.pdfPage && (Math.abs(a.pdfPage.width - b.pdfPage.width) >= 0.01 || Math.abs(a.pdfPage.height - b.pdfPage.height) >= 0.01)) {
+    return false;
+  }
   const ca = a.crop ?? NO_CROP;
   const cb = b.crop ?? NO_CROP;
   const sa = stickerSize(a);
@@ -464,6 +500,10 @@ export function AppoBackgroundDialog({
   /** The sticker's own size: it follows the image's shape (see sizeForImage). */
   const [size, setSize] = useState<StickerSize>(DEFAULT_SIZE);
   const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
+  /** The page size of the PDF the background was drawn from, which gives the PDF sticker its real size; null for an image. */
+  const [pdfPage, setPdfPage] = useState<PdfPage | null>(null);
+  /** Reading a chosen PDF. */
+  const [reading, setReading] = useState(false);
   /** Showing the crop handles and the cut-off parts. */
   const [cropping, setCropping] = useState(false);
   /** The sets moved off their measured places. */
@@ -500,6 +540,7 @@ export function AppoBackgroundDialog({
   function showSaved(p: BackgroundPlacement | null) {
     setPlacement(box(p ?? fullPlacement(stickerSize(p))));
     setSize(stickerSize(p));
+    setPdfPage(p?.pdfPage ?? null);
     setCrop(p?.crop ?? NO_CROP);
     setLayout(p?.layout ?? {});
     setTexts(p?.texts ?? {});
@@ -573,17 +614,38 @@ export function AppoBackgroundDialog({
     [open, values, hasFrame, texts, valueFonts],
   );
 
-  async function choose(file: File | null) {
+  async function choose(chosen: File | null) {
     setError(null);
-    if (!file) return;
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return setError("Choose a JPG, PNG or WebP image.");
-    if (file.size > 4 * 1024 * 1024) return setError("The background image must be 4 MB or smaller.");
+    if (!chosen) return;
+    // A PDF's first page is drawn into an image, which is what is uploaded and lined up; the PDF's page
+    // size is kept, so the PDF sticker comes out as large as the PDF was.
+    let file = chosen;
+    let page: PdfPage | null = null;
+    let fromPdf: EditorImage["fromPdf"];
+    if (isPdfFile(chosen)) {
+      if (chosen.size > MAX_PDF_BACKGROUND) return setError("The background PDF must be 30 MB or smaller.");
+      setReading(true);
+      try {
+        const drawn = await pdfToBackground(chosen, MAX_BACKGROUND - 64 * 1024);
+        file = drawn.file;
+        page = drawn.page;
+        fromPdf = { name: chosen.name, pages: drawn.pages };
+      } catch (e) {
+        return setError(errorMessage(e));
+      } finally {
+        setReading(false);
+      }
+    } else {
+      if (!/^image\/(jpeg|png|webp)$/.test(chosen.type)) return setError("Choose a PDF, or a JPG, PNG or WebP image.");
+      if (chosen.size > MAX_BACKGROUND) return setError("The background image must be 4 MB or smaller.");
+    }
     const dataUri = await blobToDataUri(file);
     const px = await imageSize(dataUri);
-    if (!px.width || !px.height) return setError("That image could not be opened.");
-    // The sticker takes the image's shape, and the image fills it.
+    if (!px.width || !px.height) return setError(fromPdf ? "That PDF could not be drawn." : "That image could not be opened.");
+    // The sticker takes the image's shape (the PDF page's, for a PDF), and the image fills it.
     const next = sizeForImage(px.width, px.height);
-    setImage({ dataUri, ...px, file });
+    setImage({ dataUri, ...px, file, fromPdf });
+    setPdfPage(page);
     setSize(next);
     setPlacement(fitPlacement(px.width, px.height, next));
     setCrop(NO_CROP);
@@ -605,7 +667,7 @@ export function AppoBackgroundDialog({
     if (!image) return;
     setBusy(true);
     try {
-      const sent = withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size);
+      const sent = withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage);
       let next: BackgroundInfo;
       if (image.file) {
         const form = new FormData();
@@ -886,7 +948,10 @@ export function AppoBackgroundDialog({
     image &&
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
-        !samePlacement(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), info?.placement ?? FULL_PLACEMENT)),
+        !samePlacement(
+          withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage),
+          info?.placement ?? FULL_PLACEMENT,
+        )),
   );
   // The layout is measured on a 958 x 761 sheet; an image of other proportions needs moving and cropping to fit.
   const ratioOff = image ? Math.abs(image.width / image.height / (size.width / size.height) - 1) > 0.015 : false;
@@ -911,9 +976,9 @@ export function AppoBackgroundDialog({
           <label className="inline-flex">
             <input
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="application/pdf,.pdf,image/jpeg,image/png,image/webp"
               className="sr-only"
-              disabled={busy}
+              disabled={busy || reading}
               onChange={(e) => {
                 void choose(e.target.files?.[0] ?? null);
                 e.target.value = "";
@@ -921,7 +986,7 @@ export function AppoBackgroundDialog({
             />
             <span className="inline-flex items-center gap-2 h-9 px-3.5 rounded-md border border-line-strong bg-surface text-sm font-medium cursor-pointer hover:bg-surface-2">
               <ImageUp className="size-4" />
-              {image ? "Choose a new image" : "Upload an image"}
+              {reading ? "Reading the PDF…" : image ? "Choose a new image or PDF" : "Upload an image or PDF"}
             </span>
           </label>
           {image ? (
@@ -935,7 +1000,8 @@ export function AppoBackgroundDialog({
       <div className="space-y-3">
         <p className="text-[13px] text-text-muted">
           Every sticker is drawn on this image; only the super admin can change it, and it is kept in storage, not in the
-          app&apos;s code. The values, signature and QR code always sit where they are shown here: drag the image and zoom
+          app&apos;s code. It can be a JPG, PNG or WebP image, or a PDF (its first page is used, and the sticker takes that
+          page&apos;s length; downloaded PDF stickers keep the PDF&apos;s real size). The values, signature and QR code always sit where they are shown here: drag the image and zoom
           until its cells line up under them, then crop off what is not wanted. With Move text &amp; QR, each value with its
           words, the QR code, the signature and the officer&apos;s name under it can be moved too; a value can be ungrouped
           from its words to move each on its own, and the words can be changed for the sticker. Save, and every sticker, on
@@ -944,7 +1010,9 @@ export function AppoBackgroundDialog({
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {image?.file ? (
           <Alert tone={ratioOff ? "warn" : "info"}>
-            New image: {image.file.name} ({image.width} × {image.height}).{" "}
+            {image.fromPdf
+              ? `New PDF: ${image.fromPdf.name}${image.fromPdf.pages > 1 ? ` (page 1 of ${image.fromPdf.pages} is used)` : ""}, drawn at ${image.width} × ${image.height}. The PDF sticker will be ${pageSizeText(size, pdfPage, placement)}.`
+              : `New image: ${image.file.name} (${image.width} × ${image.height}).`}{" "}
             {ratioOff
               ? `Its proportions differ from the sticker (${size.width} × ${size.height}) — move, zoom and crop it to fit.`
               : "Line it up below, then press Use this background. It takes the current image's place."}
@@ -952,10 +1020,22 @@ export function AppoBackgroundDialog({
         ) : info && !info.uploaded && !loading ? (
           <Alert tone="warn">No background image yet, so no sticker can be made. Upload one to start.</Alert>
         ) : info?.uploaded ? (
-          <p className="text-[12.5px] text-text-muted">
-            In use: {info.filename ?? "uploaded image"}
-            {info.updated_at ? `, set ${formatDateTime(info.updated_at)}` : ""}
-          </p>
+          <>
+            <p className="text-[12.5px] text-text-muted">
+              In use: {info.filename ?? "uploaded image"}
+              {info.placement?.pdfPage ? " (from a PDF)" : ""}
+              {info.updated_at ? `, set ${formatDateTime(info.updated_at)}` : ""}. PDF stickers come out{" "}
+              {pageSizeText(size, pdfPage, placement)}.
+            </p>
+            {image && !matchesImage && imageShape ? (
+              <Alert tone="warn">
+                This sticker still has a fixed size ({Math.round(size.width)} × {Math.round(size.height)}), set before stickers
+                followed their background. The image is {image.width} × {image.height}: press <strong>Match the image</strong>{" "}
+                under it so the sticker takes the image&apos;s length, then line the values up again and save. A newly
+                uploaded image or PDF takes its own length by itself.
+              </Alert>
+            ) : null}
+          </>
         ) : null}
 
         {image ? (

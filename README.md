@@ -265,7 +265,9 @@ Where Appo differs from New M:
   views. `record.certificate`
   is the box's look per view. All of it is page content in `appo_page_settings`.
 - **Sticker.** Its own sets (`appo-sticker.ts`): two-line Country, Document Type and 2–4; one-line 5–8 (a value starts where its
-  words end); "Date:"; the signature with the officer's name under it; the QR code with no border.
+  words end); "Date:"; the signature with the officer's name under it; the QR code with no border. Downloaded as a one-page PDF of
+  its real size, and its background may be a PDF (first page drawn in the browser, `pdfPage` kept in the placement), exactly as
+  New M's (`src/lib/sticker-pdf.ts`).
 
 Both stickers let the super admin **ungroup** a set in the background editor, moving its words and its value on their own, and
 **reword** the fixed words for the sticker only. Moves (`layout`, with `split` and per-half `parts`) and reworded words (`texts`,

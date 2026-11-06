@@ -493,6 +493,41 @@ export interface BackgroundPlacement {
   texts?: StickerTexts;
   /** The sticker's own size, following the image; left out for the size every sticker had at first (STICKER_W x STICKER_H). */
   size?: StickerSize;
+  /**
+   * The page size, in points (1/72 inch), of the PDF the background was made from; left out for an image.
+   * It gives the downloaded PDF sticker its real size: the background prints as large as its PDF page was.
+   */
+  pdfPage?: PdfPage;
+}
+
+/** A PDF page's width and height in points (1/72 inch). */
+export interface PdfPage {
+  width: number;
+  height: number;
+}
+
+/** The largest page a PDF reader accepts (200 inches), in points. */
+export const MAX_PDF_SIDE = 14400;
+/** Points per sticker unit for a background that says nothing of its size: 96 units to the inch, as on screen. */
+export const DEFAULT_POINTS_PER_UNIT = 0.75;
+
+/** The placement with the PDF page its background came from, or with none for an image. */
+export function withPdfPage(p: BackgroundPlacement, page: PdfPage | null | undefined): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.pdfPage;
+  return page ? { ...rest, pdfPage: { width: n(page.width), height: n(page.height) } } : rest;
+}
+
+/**
+ * How many points one sticker unit prints as. A background made from a PDF keeps that PDF's size (its page
+ * spans the background's width on the sticker); an image prints at 96 units to the inch. Kept within what
+ * a PDF page may measure.
+ */
+export function pointsPerUnit(p: BackgroundPlacement | null | undefined): number {
+  const size = stickerSize(p);
+  const raw = p?.pdfPage && p.width > 0 ? p.pdfPage.width / p.width : DEFAULT_POINTS_PER_UNIT;
+  const most = MAX_PDF_SIDE / Math.max(size.width, size.height);
+  return Math.min(Math.max(raw, 0.01), most);
 }
 
 /** No position saved: the image is stretched over the whole sticker. */
@@ -685,6 +720,14 @@ function cleanSize(v: unknown): StickerSize | null {
   return { width: n(width), height: n(height) };
 }
 
+/** A PDF page size sent or saved, or null when it is not a sane one. */
+function cleanPdfPage(v: unknown): PdfPage | null {
+  if (!v || typeof v !== "object") return null;
+  const { width, height } = v as Record<string, unknown>;
+  const ok = (k: unknown) => typeof k === "number" && Number.isFinite(k) && k >= 1 && k <= MAX_PDF_SIDE;
+  return ok(width) && ok(height) ? { width: n(width as number), height: n(height as number) } : null;
+}
+
 /** Four shares between 0 and 1 that leave something of the image, or null when they are not. */
 function cleanCrop(v: unknown): BackgroundCrop | null {
   if (!v || typeof v !== "object") return null;
@@ -733,7 +776,12 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     if (!t) return null;
     texts = t;
   }
-  const placed = withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size);
+  let pdfPage: PdfPage | null = null;
+  if (raw.pdfPage !== undefined && raw.pdfPage !== null) {
+    pdfPage = cleanPdfPage(raw.pdfPage);
+    if (!pdfPage) return null;
+  }
+  const placed = withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage);
   const s = visibleRect(placed);
   const onSticker = s.x < size.width && s.y < size.height && s.x + s.width > 0 && s.y + s.height > 0;
   return onSticker ? placed : null;

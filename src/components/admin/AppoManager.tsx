@@ -72,7 +72,7 @@ export function AppoManager() {
   const [domainsOpen, setDomainsOpen] = useState(false);
   const [qrFor, setQrFor] = useState<AppoRecord | null>(null);
   const [stickerFor, setStickerFor] = useState<AppoRecord | null>(null);
-  /** The document whose sticker PNG is being made straight from the list. */
+  /** The document whose sticker PDF is being made straight from the list. */
   const [stickerBusy, setStickerBusy] = useState<string | null>(null);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [prefixOpen, setPrefixOpen] = useState(false);
@@ -416,7 +416,7 @@ export function AppoManager() {
                           loading={stickerBusy === r.id}
                           onClick={() => saveSticker(r)}
                         >
-                          Download PNG
+                          Download PDF
                         </Button>
                       </div>
                     </td>
