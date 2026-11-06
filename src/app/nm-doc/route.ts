@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { readDocumentAddress } from "@/lib/new-m-link";
-import { faviconHref } from "@/lib/new-m-page";
+import { DEFAULT_DESKTOP, faviconHref, fillTitle, type DesktopContent } from "@/lib/new-m-page";
 import { getDesktop, publicFilename, rowByAddress } from "@/lib/new-m-page-server";
 import { APP_MARKER, presignDownload } from "@/lib/r2";
 
@@ -45,17 +45,22 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-/** The favicon of the PDF tab: its own, else the page's, else the app's icon. */
-async function tabIcon(): Promise<{ href: string; type: string | null }> {
+/** The page's settings for the PDF tab (title and favicon); the design's when they cannot be read. */
+async function tabSettings(): Promise<DesktopContent["meta"]> {
   try {
-    const { meta } = (await getDesktop()).content;
-    const own = faviconHref(meta.pdf_favicon, "pdf");
-    if (own) return { href: own, type: meta.pdf_favicon.content_type };
-    const page = faviconHref(meta.favicon);
-    if (page) return { href: page, type: meta.favicon.content_type };
+    return (await getDesktop()).content.meta;
   } catch (e) {
-    console.error("[new-m document tab] favicon", e);
+    console.error("[new-m document tab] settings", e);
+    return DEFAULT_DESKTOP.meta;
   }
+}
+
+/** The favicon of the PDF tab: its own, else the page's, else the app's icon. */
+function tabIcon(meta: DesktopContent["meta"]): { href: string; type: string | null } {
+  const own = faviconHref(meta.pdf_favicon, "pdf");
+  if (own) return { href: own, type: meta.pdf_favicon.content_type };
+  const page = faviconHref(meta.favicon);
+  if (page) return { href: page, type: meta.favicon.content_type };
   return { href: "/icon.svg", type: "image/svg+xml" };
 }
 
@@ -119,11 +124,17 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // The tab's title is the document's 40-character name.
+  // The tab's title is the super admin's PDF tab title, with the document's words filled in; at first
+  // (and when it comes out empty) the document's 40-character name.
+  const meta = await tabSettings();
   const nonce = crypto.randomUUID().replace(/-/g, "");
   const html = tabPage({
-    title: address.name,
-    icon: await tabIcon(),
+    title: fillTitle(
+      meta.pdf_title,
+      { name: address.name, attestation_number: row.attestation_number, document_type: row.document_type },
+      address.name,
+    ),
+    icon: tabIcon(meta),
     filename,
     view: `${path}?view`,
     download: `${path}?download`,

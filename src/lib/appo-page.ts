@@ -120,7 +120,11 @@ export interface DesktopContent {
    * The browser tab's title and icon, and whether the page animates as it opens. pdf_favicon is the
    * icon of the tab a document's PDF opens in; without one that tab shows the page's favicon.
    */
-  meta: { title: string; animations: boolean; favicon: PFavicon; pdf_favicon: PFavicon };
+  /**
+   * title: the verification page's browser tab; pdf_title: the tab a document's PDF opens in. Both may
+   * carry TITLE_WORDS, filled in from the document (see fillTitle).
+   */
+  meta: { title: string; pdf_title: string; animations: boolean; favicon: PFavicon; pdf_favicon: PFavicon };
   header: {
     logo: PImage;
     title: PLinkText;
@@ -426,6 +430,7 @@ export const DEFAULT_TOOLS: Record<ViewerTool, boolean> = Object.fromEntries(
 export const DEFAULT_DESKTOP: DesktopContent = {
   meta: {
     title: "General Attestation Verification",
+    pdf_title: "{name}",
     animations: true,
     favicon: { key: null, content_type: null, filename: null },
     pdf_favicon: { key: null, content_type: null, filename: null },
@@ -628,6 +633,31 @@ const MAX_HREF = 1000;
 /** The most items a list (menu, footer row, social icons…) keeps. */
 export const MAX_ITEMS = 24;
 
+/** The longest a browser tab title may be. */
+export const MAX_TITLE = 200;
+
+/**
+ * Words a tab title may carry, each filled in from the document the tab shows. {name} is the PDF's
+ * 40-character name, so only the PDF tab has it.
+ */
+export const TITLE_WORDS: { word: string; label: string; pdfOnly?: boolean }[] = [
+  { word: "{attestation_number}", label: "the document's number" },
+  { word: "{document_type}", label: "its document type" },
+  { word: "{name}", label: "the PDF's 40-character name", pdfOnly: true },
+];
+
+/**
+ * A tab title with its words filled in. A word with no value is dropped; a word not in values (a typo, or
+ * {name} on the page) is dropped too, so the tab never shows braces. Empty after that: fallback.
+ */
+export function fillTitle(template: string, values: Record<string, string | null | undefined>, fallback: string): string {
+  const out = template
+    .replace(/\{(\w+)\}/g, (_, k: string) => (Object.prototype.hasOwnProperty.call(values, k) ? (values[k] ?? "") : ""))
+    .replace(/\s+/g, " ")
+    .trim();
+  return out || fallback;
+}
+
 function str(v: unknown, fallback: string, max = MAX_TEXT): string {
   if (typeof v !== "string") return fallback;
   // Line breaks are kept (a heading can be split over two lines); other control characters are not.
@@ -793,7 +823,8 @@ export function cleanDesktop(input: unknown): DesktopContent {
 
   return {
     meta: {
-      title: str(meta.title, d.meta.title, 200),
+      title: str(meta.title, d.meta.title, MAX_TITLE).replace(/\n/g, " "),
+      pdf_title: str(meta.pdf_title, d.meta.pdf_title, MAX_TITLE).replace(/\n/g, " "),
       animations: bool(meta.animations, d.meta.animations),
       favicon: cleanFavicon(meta.favicon),
       pdf_favicon: cleanFavicon(meta.pdf_favicon),

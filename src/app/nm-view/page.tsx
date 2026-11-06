@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { MobilePage } from "@/components/new-m-page/MobilePage";
 import { VerifyPage } from "@/components/new-m-page/VerifyPage";
-import { faviconHref } from "@/lib/new-m-page";
+import { DEFAULT_DESKTOP, faviconHref, fillTitle } from "@/lib/new-m-page";
 import { assetUrls, findVisit, getDesktop, getMobile } from "@/lib/new-m-page-server";
 
 export const dynamic = "force-dynamic";
@@ -32,13 +32,25 @@ async function visit() {
   };
 }
 
+/** The visit's document, looked up once even though the title and the page both need it. */
+const loadVisit = cache(async () => {
+  const v = await visit();
+  return findVisit(v.host, v.path, v.search);
+});
+
 export async function generateMetadata(): Promise<Metadata> {
   try {
     const page = await loadPage();
-    const { favicon } = page.content.meta;
+    const { favicon, title } = page.content.meta;
     const icon = faviconHref(favicon);
+    // Words such as {attestation_number} are filled in from the document; a title without any needs no lookup.
+    const record = /\{\w+\}/.test(title) ? ((await loadVisit().catch(() => null))?.record ?? null) : null;
     return {
-      title: page.content.meta.title,
+      title: fillTitle(
+        title,
+        { attestation_number: record?.attestation_number, document_type: record?.document_type },
+        DEFAULT_DESKTOP.meta.title,
+      ),
       // Without an uploaded favicon the app's own icon shows.
       ...(icon ? { icons: { icon: [{ url: icon, type: favicon.content_type ?? undefined }], shortcut: icon } } : {}),
       robots: { index: false, follow: false },
@@ -58,7 +70,7 @@ export default async function VerifyRoute() {
   const v = await visit();
   if (!v.host) notFound();
 
-  const [result, page, mobile] = await Promise.all([findVisit(v.host, v.path, v.search), loadPage(), loadMobile()]);
+  const [result, page, mobile] = await Promise.all([loadVisit(), loadPage(), loadMobile()]);
   if (!result.matched) notFound();
 
   const assets = await assetUrls(page.content, mobile.content).catch(() => ({}));

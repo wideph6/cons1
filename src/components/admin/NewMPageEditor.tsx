@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AppWindow,
   ArrowDown,
   ArrowUp,
   Copy,
@@ -49,6 +50,9 @@ import {
   PAGE_VIEWS,
   DEFAULT_DESKTOP,
   DEFAULT_MOBILE,
+  fillTitle,
+  MAX_TITLE,
+  TITLE_WORDS,
   LINK_ICONS,
   MAX_ITEMS,
   MOBILE_VIEWER_MODES,
@@ -514,6 +518,12 @@ export function NewMPageEditor() {
     });
   }
 
+  /** The browser tab's settings live in the desktop view's content, so they open there. */
+  function openTabPanel() {
+    setView("desktop");
+    setSelected(TAB_PANEL);
+  }
+
   function switchView(v: PageView) {
     if (v === view) return;
     setView(v);
@@ -738,7 +748,17 @@ export function NewMPageEditor() {
   const shownRecord = showMissing ? null : record;
   const unsavedViews = [dirtyDesktop && "Desktop", dirtyMobile && "Mobile"].filter(Boolean).join(" and ");
 
-  const inspector = selected ? (
+  const inspector =
+    selected === TAB_PANEL ? (
+      <TabPanel
+        content={desktop}
+        record={record}
+        assets={assets}
+        onChange={(path, value) => edit("desktop", (c) => setAt(c, path, value))}
+        onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
+        onClose={() => setSelected(null)}
+      />
+    ) : selected ? (
     <Inspector
       key={`${view}:${selected}`}
       view={view}
@@ -769,6 +789,8 @@ export function NewMPageEditor() {
       onAdd={addTo}
       onCopyFromDesktop={() => setConfirm("copy")}
       onUploaded={(key, url) => setAssets((a) => ({ ...a, [key]: url }))}
+      onOpenTab={openTabPanel}
+      record={record}
     />
   );
 
@@ -834,6 +856,9 @@ export function NewMPageEditor() {
         <TabButton active={view === "mobile"} onClick={() => switchView("mobile")} icon={<Smartphone className="size-4" />} dot={dirtyMobile}>
           Mobile view
         </TabButton>
+        <TabButton active={selected === TAB_PANEL} onClick={openTabPanel} icon={<AppWindow className="size-4" />}>
+          Browser tab
+        </TabButton>
         <div className="ml-auto flex flex-wrap items-center gap-2 pb-1.5">
           <span className="text-[12.5px] text-text-muted">Preview with:</span>
           <div className="relative">
@@ -849,6 +874,7 @@ export function NewMPageEditor() {
       {view === "desktop" ? (
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
           <div className="min-w-0 rounded-md border bg-surface overflow-hidden">
+            <BrowserTabStrip content={desktop} record={record} assets={assets} active={selected === TAB_PANEL} onClick={openTabPanel} />
             <div className="flex items-center gap-2 px-3 h-9 border-b bg-surface-2 text-[12.5px] text-text-muted">
               <MousePointer2 className="size-3.5" />
               Click anything to edit it · hidden pieces are striped · <span className="font-medium text-text">+</span> adds an item to a list
@@ -986,6 +1012,155 @@ export function NewMPageEditor() {
   );
 }
 
+/** The selection that opens the browser tab's settings in place of a piece of the page. */
+const TAB_PANEL = "@browser-tab";
+
+/** The verification page's tab title as visitors see it, for the document being previewed. */
+function pageTitle(content: DesktopContent, record: PageRecord): string {
+  return fillTitle(
+    content.meta.title,
+    { attestation_number: record.attestation_number, document_type: record.document_type },
+    DEFAULT_DESKTOP.meta.title,
+  );
+}
+
+/** The PDF tab's title as visitors see it, for the document being previewed (with the sample PDF name). */
+function pdfTitle(content: DesktopContent, record: PageRecord): string {
+  const name = SAMPLE_PDF_NAME.replace(/\.pdf$/, "");
+  return fillTitle(
+    content.meta.pdf_title,
+    { name, attestation_number: record.attestation_number, document_type: record.document_type },
+    name,
+  );
+}
+
+/** The desktop preview's browser tab: its icon and title as visitors see them, opening their settings. */
+function BrowserTabStrip({
+  content,
+  record,
+  assets,
+  active,
+  onClick,
+}: {
+  content: DesktopContent;
+  record: PageRecord;
+  assets: Record<string, string>;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const icon = (content.meta.favicon.key && assets[content.meta.favicon.key]) || "/icon.svg";
+  const title = pageTitle(content, record);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Change the browser tab's title and icon"
+      className={cx(
+        "group flex w-full items-end gap-2 px-2 pt-1.5 border-b bg-[#dfe3e8] text-left",
+        active && "outline outline-2 -outline-offset-2 outline-amber-500",
+      )}
+    >
+      <span className="flex min-w-0 max-w-[20rem] items-center gap-2 h-8 rounded-t-lg bg-white px-3 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
+        {/* A signed R2 link, or the app's icon. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={icon} alt="" className="size-4 shrink-0 object-contain" />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[#202124]">{title}</span>
+        <X className="size-3 shrink-0 text-[#5f6368]" />
+      </span>
+      <span className="ml-auto mb-2 inline-flex items-center gap-1.5 text-[12px] text-text-muted group-hover:text-text">
+        <AppWindow className="size-3.5" />
+        Tab title &amp; icon
+      </span>
+    </button>
+  );
+}
+
+/** Buttons that add a word filled in from the document (TITLE_WORDS) to the end of a title. */
+function TitleWords({ value, pdf, onChange }: { value: string; pdf?: boolean; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 -mt-1.5">
+      <span className="text-[12px] text-text-muted">Add:</span>
+      {TITLE_WORDS.filter((w) => pdf || !w.pdfOnly).map((w) => (
+        <button
+          key={w.word}
+          type="button"
+          title={`Filled in with ${w.label}`}
+          className="rounded border px-1.5 py-0.5 font-mono text-[11.5px] text-text-muted hover:bg-surface-2 hover:text-text"
+          onClick={() => onChange(`${value.trimEnd()}${value.trim() ? " " : ""}${w.word}`.slice(0, MAX_TITLE))}
+        >
+          {w.word}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The browser tab: the verification page's title and favicon, and the title and favicon of the tab a
+ * document's PDF opens in. Saved with the desktop view; they serve phones too.
+ */
+function TabPanel({
+  content,
+  record,
+  assets,
+  onChange,
+  onUploaded,
+  onClose,
+}: {
+  content: DesktopContent;
+  record: PageRecord;
+  assets: Record<string, string>;
+  onChange: (path: string, value: unknown) => void;
+  onUploaded: (key: string, url: string) => void;
+  onClose: () => void;
+}) {
+  const shownPage = pageTitle(content, record);
+  const shownPdf = pdfTitle(content, record);
+  return (
+    <div>
+      <div className="flex items-center gap-2 px-4 py-3 border-b">
+        <AppWindow className="size-4 text-text-muted" />
+        <h2 className="text-sm font-semibold flex-1">Browser tab</h2>
+        <button type="button" className="p-1 text-text-muted hover:text-text" onClick={onClose} aria-label="Close">
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="px-4 py-3 space-y-4">
+        <p className="text-[12.5px] text-text-muted">
+          What the browser&apos;s tab shows, on computers and phones alike, and in bookmarks. Words in braces are filled
+          in from each document. Saved with the desktop view: press Save to put it live.
+        </p>
+        <Field label="Verification page: tab title" hint={`Up to ${MAX_TITLE} characters. Empty: the design's title.`}>
+          <Input value={content.meta.title} maxLength={MAX_TITLE} onChange={(e) => onChange("meta.title", e.target.value)} />
+        </Field>
+        <TitleWords value={content.meta.title} onChange={(v) => onChange("meta.title", v)} />
+        <FaviconField
+          label="Verification page: favicon"
+          value={content.meta.favicon}
+          title={shownPage}
+          assets={assets}
+          onChange={(v) => onChange("meta.favicon", v)}
+          onUploaded={onUploaded}
+        />
+        <div className="border-t pt-4 space-y-4">
+          <Field
+            label="PDF tab: title"
+            hint="The tab a document's PDF opens in on a computer. {name} is the PDF's 40-character name; empty, the tab shows that name."
+          >
+            <Input
+              value={content.meta.pdf_title}
+              maxLength={MAX_TITLE}
+              onChange={(e) => onChange("meta.pdf_title", e.target.value)}
+            />
+          </Field>
+          <TitleWords value={content.meta.pdf_title} pdf onChange={(v) => onChange("meta.pdf_title", v)} />
+          <PdfFaviconField content={content} title={shownPdf} assets={assets} onChange={onChange} onUploaded={onUploaded} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TabButton({
   active,
   onClick,
@@ -1073,7 +1248,8 @@ function Overview({
   onPick,
   onAdd,
   onCopyFromDesktop,
-  onUploaded,
+  onOpenTab,
+  record,
 }: {
   view: PageView;
   content: AnyContent;
@@ -1083,6 +1259,8 @@ function Overview({
   onAdd: (listPath: string) => void;
   onCopyFromDesktop: () => void;
   onUploaded: (key: string, url: string) => void;
+  onOpenTab: () => void;
+  record: PageRecord;
 }) {
   const groups = outline(view, content);
   const names = namesFor(view);
@@ -1092,19 +1270,15 @@ function Overview({
         <h2 className="text-sm font-semibold">{view === "mobile" ? "Mobile page settings" : "Page settings"}</h2>
         <div className="mt-3 space-y-3">
           {view === "desktop" ? (
-            <>
-              <Field label="Browser tab title" hint="Shown on the browser tab and in bookmarks, on computers and phones alike.">
-                <Input value={(content as DesktopContent).meta.title} onChange={(e) => onChange("meta.title", e.target.value)} />
-              </Field>
-              <FaviconField
-                value={(content as DesktopContent).meta.favicon}
-                title={(content as DesktopContent).meta.title}
-                assets={assets}
-                onChange={(v) => onChange("meta.favicon", v)}
-                onUploaded={onUploaded}
-              />
-              <PdfFaviconField content={content as DesktopContent} assets={assets} onChange={onChange} onUploaded={onUploaded} />
-            </>
+            <div className="rounded-md border bg-surface-2 px-3 py-2.5">
+              <div className="text-[12px] text-text-muted">Browser tab title</div>
+              <div className="text-[13px] font-medium truncate" title={(content as DesktopContent).meta.title}>
+                {pageTitle(content as DesktopContent, record)}
+              </div>
+              <Button size="sm" className="mt-2" icon={<AppWindow className="size-3.5" />} onClick={onOpenTab}>
+                Change the tab&apos;s title and icon
+              </Button>
+            </div>
           ) : null}
           <Checkbox
             label="Animate the page as it opens"
@@ -1120,7 +1294,11 @@ function Overview({
             <>
               <p className="text-[12.5px] text-text-muted">
                 Phones and windows narrower than 768 px show this view; wider screens show the desktop view. The browser
-                tab title is set under Desktop view and serves both.
+                tab&apos;s title and icon serve both:{" "}
+                <button type="button" className="underline hover:text-text" onClick={onOpenTab}>
+                  Browser tab
+                </button>
+                .
               </p>
               <Button size="sm" icon={<Copy className="size-3.5" />} onClick={onCopyFromDesktop}>
                 Copy wording from the desktop view
@@ -1505,17 +1683,16 @@ function SocialFields({ value, set }: { value: PSocial; set: (f: string, v: unkn
   );
 }
 
-/**
- * The icon of the tab a document's PDF opens in on a computer. That tab's title is the document's
- * 40-character name, as in the sample here.
- */
+/** The icon of the tab a document's PDF opens in on a computer, shown with that tab's title. */
 function PdfFaviconField({
   content,
+  title,
   assets,
   onChange,
   onUploaded,
 }: {
   content: DesktopContent;
+  title: string;
   assets: Record<string, string>;
   onChange: (path: string, value: unknown) => void;
   onUploaded: (key: string, url: string) => void;
@@ -1523,9 +1700,9 @@ function PdfFaviconField({
   const page = content.meta.favicon;
   return (
     <FaviconField
-      label="Favicon of the PDF tab"
+      label="PDF tab: favicon"
       value={content.meta.pdf_favicon}
-      title={SAMPLE_PDF_NAME.replace(/\.pdf$/, "")}
+      title={title}
       fallback={{
         url: (page.key && assets[page.key]) || "/icon.svg",
         text: page.key

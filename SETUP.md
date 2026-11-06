@@ -834,8 +834,8 @@ link banta hai:
 - Page par file ka naam aur download hone wali file ka naam hamesha `<40 character naam>.pdf` hota hai. Upload wala asal naam sirf
   admin panel mein dikhta hai, visitor ko kabhi nahi.
 - **Computer (desktop view):** "Open document" se ye link **nayi tab** mein khulta hai, PDF browser ke apne viewer mein. Tab ka
-  title document ka **40 character wala naam** hota hai, aur favicon wo jo Page settings mein **Favicon of the PDF tab** mein upload kiya
-  (na ho to page wala favicon).
+  title shuru mein document ka **40 character wala naam** hota hai (**Browser tab → PDF tab: title** se badal sakte hain), aur favicon
+  wo jo **PDF tab: favicon** mein upload kiya (na ho to page wala favicon).
 - **Phone (mobile view):** "Open document" aur file card ka **Open** button document **download** karte hain.
 - Link sirf usi document ke apne domain par khulta hai; ghalat number/naam par "Not found". PDF seedha R2 ke chhote waqt wale link
   se aati hai (naam `<40 character naam>.pdf`), is liye Vercel ki bandwidth nahi lagti.
@@ -894,14 +894,22 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
   - Footer links ki **Width** mobile ke 360 px grid par (khali = text jitna); row ke links design ki tarah doosri line par jate hain.
   - Kuch select na ho to **Mobile page settings**: animation on/off, **Copy wording from the desktop view** (desktop ke saare text,
     links, menu, top buttons → quick links, social icons aur logos mobile mein copy; Undo se wapas), aur **Notes**.
-- Kuch bhi select na ho to daen taraf **Page settings** (browser tab ka title, **favicon**, animation on/off) aur **page ki har
-  cheez ki list** — chhupi hui cheezen bhi — jahan se click kar ke jump kar sakte hain.
-- **Favicon** (browser tab ka chhota icon): desktop view ki **Page settings** mein **Upload favicon** dabayen — ICO ya PNG behtar
+- Kuch bhi select na ho to daen taraf **Page settings** (animation on/off) aur **page ki har cheez ki list** — chhupi hui cheezen
+  bhi — jahan se click kar ke jump kar sakte hain.
+- **Browser tab (title aur favicon):** Desktop view / Mobile view ke saath wala **Browser tab** button dabayen, ya desktop preview ke
+  oopar bani browser ki tab par click karen. Daen taraf:
+  - **Verification page: tab title** — jo text browser ki tab (aur bookmark) mein dikhta hai, computer aur phone dono par.
+  - **PDF tab: title** — computer par "Open document" se khulne wali PDF tab ka title. Shuru mein `{name}` (PDF ka 40 character
+    wala naam, jaisa pehle tha).
+  - Dono titles mein **Add:** ke buttons se `{attestation_number}` aur `{document_type}` daal sakte hain — har document ki tab par
+    us ka apna number / type aa jata hai (maslan `Verify {attestation_number}`). Khaali chhor dein to design wala title.
+  - Ye desktop view ke saath save hote hain: badal kar **Save** dabayen. Database mein rehte hain, code mein nahi.
+- **Favicon** (browser tab ka chhota icon): **Browser tab** mein **Upload favicon** dabayen — ICO ya PNG behtar
   (chokor, kam az kam 48 × 48, behtareen 512 × 512), 1 MB tak. Upar chhote se tab mein dikhta hai ke visitor ko kaisa nazar aayega.
   Phir page **Save** karen. **Use the app's icon** se wapas app wala icon. Favicon R2 mein rehta hai, code mein nahi. Phone par bhi
   yahi favicon dikhta hai.
-- **Favicon of the PDF tab:** usi jagah neeche — computer par "Open document" se jo PDF tab khulti hai, us ka alag favicon. Upload
-  karen, phir **Save**. Chhote tab preview mein title ki jagah document ka 40 character wala naam dikhta hai, jaisa asal tab mein. **Use the
+- **PDF tab: favicon:** usi jagah neeche — computer par "Open document" se jo PDF tab khulti hai, us ka alag favicon. Upload
+  karen, phir **Save**. Chhote tab preview mein wohi title dikhta hai jo asal PDF tab mein aayega. **Use the
   page's favicon** se hata dein to wo tab page wala favicon dikhati hai.
 - **Preview with:** kisi bhi asal document ko chun kar dekhen ke us ki values kaisi lagti hain; **Show the "no matching record" page**
   se dusri haalat dekhen.

@@ -190,10 +190,13 @@ Its fonts are the mobile design's: Roboto and Noto Serif, served from `public/nm
 
 **Page design** (super admin) — `/admin/new-m/page-design` shows the page exactly as visitors see it; clicking any text, button,
 tab, link or logo opens its settings (wording, link target, new tab, icon, width, hide/show, order, add/duplicate/delete within
-lists, logo upload). With nothing selected, the desktop view's **Page settings** holds the browser tab's title and its **favicon**
-(ICO, PNG, SVG, JPG, WebP or GIF up to 1 MB, kept in R2 under `new-m/page/`; served to visitors from `/api/new-m/favicon?v=…`, an
-address that changes with each upload so browsers may keep it; without one the app's own icon shows; phones get the same favicon),
-and the **favicon of the PDF tab** a document opens in (`/api/new-m/favicon?for=pdf&v=…`; without one that tab shows the page's).
+lists, logo upload). The **Browser tab** button (next to Desktop view / Mobile view, and the browser tab drawn above the desktop
+preview) opens the tab settings, saved with the desktop view and serving phones too: the verification page's **tab title** and
+**favicon** (ICO, PNG, SVG, JPG, WebP or GIF up to 1 MB, kept in R2 under `new-m/page/`; served to visitors from `/api/new-m/favicon?v=…`, an
+address that changes with each upload so browsers may keep it; without one the app's own icon shows), and the **PDF tab's title**
+(`meta.pdf_title`, default `{name}` — the PDF's 40-character name, as before) and **favicon** (`/api/new-m/favicon?for=pdf&v=…`;
+without one that tab shows the page's). Both titles may carry `{attestation_number}` and `{document_type}`, filled in from the
+document (`fillTitle`; the page looks the document up once for the title and the page alike). Appo's page has the same.
 Desktop and mobile are separate views with separate content, each with its own undo history and reset; the
 mobile tab shows the page in a phone frame at a chosen width, opens the hamburger menu when its button is clicked so the menu's
 items, quick links and social icons can be edited like everything else, and can copy the desktop wording in (`mobileFromDesktop`).
