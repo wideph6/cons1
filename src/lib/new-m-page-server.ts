@@ -48,17 +48,34 @@ export async function getMobile(): Promise<StoredPage<MobileContent>> {
   return { content: cleanMobile(row.content), updated_at: row.updated_at, table_ready: row.table_ready };
 }
 
-/** Saves one view's content; returns when it was saved. */
+/**
+ * Saves one view's content; returns when it was saved, as the database keeps it and as the next read
+ * gives it ("…+00:00", not JavaScript's "…Z"), so the editor's next save is checked against the same value.
+ */
 export async function savePage(view: PageView, content: DesktopContent | MobileContent, userId: string): Promise<string> {
   const now = new Date().toISOString();
-  const { error } = await db()
+  const { data, error } = await db()
     .from("new_m_page_settings")
-    .upsert({ view, content, updated_by: userId, updated_at: now }, { onConflict: "view" });
+    .upsert({ view, content, updated_by: userId, updated_at: now }, { onConflict: "view" })
+    .select("updated_at")
+    .single();
   if (error) {
     if (isMissingTable(error)) throw new ApiError(500, PAGE_TABLE_MISSING);
     throw dbError(error);
   }
-  return now;
+  return ((data as { updated_at?: string } | null)?.updated_at as string | undefined) ?? now;
+}
+
+/**
+ * The same save time, however it is written: the database gives "2026-11-06T13:20:00.123+00:00" where
+ * JavaScript writes "2026-11-06T13:20:00.123Z". Compared as text, a save followed by another from the same
+ * editor looked like someone else's save in between.
+ */
+export function sameSaveTime(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  return Number.isNaN(ta) || Number.isNaN(tb) ? a === b : ta === tb;
 }
 
 /**

@@ -653,10 +653,35 @@ export function NewMPageEditor() {
           : `${VIEW_LABEL[changed[0]]} view saved. Every verification link shows it now.`,
       );
     } catch (e) {
-      toast(errorMessage(e), "danger");
-      if (e instanceof ClientError && e.status === 409) void load();
+      if (e instanceof ClientError && e.status === 409) {
+        void takeNewerSave(errorMessage(e));
+      } else {
+        toast(errorMessage(e), "danger");
+      }
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * The page was saved somewhere else meanwhile: that save becomes the one these edits stand on, and the
+   * edits stay as unsaved changes, so nothing typed or uploaded here is lost. Save again puts them live.
+   */
+  async function takeNewerSave(why: string) {
+    try {
+      const r = await api<LoadResult>("/api/admin/new-m/page");
+      setDocs((d) =>
+        d
+          ? {
+              desktop: { ...d.desktop, saved: cleanDesktop(r.desktop.content), savedAt: r.desktop.updated_at },
+              mobile: { ...d.mobile, saved: cleanMobile(r.mobile.content), savedAt: r.mobile.updated_at },
+            }
+          : d,
+      );
+      setAssets((a) => ({ ...r.assets, ...a }));
+      toast(`${why} Your changes are still here: press Save again to put them live, or Discard changes to see that save.`, "info");
+    } catch (e) {
+      toast(errorMessage(e), "danger");
     }
   }
 

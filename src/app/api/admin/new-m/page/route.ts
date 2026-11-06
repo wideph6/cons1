@@ -11,7 +11,7 @@ import {
   PAGE_VIEWS,
   type PageView,
 } from "@/lib/new-m-page";
-import { assetUrls, getDesktop, getMobile, savePage } from "@/lib/new-m-page-server";
+import { assetUrls, getDesktop, getMobile, sameSaveTime, savePage } from "@/lib/new-m-page-server";
 import { deleteObject, headObject } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
@@ -59,11 +59,8 @@ export async function PUT(req: NextRequest) {
     const [desktop, mobile] = await Promise.all([getDesktop(), getMobile()]);
     const current = view === "desktop" ? desktop : mobile;
     const other = view === "desktop" ? mobile : desktop;
-    if (body.base_updated_at !== undefined && (body.base_updated_at ?? null) !== current.updated_at) {
-      throw new ApiError(
-        409,
-        `Someone saved the ${view} view after you opened it. Reload to see their changes, then edit again.`,
-      );
+    if (body.base_updated_at !== undefined && !sameSaveTime(body.base_updated_at, current.updated_at)) {
+      throw new ApiError(409, `The ${view} view was saved somewhere else (another tab or another super admin) after you opened it.`);
     }
     const content = view === "desktop" ? cleanDesktop(body.content) : cleanMobile(body.content);
 
