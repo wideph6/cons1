@@ -1,5 +1,20 @@
 import { qrToPathData } from "./appo-qr";
 import { verifyQr } from "./appo-link";
+import {
+  cleanFill,
+  cleanTextStyle,
+  INK,
+  inkAttrs,
+  inkOf,
+  NO_FILL,
+  POPPINS_STEPS,
+  QR_PAPER,
+  SERIF_STEPS,
+  STYLE_KEYS,
+  type Ink,
+  type StyleKey,
+  type TextStyle,
+} from "./sticker-style";
 
 /**
  * The Appo sticker, laid out on the same 958 x 761 grid as New M's. The background image the super
@@ -52,9 +67,19 @@ const FONT_FAMILY = "Georgia, Gelasio, 'Times New Roman', serif";
  * also loads it into the page under this name, so values are measured exactly as they are drawn.
  */
 export const VALUE_FONT_NAME = "Appo Poppins";
-export const VALUE_FONT_URL = "/appo-assets/fonts/poppins-semibold-latin.woff2";
+/** Poppins by weight; SemiBold is how the values are made, the others are for values made lighter or bolder. */
+export const VALUE_FONT_URLS: Record<string, string> = {
+  "400": "/appo-assets/fonts/poppins-regular-latin.woff2",
+  "500": "/appo-assets/fonts/poppins-medium-latin.woff2",
+  "600": "/appo-assets/fonts/poppins-semibold-latin.woff2",
+  "700": "/appo-assets/fonts/poppins-bold-latin.woff2",
+  "800": "/appo-assets/fonts/poppins-extrabold-latin.woff2",
+};
+export const VALUE_FONT_URL = VALUE_FONT_URLS["600"];
 const VALUE_FAMILY = `'${VALUE_FONT_NAME}', Poppins, 'Segoe UI', Arial, sans-serif`;
 const VALUE_WEIGHT = "600";
+/** The 7-digit document number's font: bold, upright figures of even height, as on the super admin's sample. */
+const NUMBER_FAMILY = "'Times New Roman', Times, 'Liberation Serif', Tinos, serif";
 /** A value too long for its cell is set smaller rather than run into the next one, down to this size. */
 const MIN_FONT = 10;
 /** Room between a set's words and a value written on the same line after them. */
@@ -68,6 +93,8 @@ interface TextSlot {
   weight: "bold" | "normal";
   /** Georgia for the dates (as on New M's sticker); every other value is Poppins SemiBold. */
   georgia?: boolean;
+  /** A font of its own (the document number's), instead of either. */
+  family?: string;
   anchor: "start" | "middle";
   /** Room before the cell's edge. */
   maxWidth: number;
@@ -102,7 +129,7 @@ export const SLOTS = {
   /** Centred under the signature: the approving officer's name. */
   officerName: { x: 730, y: 662, size: 16, weight: "normal", anchor: "middle", maxWidth: 380 },
   /** The 7-digit document number on its own, with no words. Starts centred under the QR code; the super admin moves it. */
-  docNumber: { x: 777, y: 334, size: 19, weight: "bold", anchor: "middle", maxWidth: 220 },
+  docNumber: { x: 777, y: 334, size: 19, weight: "bold", anchor: "middle", maxWidth: 220, family: NUMBER_FAMILY },
 } satisfies Record<string, TextSlot>;
 
 /** The signature is fitted inside this box, centred, keeping its proportions. */
@@ -161,22 +188,43 @@ export interface PartLayout extends SetOffset {
 }
 
 /**
- * How one set was moved and sized. dx/dy moves the whole set and scale sizes it around its middle
- * (1 = as made). Ungrouped (split), its words and its value are moved and sized each on its own, by
- * parts; grouped again, they keep where and how big they were made and move together.
+ * How one set was moved, sized and written. dx/dy moves the whole set and scale sizes it around its
+ * middle (1 = as made). Ungrouped (split), its words and its value are moved and sized each on its own,
+ * by parts; grouped again, they keep where and how big they were made and move together. styles sets the
+ * boldness and colour of its words and its value (or of a one-piece set); show turns it off or on; fill is
+ * the colour behind the QR code ("none" for no colour).
  */
 export interface SetLayout extends SetOffset {
   split?: boolean;
   scale?: number;
   parts?: Partial<Record<SetPart, PartLayout>>;
+  styles?: Partial<Record<StyleKey, TextStyle>>;
+  show?: boolean;
+  fill?: string;
 }
 
 /** The smallest and largest a set or half may be made, against its size as made. */
 export const MIN_SCALE = 0.3;
 export const MAX_SCALE = 3;
 
-/** Only the sets that were moved or ungrouped. */
+/** Only the sets that were moved, sized, restyled, ungrouped or turned off. */
 export type StickerLayout = Partial<Record<StickerSetId, SetLayout>>;
+
+/** The sets drawn in one piece, with no words of their own to ungroup from. */
+export const WHOLE_SETS: ReadonlyArray<StickerSetId> = ["officerName", "docNumber"];
+/** The sets that are pictures, not text: no boldness or colour. */
+export const PICTURE_SETS: ReadonlyArray<StickerSetId> = ["signature", "qr"];
+
+/** Whether a set is on the sticker: every set is, until the super admin turns it off. */
+export function setShown(layout: StickerLayout | undefined, set: StickerSetId): boolean {
+  return layout?.[set]?.show ?? true;
+}
+
+/** The text halves of a set a style can be set for: its words and its value, or the whole of a one-piece set. */
+export function styleKeys(set: StickerSetId): StyleKey[] {
+  if (PICTURE_SETS.includes(set)) return [];
+  return WHOLE_SETS.includes(set) ? ["whole"] : ["label", "value"];
+}
 
 /** The fixed words the app writes, reworded by the super admin for the sticker only, by piece id. */
 export type StickerTexts = Partial<Record<string, string>>;
@@ -269,9 +317,41 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-export function fontFor(slot: TextSlot, size = slot.size): string {
-  if (!slot.georgia) return `${VALUE_WEIGHT} ${size}px ${VALUE_FAMILY}`;
-  return `${slot.weight === "bold" ? "bold" : "normal"} ${size}px ${FONT_FAMILY}`;
+/** Whether a slot is written in Poppins (and so has Poppins's weights). */
+function poppins(slot: TextSlot): boolean {
+  return !slot.georgia && !slot.family;
+}
+
+export function fontFor(slot: TextSlot, size = slot.size, weight?: string): string {
+  if (poppins(slot)) return `${weight ?? VALUE_WEIGHT} ${size}px ${VALUE_FAMILY}`;
+  return `${weight ?? (slot.weight === "bold" ? "bold" : "normal")} ${size}px ${slot.family ?? FONT_FAMILY}`;
+}
+
+/** How a slot's value is written as made: Poppins SemiBold, or Georgia / Times as the slot says, plain. */
+function madeInk(slot: TextSlot): Ink {
+  return { weight: poppins(slot) ? VALUE_WEIGHT : slot.weight, outline: 0 };
+}
+
+/** The boldness step a slot's value is written with as made. */
+function madeBold(slot: TextSlot): number {
+  return poppins(slot) ? 3 : slot.weight === "bold" ? 5 : 1;
+}
+
+/** The weight and outline a value is written with: as made, or at the boldness the super admin chose. */
+function valueInk(slot: TextSlot, level: number | undefined): Ink {
+  if (level === undefined) return madeInk(slot);
+  return inkOf(poppins(slot) ? POPPINS_STEPS : SERIF_STEPS, level);
+}
+
+/** The Poppins weights a sticker with this layout writes, so only those travel inside it. */
+export function poppinsWeights(layout: StickerLayout | undefined): string[] {
+  const out = new Set<string>([VALUE_WEIGHT]);
+  for (const [set, slot] of Object.entries(SLOTS) as Array<[StickerSetId, TextSlot]>) {
+    if (!poppins(slot)) continue;
+    const level = layout?.[set]?.styles?.[WHOLE_SETS.includes(set) ? "whole" : "value"]?.bold;
+    out.add(valueInk(slot, level).weight);
+  }
+  return [...out];
 }
 
 const LABEL_FONT = `normal 19px ${FONT_FAMILY}`;
@@ -297,57 +377,66 @@ function text(
   y: number,
   value: string,
   size: number,
-  weight: "bold" | "normal" | "600",
+  weight: string,
   opts: { anchor?: string; fill?: string; outline?: number; family?: string } = {},
 ): string {
-  const fill = opts.fill ?? "#000000";
-  const outline = opts.outline ? ` stroke="${fill}" stroke-width="${opts.outline}" stroke-linejoin="round"` : "";
   return (
-    `<text x="${x}" y="${y}" font-family="${esc(opts.family ?? FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}" ` +
-    `fill="${fill}"${outline} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
+    `<text x="${x}" y="${y}" font-family="${esc(opts.family ?? FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}"` +
+    `${inkAttrs(opts.fill ?? INK, opts.outline ?? 0)} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
   );
 }
 
-function valueEl(slot: TextSlot, value: string, measure: Measure): string {
+function valueEl(slot: TextSlot, value: string, measure: Measure, style?: TextStyle): string {
   const t = value.trim();
   if (!t) return "";
-  const width = measure(t, fontFor(slot));
+  const ink = valueInk(slot, style?.bold);
+  const width = measure(t, fontFor(slot, slot.size, ink.weight));
   const size = width > slot.maxWidth ? Math.max(MIN_FONT, (slot.size * slot.maxWidth) / width) : slot.size;
-  return slot.georgia
-    ? text(slot.x, slot.y, t, size, slot.weight, { anchor: slot.anchor })
-    : text(slot.x, slot.y, t, size, VALUE_WEIGHT, { anchor: slot.anchor, family: VALUE_FAMILY });
+  const family = poppins(slot) ? VALUE_FAMILY : (slot.family ?? FONT_FAMILY);
+  return text(slot.x, slot.y, t, size, ink.weight, { anchor: slot.anchor, family, fill: style?.color, outline: ink.outline });
 }
 
-/** The values' font carried inside the sticker, so the image shows it wherever it is opened. */
-function valueFontEl(dataUri: string | null | undefined): string {
-  if (!dataUri || !/^data:[\w/+.-]+;base64,[A-Za-z0-9+/=]+$/.test(dataUri)) return "";
-  return (
-    `<defs><style>@font-face{font-family:'${VALUE_FONT_NAME}';src:url(${dataUri}) format('woff2');` +
-    `font-weight:${VALUE_WEIGHT};font-style:normal;}</style></defs>`
-  );
+/** The values' font, in each weight the sticker writes, carried inside it so the image shows it wherever it is opened. */
+function valueFontEl(fonts: Partial<Record<string, string>> | null | undefined): string {
+  const faces = Object.entries(fonts ?? {})
+    .filter(([weight, uri]) => /^[1-9]00$/.test(weight) && typeof uri === "string" && /^data:[\w/+.-]+;base64,[A-Za-z0-9+/=]+$/.test(uri))
+    .map(([weight, uri]) => `@font-face{font-family:'${VALUE_FONT_NAME}';src:url(${uri}) format('woff2');font-weight:${weight};font-style:normal;}`);
+  return faces.length ? `<defs><style>${faces.join("")}</style></defs>` : "";
 }
 
 /** Wraps a set's drawing (or one half of it) in its move, when it was moved. */
 type Mover = (set: StickerSetId, part: SetPart | null, svg: string) => string;
 
-/** The fixed words. The title bar and table lines come with the background image; the app does not draw them. */
-function frameEl(moved: Mover, texts: StickerTexts | undefined): string {
+/**
+ * The fixed words, each as bold and in the colour the super admin set for its half of the set. The title
+ * bar and table lines come with the background image; the app does not draw them.
+ */
+function frameEl(moved: Mover, texts: StickerTexts | undefined, layout: StickerLayout | undefined): string {
   const parts: string[] = [];
   for (const p of PIECES) {
     const words = pieceText(p, texts).trim();
-    if (!words) continue;
-    parts.push(
-      moved(p.set, p.part, p.bold ? text(p.x, p.y, words, 19, "bold") : text(p.x, p.y, words, 19, "normal", { outline: LABEL_OUTLINE })),
-    );
+    if (!words || !setShown(layout, p.set)) continue;
+    const style = layout?.[p.set]?.styles?.[p.part];
+    const made: Ink = p.bold ? { weight: "bold", outline: 0 } : { weight: "normal", outline: LABEL_OUTLINE };
+    const ink = style?.bold === undefined ? made : inkOf(SERIF_STEPS, style.bold);
+    parts.push(moved(p.set, p.part, text(p.x, p.y, words, 19, ink.weight, { fill: style?.color, outline: ink.outline })));
   }
   return parts.join("");
+}
+
+/** The boldness a set's half is written with as made, for the editor to start from. */
+export function madeStyleBold(set: StickerSetId, key: StyleKey): number {
+  const piece = PIECES.find((x) => x.set === set && x.part === (key === "whole" ? "value" : key));
+  if (key === "label" || (piece && !(SLOTS as Record<string, TextSlot>)[set])) return piece?.bold ? 5 : 2;
+  const slot = (SLOTS as Record<string, TextSlot>)[set];
+  return slot ? madeBold(slot) : 5;
 }
 
 /**
  * The QR code on its white square, with no line round it. The saved code (an SVG with a four-module
  * margin) is used when it can be read; otherwise the same code is drawn again from the link.
  */
-function qrEl(savedSvg: string | null, url: string): string {
+function qrEl(savedSvg: string | null, url: string, fill: string = QR_PAPER): string {
   let size: number | null = null;
   let path: string | null = null;
   const vb = savedSvg ? /viewBox="0 0 (\d+) \1"/.exec(savedSvg) : null;
@@ -364,8 +453,10 @@ function qrEl(savedSvg: string | null, url: string): string {
   if (!size || !path) return "";
 
   const a = QR_AREA;
+  // The colour behind the code: its square (white unless the super admin chose another, or none).
+  const paper = fill === NO_FILL ? "" : `<rect x="${n(a.x)}" y="${n(a.y)}" width="${n(a.width)}" height="${n(a.height)}" fill="${fill}"/>`;
   return (
-    `<rect x="${n(a.x)}" y="${n(a.y)}" width="${n(a.width)}" height="${n(a.height)}" fill="#ffffff"/>` +
+    paper +
     `<svg x="${n(QR_BOX.x)}" y="${n(QR_BOX.y)}" width="${n(QR_BOX.width)}" height="${n(QR_BOX.height)}" viewBox="0 0 ${size} ${size}" ` +
     `preserveAspectRatio="none" shape-rendering="crispEdges"><path fill="#000000" d="${path}"/></svg>`
   );
@@ -446,7 +537,7 @@ const sized = (o: { scale?: number } | undefined): boolean => Boolean(o && o.sca
 const changed = (o: PartLayout | undefined): boolean => moves(o) || sized(o);
 
 /** A set's layout with nothing in it that does nothing, or null when it is left exactly as made. */
-function tidySet(o: SetLayout | undefined): SetLayout | null {
+function tidySet(set: StickerSetId, o: SetLayout | undefined): SetLayout | null {
   if (!o) return null;
   const parts = Object.fromEntries(
     SET_PARTS.filter((p) => changed(o.parts?.[p])).map((p) => {
@@ -458,7 +549,18 @@ function tidySet(o: SetLayout | undefined): SetLayout | null {
   if (o.split) out.split = true;
   if (sized(o)) out.scale = o.scale;
   if (Object.keys(parts).length) out.parts = parts;
-  return out.split || out.parts || moves(out) || sized(out) ? out : null;
+  const styles: Partial<Record<StyleKey, TextStyle>> = {};
+  for (const key of styleKeys(set)) {
+    const st = cleanTextStyle(o.styles?.[key], madeStyleBold(set, key));
+    if (st) styles[key] = st;
+  }
+  if (Object.keys(styles).length) out.styles = styles;
+  if (o.show === false) out.show = false;
+  if (set === "qr") {
+    const fill = cleanFill(o.fill);
+    if (fill) out.fill = fill;
+  }
+  return out.split || out.parts || moves(out) || sized(out) || out.styles || out.show === false || out.fill ? out : null;
 }
 
 /** The placement with only the sets that were really moved or ungrouped, or with no layout when none were. */
@@ -467,7 +569,7 @@ export function withLayout(p: BackgroundPlacement, layout: StickerLayout): Backg
   delete rest.layout;
   const moved: StickerLayout = {};
   for (const [set, o] of Object.entries(layout) as Array<[StickerSetId, SetLayout | undefined]>) {
-    const t = tidySet(o);
+    const t = tidySet(set, o);
     if (t) moved[set] = t;
   }
   return Object.keys(moved).length ? { ...rest, layout: moved } : rest;
@@ -514,6 +616,21 @@ function cleanLayout(v: unknown): StickerLayout | null {
     const raw = o as Record<string, unknown>;
     const entry: SetLayout = { ...move };
     if (raw.split === true) entry.split = true;
+    if (raw.show === false) entry.show = false;
+    if (raw.fill !== undefined && raw.fill !== null) {
+      const fill = cleanFill(raw.fill);
+      if (fill) entry.fill = fill;
+    }
+    if (raw.styles !== undefined && raw.styles !== null) {
+      if (typeof raw.styles !== "object" || Array.isArray(raw.styles)) return null;
+      const styles: Partial<Record<StyleKey, TextStyle>> = {};
+      for (const [key, st] of Object.entries(raw.styles as Record<string, unknown>)) {
+        if (!STYLE_KEYS.includes(key as StyleKey)) return null;
+        const c = cleanTextStyle(st, madeStyleBold(set as StickerSetId, key as StyleKey));
+        if (c) styles[key as StyleKey] = c;
+      }
+      if (Object.keys(styles).length) entry.styles = styles;
+    }
     if (raw.parts !== undefined && raw.parts !== null) {
       if (typeof raw.parts !== "object" || Array.isArray(raw.parts)) return null;
       const parts: Partial<Record<SetPart, PartLayout>> = {};
@@ -664,8 +781,8 @@ export interface StickerContent extends StickerValues {
   drawFrame: boolean;
   /** The sets the super admin moved; the rest stay where a new sticker puts them. */
   layout?: StickerLayout;
-  /** Poppins SemiBold as a data: URI, carried inside the sticker for its values. */
-  valueFont?: string | null;
+  /** Poppins as data: URIs by weight ("600" and any other the layout writes), carried inside the sticker for its values. */
+  valueFonts?: Partial<Record<string, string>> | null;
   /** The sticker's size; left out for STICKER_W x STICKER_H. */
   size?: StickerSize;
   /** The fixed words the super admin reworded; the rest read as a new sticker has them. */
@@ -740,15 +857,17 @@ function contentEl(input: StickerContent, measure: Measure): string {
     const inner = part ? wrapIn(svg, transformOf(l.parts?.[part], b?.parts[part] ?? null)) : svg;
     return wrapIn(inner, transformOf(l, b ? groupRect(b, l) : null));
   };
-  const parts: string[] = [valueFontEl(input.valueFont)];
-  if (input.drawFrame) parts.push(frameEl(moved, input.texts));
+  const on = (set: StickerSetId) => setShown(input.layout, set);
+  const styleOf = (set: StickerSetId, key: StyleKey) => input.layout?.[set]?.styles?.[key];
+  const parts: string[] = [valueFontEl(input.valueFonts)];
+  if (input.drawFrame) parts.push(frameEl(moved, input.texts, input.layout));
 
   for (const [set, value] of valueTexts(input)) {
-    if (set === "officerName" || set === "docNumber") continue;
-    parts.push(moved(set, "value", valueEl(placeSlot(SLOTS[set], input.texts, measure), value, measure)));
+    if (WHOLE_SETS.includes(set) || !on(set)) continue;
+    parts.push(moved(set, "value", valueEl(placeSlot(SLOTS[set], input.texts, measure), value, measure, styleOf(set, "value"))));
   }
 
-  if (input.signature) {
+  if (input.signature && on("signature")) {
     const b = SIGNATURE_BOX;
     parts.push(
       moved(
@@ -759,9 +878,9 @@ function contentEl(input: StickerContent, measure: Measure): string {
       ),
     );
   }
-  parts.push(moved("officerName", null, valueEl(SLOTS.officerName, input.officerName, measure)));
-  parts.push(moved("docNumber", null, valueEl(SLOTS.docNumber, input.docNumber, measure)));
-  parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl)));
+  if (on("officerName")) parts.push(moved("officerName", null, valueEl(SLOTS.officerName, input.officerName, measure, styleOf("officerName", "whole"))));
+  if (on("docNumber")) parts.push(moved("docNumber", null, valueEl(SLOTS.docNumber, input.docNumber, measure, styleOf("docNumber", "whole"))));
+  if (on("qr")) parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, input.layout?.qr?.fill ?? QR_PAPER)));
   return parts.join("");
 }
 

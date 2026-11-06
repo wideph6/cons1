@@ -770,7 +770,20 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
   fix text (jaise "4", "by", "Country", "Pakistan") badal sakte hain. **Restore** se asal lafz wapas, **Restore all words** se sab.
   Khali chhor dein to wo lafz sticker par nahi aata. Ye tabdeeli **sirf sticker** par hoti hai — verification page ka apna text alag
   hai (Page design se). Background par labels pehle se chhape hon (tick laga ho) to app labels nahi likhta, is liye ye khana nahi aata.
-- Ye sab (jagah, ungroup, badle hue lafz) **database** mein background ki position ke saath save hota hai — code mein kahin nahi.
+- **Size, boldness, rang, on/off (New M aur Appo dono):** Move text & QR mein koi set chunen:
+  - **Size** (− / +, slider, 30% se 300%) — poora set, ya **Ungroup** kar ke us ke lafz aur value alag alag. QR code aur signature
+    bhi isi se chhote/bare hote hain.
+  - **How … is written** panel: har set ke **Words** aur **Value** (ya designation, officer ka naam, 7 digit number jaise aik-hissa
+    set) ki **Bold** — 9 darje (1 Light se 9 Black; "(as made)" asal wala), − / + ya list se — aur **Colour**: siyah se grey tak
+    shades aik click mein (gehra ya halka), ya koi bhi rang. **As made** se wapas.
+  - **QR code** chunen to **Behind the QR**: code ke bilkul peechhe wale chokor ka rang (shuru mein safed), ya **No colour** taake
+    background nazar aaye. Rang halka rakhen warna phone code nahi parhega.
+  - **On the sticker** list: har set ke saath checkbox — tick hata den to woh set har sticker se gayab, tick karen to wapas.
+  - New M mein **Approving officer's name** naya set hai (shuru mein off): tick karen to officer ka naam designation ke neeche aata
+    hai; phir hila kar, size aur bold/rang set karen.
+  - **7 digit document number** sticker par **Times New Roman Bold** mein likha jata hai (seedhe, aik oonchai wale number).
+- Ye sab (jagah, size, ungroup, badle hue lafz, bold, rang, on/off, QR ka rang) **database** mein background ki position ke saath
+  save hota hai — code mein kahin nahi. Pehle ki tarah **Save position** dabayen.
 - Sab theek ho to **Use this background** (nayi image) ya **Save position** (sirf jagah/crop/text ki jagah badli ho).
   Wohi jagah aur crop save hote hain aur har sticker — screen par bhi aur download mein bhi — bilkul waisa hi banta hai.
 - Nayi image purani ki jagah le leti hai; purani file storage se mita di jati hai.

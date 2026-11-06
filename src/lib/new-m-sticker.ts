@@ -1,5 +1,18 @@
 import { qrToPathData } from "./new-m-qr";
 import { verifyQr } from "./new-m-link";
+import {
+  cleanFill,
+  cleanTextStyle,
+  INK,
+  inkAttrs,
+  inkOf,
+  NO_FILL,
+  QR_PAPER,
+  SERIF_STEPS,
+  STYLE_KEYS,
+  type StyleKey,
+  type TextStyle,
+} from "./sticker-style";
 
 /**
  * The New M attestation sticker. Every position, size and weight below was measured off the
@@ -54,7 +67,12 @@ interface TextSlot {
   anchor: "start" | "middle";
   /** Room before the cell's edge. */
   maxWidth: number;
+  /** A font of its own; the rest are Georgia. */
+  family?: string;
 }
+
+/** The 7-digit document number's font: bold, upright figures of even height, as on the super admin's sample. */
+const NUMBER_FAMILY = "'Times New Roman', Times, 'Liberation Serif', Tinos, serif";
 
 export const SLOTS = {
   /** Under "This Public Document". */
@@ -71,8 +89,10 @@ export const SLOTS = {
   dateShort: { x: 139, y: 392, size: 19, weight: "bold", anchor: "start", maxWidth: 733 },
   /** Centred under the signature. */
   designation: { x: 678.5, y: 515, size: 16, weight: "normal", anchor: "middle", maxWidth: 380 },
+  /** The approving officer's name, under the designation; off until the super admin turns it on. */
+  officerName: { x: 678.5, y: 538, size: 16, weight: "bold", anchor: "middle", maxWidth: 380 },
   /** The 7-digit document number on its own, with no words. Starts centred under the QR code; the super admin moves it. */
-  docNumber: { x: 759.6, y: 334, size: 19, weight: "bold", anchor: "middle", maxWidth: 220 },
+  docNumber: { x: 759.6, y: 334, size: 19, weight: "bold", anchor: "middle", maxWidth: 220, family: NUMBER_FAMILY },
 } satisfies Record<string, TextSlot>;
 
 /** The signature is fitted inside this box, centred, keeping its proportions. */
@@ -111,6 +131,7 @@ export const STICKER_SETS = [
   { id: "dateShort", name: "Date (Date:)" },
   { id: "signature", name: "Signature" },
   { id: "designation", name: "Designation" },
+  { id: "officerName", name: "Approving officer's name" },
   { id: "docNumber", name: "Document number (7 digits)" },
   { id: "qr", name: "QR code" },
 ] as const;
@@ -118,7 +139,22 @@ export const STICKER_SETS = [
 export type StickerSetId = (typeof STICKER_SETS)[number]["id"];
 
 /** The sets drawn in one piece, with no words of their own to ungroup from. */
-const WHOLE_SETS: ReadonlyArray<StickerSetId> = ["designation", "docNumber"];
+export const WHOLE_SETS: ReadonlyArray<StickerSetId> = ["designation", "officerName", "docNumber"];
+/** The sets that are pictures, not text: no boldness or colour. */
+export const PICTURE_SETS: ReadonlyArray<StickerSetId> = ["signature", "qr"];
+/** The sets a sticker leaves off until the super admin turns them on. */
+export const OFF_UNTIL_ON: ReadonlyArray<StickerSetId> = ["officerName"];
+
+/** Whether a set is on the sticker: as the super admin set it, or its own default. */
+export function setShown(layout: StickerLayout | undefined, set: StickerSetId): boolean {
+  return layout?.[set]?.show ?? !OFF_UNTIL_ON.includes(set);
+}
+
+/** The text halves of a set a style can be set for: its words and its value, or the whole of a one-piece set. */
+export function styleKeys(set: StickerSetId): StyleKey[] {
+  if (PICTURE_SETS.includes(set)) return [];
+  return WHOLE_SETS.includes(set) ? ["whole"] : ["label", "value"];
+}
 
 /** The two halves of an ungrouped set: its fixed words, and the value written after or under them. */
 export type SetPart = "label" | "value";
@@ -130,16 +166,32 @@ export interface SetOffset {
   dy: number;
 }
 
+/** A half's own move, and its own size (1 = as made), set around its middle. */
+export interface PartLayout extends SetOffset {
+  scale?: number;
+}
+
 /**
- * How one set was moved. dx/dy moves the whole set. Ungrouped (split), its label and its value are
- * moved each on its own, by parts; grouped again, they keep where they were put and move together.
+ * How one set was moved, sized and written. dx/dy moves the whole set and scale sizes it around its
+ * middle (1 = as made). Ungrouped (split), its label and its value are moved and sized each on its own,
+ * by parts; grouped again, they keep where and how big they were made and move together. styles sets the
+ * boldness and colour of its words and its value (or of a one-piece set); show turns it off or on; fill is
+ * the colour behind the QR code ("none" for no colour).
  */
 export interface SetLayout extends SetOffset {
   split?: boolean;
-  parts?: Partial<Record<SetPart, SetOffset>>;
+  scale?: number;
+  parts?: Partial<Record<SetPart, PartLayout>>;
+  styles?: Partial<Record<StyleKey, TextStyle>>;
+  show?: boolean;
+  fill?: string;
 }
 
-/** Only the sets that were moved or ungrouped. */
+/** The smallest and largest a set or half may be made, against its size as made. */
+export const MIN_SCALE = 0.3;
+export const MAX_SCALE = 3;
+
+/** Only the sets that were moved, sized, restyled, ungrouped or turned off or on. */
 export type StickerLayout = Partial<Record<StickerSetId, SetLayout>>;
 
 /** The fixed words the app writes, reworded by the super admin for the sticker only, by piece id. */
@@ -225,8 +277,18 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-export function fontFor(slot: TextSlot, size = slot.size): string {
-  return `${slot.weight === "bold" ? "bold" : "normal"} ${size}px ${FONT_FAMILY}`;
+export function fontFor(slot: TextSlot, size = slot.size, weight: string = slot.weight): string {
+  return `${weight} ${size}px ${slot.family ?? FONT_FAMILY}`;
+}
+
+/** How a set's text is written as made: Georgia regular with a thin outline for the labels, values plain. */
+function madeBold(slot: TextSlot): number {
+  return slot.weight === "bold" ? 5 : 1;
+}
+
+/** The weight and outline a text is written with: as made, or at the boldness the super admin chose. */
+function inkFor(made: { weight: "bold" | "normal"; outline: number }, level: number | undefined) {
+  return level === undefined ? made : inkOf(SERIF_STEPS, level);
 }
 
 /** Width of a line of text in the browser, used to shrink a value that would overflow its cell. */
@@ -237,39 +299,57 @@ function text(
   y: number,
   value: string,
   size: number,
-  weight: "bold" | "normal",
-  opts: { anchor?: string; fill?: string; outline?: number } = {},
+  weight: string,
+  opts: { anchor?: string; fill?: string; outline?: number; family?: string } = {},
 ): string {
-  const fill = opts.fill ?? "#000000";
-  const outline = opts.outline ? ` stroke="${fill}" stroke-width="${opts.outline}" stroke-linejoin="round"` : "";
   return (
-    `<text x="${x}" y="${y}" font-family="${esc(FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}" ` +
-    `fill="${fill}"${outline} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
+    `<text x="${x}" y="${y}" font-family="${esc(opts.family ?? FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}"` +
+    `${inkAttrs(opts.fill ?? INK, opts.outline ?? 0)} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
   );
 }
 
-function valueEl(slot: TextSlot, value: string, measure: Measure): string {
+function valueEl(slot: TextSlot, value: string, measure: Measure, style?: TextStyle): string {
   const t = value.trim();
   if (!t) return "";
-  const width = measure(t, fontFor(slot));
+  const ink = inkFor({ weight: slot.weight, outline: 0 }, style?.bold);
+  const width = measure(t, fontFor(slot, slot.size, ink.weight));
   const size = width > slot.maxWidth ? Math.max(MIN_FONT, (slot.size * slot.maxWidth) / width) : slot.size;
-  return text(slot.x, slot.y, t, size, slot.weight, { anchor: slot.anchor });
+  return text(slot.x, slot.y, t, size, ink.weight, { anchor: slot.anchor, family: slot.family, fill: style?.color, outline: ink.outline });
 }
 
 /** Wraps a set's drawing (or one half of it) in its move, when it was moved. */
 type Mover = (set: StickerSetId, part: SetPart | null, svg: string) => string;
 
-/** The labels. The title bar and table lines come with the background image; the app does not draw them. */
-function frameEl(moved: Mover, texts: StickerTexts | undefined): string {
+/**
+ * The labels, each as bold and in the colour the super admin set for its half of the set. The title bar
+ * and table lines come with the background image; the app does not draw them.
+ */
+function frameEl(moved: Mover, texts: StickerTexts | undefined, layout: StickerLayout | undefined): string {
   const parts: string[] = [];
   for (const p of PIECES) {
     const words = pieceText(p, texts).trim();
-    if (!words) continue;
-    parts.push(
-      moved(p.set, p.part, p.bold ? text(p.x, p.y, words, 19, "bold") : text(p.x, p.y, words, 19, "normal", { outline: LABEL_OUTLINE })),
-    );
+    if (!words || !setShown(layout, p.set)) continue;
+    const style = layout?.[p.set]?.styles?.[p.part];
+    const ink = inkFor(p.bold ? { weight: "bold", outline: 0 } : { weight: "normal", outline: LABEL_OUTLINE }, style?.bold);
+    parts.push(moved(p.set, p.part, text(p.x, p.y, words, 19, ink.weight, { fill: style?.color, outline: ink.outline })));
   }
   return parts.join("");
+}
+
+/** The boldness a piece of fixed words is written with as made: "Pakistan" bold, the labels regular with an outline. */
+export function madeLabelBold(piece: StickerPiece): number {
+  return piece.bold ? 5 : 2;
+}
+
+/** The boldness a set's half is written with as made, for the editor to start from. */
+export function madeStyleBold(set: StickerSetId, key: StyleKey): number {
+  if (key === "label") {
+    const piece = PIECES.find((p) => p.set === set && p.part === "label");
+    return piece ? madeLabelBold(piece) : 2;
+  }
+  if (set === "country") return 5;
+  const slot = (SLOTS as Record<string, TextSlot>)[set];
+  return slot ? madeBold(slot) : 5;
 }
 
 /**
@@ -277,7 +357,7 @@ function frameEl(moved: Mover, texts: StickerTexts | undefined): string {
  * (an SVG with a four-module margin) is used when it can be read; otherwise the same code is drawn
  * again from the link.
  */
-function qrEl(savedSvg: string | null, url: string, withBorder: boolean): string {
+function qrEl(savedSvg: string | null, url: string, withBorder: boolean, fill: string = QR_PAPER): string {
   let size: number | null = null;
   let path: string | null = null;
   const vb = savedSvg ? /viewBox="0 0 (\d+) \1"/.exec(savedSvg) : null;
@@ -300,8 +380,13 @@ function qrEl(savedSvg: string | null, url: string, withBorder: boolean): string
   const border = withBorder
     ? `<rect x="${n(b.x + half)}" y="${n(b.y + half)}" width="${n(b.width - LINE)}" height="${n(b.height - LINE)}" fill="none" stroke="#000000" stroke-width="${LINE}"/>`
     : "";
+  // The colour behind the code, inside its border (white unless the super admin chose another, or none).
+  const paper =
+    fill === NO_FILL
+      ? ""
+      : `<rect x="${n(b.x + LINE)}" y="${n(b.y + LINE)}" width="${n(b.width - 2 * LINE)}" height="${n(b.height - 2 * LINE)}" fill="${fill}"/>`;
   return (
-    `<rect x="${n(b.x + LINE)}" y="${n(b.y + LINE)}" width="${n(b.width - 2 * LINE)}" height="${n(b.height - 2 * LINE)}" fill="#ffffff"/>` +
+    paper +
     `<svg x="${n(QR_BOX.x)}" y="${n(QR_BOX.y)}" width="${n(QR_BOX.width)}" height="${n(QR_BOX.height)}" viewBox="0 0 ${size} ${size}" ` +
     `preserveAspectRatio="none" shape-rendering="crispEdges"><path fill="#000000" d="${path}"/></svg>` +
     border
@@ -413,15 +498,36 @@ export function withCrop(p: BackgroundPlacement, crop: BackgroundCrop): Backgrou
 }
 
 const moves = (o: SetOffset | undefined): boolean => Boolean(o && (o.dx !== 0 || o.dy !== 0));
+const sized = (o: { scale?: number } | undefined): boolean => Boolean(o && o.scale !== undefined && o.scale !== 1);
+/** Moved or sized: something that changes where or how big it is drawn. */
+const changed = (o: PartLayout | undefined): boolean => moves(o) || sized(o);
 
-/** A set's layout with nothing in it that does nothing, or null when it is left exactly as measured. */
-function tidySet(o: SetLayout | undefined): SetLayout | null {
+/** A set's layout with nothing in it that does nothing, or null when it is left exactly as made. */
+function tidySet(set: StickerSetId, o: SetLayout | undefined): SetLayout | null {
   if (!o) return null;
-  const parts = Object.fromEntries(SET_PARTS.filter((p) => moves(o.parts?.[p])).map((p) => [p, { ...o.parts![p]! }]));
+  const parts = Object.fromEntries(
+    SET_PARTS.filter((p) => changed(o.parts?.[p])).map((p) => {
+      const pl = o.parts![p]!;
+      return [p, sized(pl) ? { dx: pl.dx, dy: pl.dy, scale: pl.scale } : { dx: pl.dx, dy: pl.dy }];
+    }),
+  );
   const out: SetLayout = { dx: o.dx, dy: o.dy };
   if (o.split) out.split = true;
+  if (sized(o)) out.scale = o.scale;
   if (Object.keys(parts).length) out.parts = parts;
-  return out.split || out.parts || moves(out) ? out : null;
+  const styles: Partial<Record<StyleKey, TextStyle>> = {};
+  for (const key of styleKeys(set)) {
+    const st = cleanTextStyle(o.styles?.[key], madeStyleBold(set, key));
+    if (st) styles[key] = st;
+  }
+  if (Object.keys(styles).length) out.styles = styles;
+  const shown = o.show ?? !OFF_UNTIL_ON.includes(set);
+  if (shown !== !OFF_UNTIL_ON.includes(set)) out.show = shown;
+  if (set === "qr") {
+    const fill = cleanFill(o.fill);
+    if (fill) out.fill = fill;
+  }
+  return out.split || out.parts || moves(out) || sized(out) || out.styles || out.show !== undefined || out.fill ? out : null;
 }
 
 /** The placement with only the sets that were really moved or ungrouped, or with no layout when none were. */
@@ -430,7 +536,7 @@ export function withLayout(p: BackgroundPlacement, layout: StickerLayout): Backg
   delete rest.layout;
   const moved: StickerLayout = {};
   for (const [set, o] of Object.entries(layout) as Array<[StickerSetId, SetLayout | undefined]>) {
-    const t = tidySet(o);
+    const t = tidySet(set, o);
     if (t) moved[set] = t;
   }
   return Object.keys(moved).length ? { ...rest, layout: moved } : rest;
@@ -451,13 +557,19 @@ const PIECE_IDS: ReadonlySet<string> = new Set(PIECES.map((p) => p.id));
 /** The most a reworded piece may hold. */
 export const MAX_PIECE_TEXT = 200;
 
-/** A move by numbers no larger than the sticker itself, or null when it is not one. */
-function cleanOffset(v: unknown): SetOffset | null {
+/** A move by numbers no larger than the sticker itself, with a sane size if one is given, or null when it is not one. */
+function cleanOffset(v: unknown): PartLayout | null {
   if (!v || typeof v !== "object") return null;
-  const { dx, dy } = v as Record<string, unknown>;
+  const { dx, dy, scale } = v as Record<string, unknown>;
   if (typeof dx !== "number" || typeof dy !== "number" || !Number.isFinite(dx) || !Number.isFinite(dy)) return null;
   if (Math.abs(dx) > MAX_SIDE || Math.abs(dy) > MAX_SIDE) return null;
-  return { dx: n(dx), dy: n(dy) };
+  const out: PartLayout = { dx: n(dx), dy: n(dy) };
+  if (scale !== undefined) {
+    if (typeof scale !== "number" || !Number.isFinite(scale) || scale < MIN_SCALE - 1e-9 || scale > MAX_SCALE + 1e-9) return null;
+    const sc = Math.round(scale * 1000) / 1000;
+    if (sc !== 1) out.scale = sc;
+  }
+  return out;
 }
 
 /** Known sets, each moved (and its halves moved) by numbers no larger than the sticker itself, or null when it is not that. */
@@ -471,9 +583,24 @@ function cleanLayout(v: unknown): StickerLayout | null {
     const raw = o as Record<string, unknown>;
     const entry: SetLayout = { ...move };
     if (raw.split === true) entry.split = true;
+    if (typeof raw.show === "boolean") entry.show = raw.show;
+    if (raw.fill !== undefined && raw.fill !== null) {
+      const fill = cleanFill(raw.fill);
+      if (fill) entry.fill = fill;
+    }
+    if (raw.styles !== undefined && raw.styles !== null) {
+      if (typeof raw.styles !== "object" || Array.isArray(raw.styles)) return null;
+      const styles: Partial<Record<StyleKey, TextStyle>> = {};
+      for (const [key, st] of Object.entries(raw.styles as Record<string, unknown>)) {
+        if (!STYLE_KEYS.includes(key as StyleKey)) return null;
+        const c = cleanTextStyle(st, madeStyleBold(set as StickerSetId, key as StyleKey));
+        if (c) styles[key as StyleKey] = c;
+      }
+      if (Object.keys(styles).length) entry.styles = styles;
+    }
     if (raw.parts !== undefined && raw.parts !== null) {
       if (typeof raw.parts !== "object" || Array.isArray(raw.parts)) return null;
-      const parts: Partial<Record<SetPart, SetOffset>> = {};
+      const parts: Partial<Record<SetPart, PartLayout>> = {};
       for (const [part, po] of Object.entries(raw.parts as Record<string, unknown>)) {
         const c = cleanOffset(po);
         if (!SET_PARTS.includes(part as SetPart) || !c) return null;
@@ -615,6 +742,8 @@ export interface StickerValues {
   issuingAuthority: string;
   attestationNumber: string;
   designation: string;
+  /** The approving officer's name, written only when the super admin turns it on. */
+  officerName: string;
   /** The 7-digit document number, written on its own; empty for a document saved before it existed. */
   docNumber: string;
   /** The signature as a data: URI, or null for none. */
@@ -667,20 +796,52 @@ export function partShift(layout: StickerLayout | undefined, set: StickerSetId, 
   return { dx: (o?.dx ?? 0) + (p?.dx ?? 0), dy: (o?.dy ?? 0) + (p?.dy ?? 0) };
 }
 
-/** The frame, values, signature and QR code, drawn over the background, each set where it was moved to. */
+/**
+ * The SVG transform for a move and a size: the size is set around the middle of r (where the thing is
+ * drawn before this move), then the move is made. Empty when neither changes anything.
+ */
+function transformOf(o: PartLayout | undefined, r: Rect | null): string {
+  if (!o) return "";
+  const steps: string[] = [];
+  if (o.dx || o.dy) steps.push(`translate(${n(o.dx)} ${n(o.dy)})`);
+  const k = o.scale ?? 1;
+  if (k !== 1 && r) {
+    const cx = r.x + r.width / 2;
+    const cy = r.y + r.height / 2;
+    steps.push(`translate(${n(cx)} ${n(cy)}) scale(${k}) translate(${n(-cx)} ${n(-cy)})`);
+  }
+  return steps.join(" ");
+}
+
+function wrapIn(svg: string, transform: string): string {
+  return transform ? `<g transform="${transform}">${svg}</g>` : svg;
+}
+
+/**
+ * The frame, values, signature and QR code, drawn over the background: each set that is on, where it was
+ * moved to, as big as it was made, and as bold and in the colour the super admin set.
+ */
 function contentEl(input: StickerContent, measure: Measure): string {
+  // Where each set is drawn before any change: the middle that a size is set around.
+  const boxes = input.layout && Object.keys(input.layout).length ? stickerSetBoxes(input, measure) : {};
   const moved: Mover = (set, part, svg) => {
-    const o = partShift(input.layout, set, part);
-    return svg && (o.dx || o.dy) ? `<g transform="translate(${n(o.dx)} ${n(o.dy)})">${svg}</g>` : svg;
+    const l = input.layout?.[set];
+    if (!svg || !l) return svg;
+    const b = boxes[set];
+    // A half's own move and size first, then the whole set's.
+    const inner = part ? wrapIn(svg, transformOf(l.parts?.[part], b?.parts[part] ?? null)) : svg;
+    return wrapIn(inner, transformOf(l, b ? groupRect(b, l) : null));
   };
+  const on = (set: StickerSetId) => setShown(input.layout, set);
+  const styleOf = (set: StickerSetId, key: StyleKey) => input.layout?.[set]?.styles?.[key];
   const parts: string[] = [];
-  if (input.drawFrame) parts.push(frameEl(moved, input.texts));
+  if (input.drawFrame) parts.push(frameEl(moved, input.texts, input.layout));
 
   for (const [set, value] of valueTexts(input)) {
-    if (!WHOLE_SETS.includes(set)) parts.push(moved(set, "value", valueEl(SLOTS[set], value, measure)));
+    if (!WHOLE_SETS.includes(set) && on(set)) parts.push(moved(set, "value", valueEl(SLOTS[set], value, measure, styleOf(set, "value"))));
   }
 
-  if (input.signature) {
+  if (input.signature && on("signature")) {
     const b = SIGNATURE_BOX;
     parts.push(
       moved(
@@ -691,10 +852,17 @@ function contentEl(input: StickerContent, measure: Measure): string {
       ),
     );
   }
-  parts.push(moved("designation", null, valueEl(SLOTS.designation, input.designation, measure)));
-  parts.push(moved("docNumber", null, valueEl(SLOTS.docNumber, input.docNumber, measure)));
-  parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, input.drawFrame)));
+  for (const set of WHOLE_SETS) {
+    const slot = SLOTS[set as keyof typeof SLOTS];
+    if (on(set)) parts.push(moved(set, null, valueEl(slot, wholeText(input, set), measure, styleOf(set, "whole"))));
+  }
+  if (on("qr")) parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, input.drawFrame, input.layout?.qr?.fill ?? QR_PAPER)));
   return parts.join("");
+}
+
+/** What a one-piece set writes. */
+function wholeText(input: StickerValues, set: StickerSetId): string {
+  return set === "designation" ? input.designation : set === "officerName" ? input.officerName : set === "docNumber" ? input.docNumber : "";
 }
 
 /** Each value slot with the text it shows, in drawing order. */
@@ -707,6 +875,7 @@ function valueTexts(input: StickerValues): Array<[keyof typeof SLOTS, string]> {
     ["number", input.attestationNumber],
     ["dateShort", shortDate(input.issueDate)],
     ["designation", input.designation],
+    ["officerName", input.officerName],
     ["docNumber", input.docNumber],
   ];
 }
@@ -807,14 +976,52 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
   return boxes;
 }
 
+/** A rectangle made bigger or smaller round its middle. */
+export function scaleRect(r: Rect, sc: number | undefined): Rect {
+  const k = sc ?? 1;
+  if (k === 1) return r;
+  const cx = r.x + r.width / 2;
+  const cy = r.y + r.height / 2;
+  return { x: cx - (r.width * k) / 2, y: cy - (r.height * k) / 2, width: r.width * k, height: r.height * k };
+}
+
+/** Where a half is drawn after its own move and size, before the whole set's. */
+export function partLocalRect(b: SetBoxes, l: SetLayout | undefined, part: SetPart): Rect | null {
+  const r = b.parts[part];
+  if (!r) return null;
+  const pl = l?.parts?.[part];
+  return shiftRect(scaleRect(r, pl?.scale), pl ?? { dx: 0, dy: 0 });
+}
+
+/** The whole set's own move and size, applied to a rectangle of it (r), around the middle of the set (g). */
+function setTransformRect(r: Rect, g: Rect, l: SetLayout | undefined): Rect {
+  const k = l?.scale ?? 1;
+  const cx = g.x + g.width / 2;
+  const cy = g.y + g.height / 2;
+  const scaled = k === 1 ? r : { x: cx + (r.x - cx) * k, y: cy + (r.y - cy) * k, width: r.width * k, height: r.height * k };
+  return shiftRect(scaled, l ?? { dx: 0, dy: 0 });
+}
+
+/** Where a grouped set is drawn now, every move and size included: what it is grabbed by. */
+export function shownGroupRect(b: SetBoxes, l: SetLayout | undefined): Rect {
+  const g = groupRect(b, l);
+  return setTransformRect(g, g, l);
+}
+
+/** Where one half of an ungrouped set is drawn now, every move and size included. */
+export function shownPartRect(b: SetBoxes, l: SetLayout | undefined, part: SetPart): Rect | null {
+  const r = partLocalRect(b, l, part);
+  return r ? setTransformRect(r, groupRect(b, l), l) : null;
+}
+
 /**
- * The area a grouped set is grabbed by: each half where its own move put it, before the set's move.
- * Without moved halves this is the whole set.
+ * The area a grouped set is grabbed by: each half where its own move and size put it, before the set's
+ * move. Without moved or sized halves this is the whole set.
  */
 export function groupRect(b: SetBoxes, l: SetLayout | undefined): Rect {
-  const moved = SET_PARTS.filter((p) => b.parts[p] && moves(l?.parts?.[p]));
+  const moved = SET_PARTS.filter((p) => b.parts[p] && changed(l?.parts?.[p]));
   if (!moved.length) return b.whole;
-  return union(SET_PARTS.filter((p) => b.parts[p]).map((p) => shiftRect(b.parts[p]!, l?.parts?.[p] ?? { dx: 0, dy: 0 })));
+  return union(SET_PARTS.map((p) => partLocalRect(b, l, p)).filter((r): r is Rect => Boolean(r)));
 }
 
 /** A move that keeps the set's box on the sticker. */

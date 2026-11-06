@@ -22,7 +22,10 @@ import {
   MAX_PIECE_TEXT,
   MAX_SCALE,
   MIN_SCALE,
+  madeStyleBold,
   scaleRect,
+  setShown,
+  styleKeys,
   shownGroupRect,
   shownPartRect,
   MIN_KEEP,
@@ -51,10 +54,13 @@ import {
   type StickerTexts,
   type StickerValues,
   VALUE_FONT_NAME,
-  VALUE_FONT_URL,
+  VALUE_FONT_URLS,
+  poppinsWeights,
 } from "@/lib/appo-sticker";
 import type { AppoRecord } from "@/lib/appo-types";
 import { formatDateTime } from "@/lib/utils";
+import { QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
+import type { StyleKey, TextStyle } from "@/lib/sticker-style";
 
 /* ---------------- Shared pieces ---------------- */
 
@@ -102,29 +108,41 @@ interface Background {
 /** Fetched once per page and reused for every sticker, until a new background is set. */
 let backgroundCache: Promise<Background> | null = null;
 
-/** Poppins SemiBold for the values, fetched once per page. */
-let valueFontCache: Promise<string | null> | null = null;
+/** Poppins for the values, by weight, each fetched once per page. */
+const valueFontCache = new Map<string, Promise<string | null>>();
 
 /**
- * The values' font: added to the page under VALUE_FONT_NAME, so widths are measured with the very font that
- * draws them, and returned as a data: URI for the sticker to carry. Null if it cannot be had (the values
- * then fall back to a similar system font).
+ * One weight of the values' font: added to the page under VALUE_FONT_NAME, so widths are measured with the
+ * very font that draws them, and returned as a data: URI for the sticker to carry. Null if it cannot be had
+ * (the values then fall back to a similar system font).
  */
-function loadValueFont(): Promise<string | null> {
-  valueFontCache ??= (async () => {
-    try {
-      const res = await fetch(VALUE_FONT_URL);
-      if (!res.ok) return null;
-      const dataUri = await blobToDataUri(new Blob([await res.arrayBuffer()], { type: "font/woff2" }));
-      const face = new FontFace(VALUE_FONT_NAME, `url(${dataUri}) format("woff2")`, { weight: "600", style: "normal" });
-      await face.load();
-      document.fonts.add(face);
-      return dataUri;
-    } catch {
-      return null;
-    }
-  })();
-  return valueFontCache;
+function loadValueFont(weight: string): Promise<string | null> {
+  let cached = valueFontCache.get(weight);
+  if (!cached) {
+    cached = (async () => {
+      try {
+        const url = VALUE_FONT_URLS[weight];
+        if (!url) return null;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const dataUri = await blobToDataUri(new Blob([await res.arrayBuffer()], { type: "font/woff2" }));
+        const face = new FontFace(VALUE_FONT_NAME, `url(${dataUri}) format("woff2")`, { weight, style: "normal" });
+        await face.load();
+        document.fonts.add(face);
+        return dataUri;
+      } catch {
+        return null;
+      }
+    })();
+    valueFontCache.set(weight, cached);
+  }
+  return cached;
+}
+
+/** These weights of the values' font (every weight, when none are named), by weight; the ones that load. */
+async function loadValueFonts(weights: string[] = Object.keys(VALUE_FONT_URLS)): Promise<Record<string, string>> {
+  const loaded = await Promise.all(weights.map(async (w) => [w, await loadValueFont(w)] as const));
+  return Object.fromEntries(loaded.filter((e): e is readonly [string, string] => Boolean(e[1])));
 }
 
 export function forgetBackground() {
@@ -195,7 +213,9 @@ function recordValues(record: AppoRecord, signature: string | null): StickerValu
 
 /** One document's sticker, built from its current values, its officer's signature and its saved QR code. */
 export async function renderSticker(record: AppoRecord): Promise<{ svg: string; scale: number }> {
-  const [bg, signature, valueFont] = await Promise.all([loadBackground(), recordSignature(record), loadValueFont()]);
+  const bg = await loadBackground();
+  // Only the weights of Poppins this sticker writes travel inside it.
+  const [signature, valueFonts] = await Promise.all([recordSignature(record), loadValueFonts(poppinsWeights(bg.placement?.layout))]);
   const svg = buildStickerSvg(
     {
       background: bg.dataUri,
@@ -204,7 +224,7 @@ export async function renderSticker(record: AppoRecord): Promise<{ svg: string; 
       layout: bg.placement?.layout,
       texts: bg.placement?.texts,
       ...recordValues(record, signature),
-      valueFont,
+      valueFonts,
     },
     measure,
   );
@@ -368,7 +388,13 @@ function sameSet(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
   const close = (u: number, v: number) => Math.abs(u - v) < 0.01;
   const same = (u: (SetOffset & { scale?: number }) | undefined, v: (SetOffset & { scale?: number }) | undefined) =>
     close(u?.dx ?? 0, v?.dx ?? 0) && close(u?.dy ?? 0, v?.dy ?? 0) && Math.abs((u?.scale ?? 1) - (v?.scale ?? 1)) < 0.001;
-  return same(a, b) && Boolean(a?.split) === Boolean(b?.split) && SET_PARTS.every((p) => same(a?.parts?.[p], b?.parts?.[p]));
+  return (same(a, b) && Boolean(a?.split) === Boolean(b?.split) && SET_PARTS.every((p) => same(a?.parts?.[p], b?.parts?.[p]))) && sameLook(a, b);
+}
+
+/** Two sets written the same: boldness and colour of each half, on or off, and the QR code's colour. */
+function sameLook(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
+  const styles = (l: SetLayout | undefined) => JSON.stringify((["label", "value", "whole"] as StyleKey[]).map((k) => [l?.styles?.[k]?.bold ?? null, l?.styles?.[k]?.color ?? null]));
+  return styles(a) === styles(b) && (a?.show ?? null) === (b?.show ?? null) && (a?.fill ?? null) === (b?.fill ?? null);
 }
 
 const STILL: SetOffset = { dx: 0, dy: 0 };
@@ -449,13 +475,13 @@ export function AppoBackgroundDialog({
   const [texts, setTexts] = useState<StickerTexts>({});
   /** How much the editor magnifies the sticker (not the sticker's own size). */
   const [viewZoom, setViewZoom] = useState(1);
-  /** The values' font, once loaded: the overlay carries it, and the grab boxes are measured with it. */
-  const [valueFont, setValueFont] = useState<string | null>(null);
+  /** The values' font in every weight, once loaded: the overlay carries it, and the grab boxes are measured with it. */
+  const [valueFonts, setValueFonts] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    void loadValueFont().then((f) => {
-      if (!cancelled) setValueFont(f);
+    void loadValueFonts().then((f) => {
+      if (!cancelled) setValueFonts(f);
     });
     return () => {
       cancelled = true;
@@ -536,15 +562,15 @@ export function AppoBackgroundDialog({
   // dragging the image only moves it underneath.
   const overlay = useMemo(() => {
     if (!open) return null;
-    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, size, valueFont, ...values }, measure));
-  }, [open, values, hasFrame, layout, texts, size, valueFont]);
+    return svgDataUri(buildStickerOverlaySvg({ drawFrame: !hasFrame, layout, texts, size, valueFonts, ...values }, measure));
+  }, [open, values, hasFrame, layout, texts, size, valueFonts]);
 
   /** Where each set (and each half of it) is drawn before it is moved, for grabbing it. */
   const setBoxes = useMemo(
     () => (open ? stickerSetBoxes({ drawFrame: !hasFrame, texts, ...values }, measure) : {}),
     // Measured again once the values' font has loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open, values, hasFrame, texts, valueFont],
+    [open, values, hasFrame, texts, valueFonts],
   );
 
   async function choose(file: File | null) {
@@ -749,6 +775,35 @@ export function AppoBackgroundDialog({
     setSelected({ set, part: split ? "label" : null });
   }
 
+  /** A half's boldness and colour, or back as made (null). */
+  function setStyle(set: StickerSetId, key: StyleKey, style: TextStyle | null) {
+    setLayout((l) => {
+      const cur = { ...setMove(l[set]), ...l[set] };
+      const styles = { ...cur.styles };
+      if (style) styles[key] = style;
+      else delete styles[key];
+      if (Object.keys(styles).length) cur.styles = styles;
+      else delete cur.styles;
+      return { ...l, [set]: cur };
+    });
+  }
+
+  /** Turns a set on or off the sticker. */
+  function setOn(set: StickerSetId, on: boolean) {
+    setLayout((l) => ({ ...l, [set]: { ...setMove(l[set]), ...l[set], show: on } }));
+    if (!on) setSelected((cur) => (cur?.set === set ? null : cur));
+  }
+
+  /** The colour behind the QR code: left out for white, NO_FILL for none. */
+  function setQrFill(fill: string | undefined) {
+    setLayout((l) => {
+      const cur = { ...setMove(l.qr), ...l.qr };
+      if (fill) cur.fill = fill;
+      else delete cur.fill;
+      return { ...l, qr: cur };
+    });
+  }
+
   function putBack(set: StickerSetId) {
     setLayout((l) => {
       const next = { ...l };
@@ -774,6 +829,7 @@ export function AppoBackgroundDialog({
     const b = setBoxes[id];
     if (!b) return [];
     const l = layout[id];
+    if (!setShown(layout, id)) return [];
     if (isSplit(id)) {
       return SET_PARTS.map((part) => ({ picked: { set: id, part }, rect: shownPartRect(b, l, part) ?? b.whole }));
     }
@@ -1188,6 +1244,34 @@ export function AppoBackgroundDialog({
                 </Button>
               ) : null}
             </div>
+            {arranging && selected && (styleKeys(selected.set).length || selected.set === "qr") ? (
+              <div className="rounded-md border bg-surface-2 p-3 space-y-2">
+                <div className="text-[12.5px] font-medium">
+                  How {SET_NAMES[selected.set]} is written
+                  <span className="font-normal text-text-muted">
+                    {selected.set === "qr"
+                      ? " · its size is set with Size above."
+                      : " · boldness and colour of its words and its value, each on its own; its size is set with Size above (ungroup it to size its words and value apart)."}
+                  </span>
+                </div>
+                {styleKeys(selected.set).length ? (
+                  <StickerTextLook
+                    rows={styleKeys(selected.set)
+                      .filter((k) => !selected.part || k === selected.part)
+                      .filter((k) => k !== "label" || !hasFrame)
+                      .map((k) => ({ key: k, name: k === "label" ? "Words" : k === "value" ? "Value" : SET_NAMES[selected.set] }))}
+                    styles={layout[selected.set]?.styles}
+                    madeBold={(k) => madeStyleBold(selected.set, k)}
+                    disabled={busy}
+                    onChange={(k, st) => setStyle(selected.set, k, st)}
+                  />
+                ) : null}
+                {selected.set === "qr" ? <QrPaperField value={layout.qr?.fill} disabled={busy} onChange={setQrFill} /> : null}
+              </div>
+            ) : null}
+            {arranging ? (
+              <StickerSetsShown sets={STICKER_SETS} shown={(id) => setShown(layout, id)} disabled={busy} onChange={setOn} />
+            ) : null}
             {arranging && selectedPieces.length ? (
               <div className="rounded-md border bg-surface-2 p-3 space-y-2">
                 <div className="text-[12.5px] font-medium">

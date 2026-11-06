@@ -290,6 +290,19 @@ copying the other system's page design brings only the shared pieces' looks. The
 gains a light (100–300) and a black (800–900) face (Segoe UI Light / Black, else Selawik) so thinner and bolder text shows; the
 serif keeps regular and bold, and the phone's Roboto and Noto Serif cover every weight.
 
+## Sticker sets: size, boldness, colour, on/off
+
+Both stickers' background editors set, per set, in `*_settings.background_placement.layout` (no database change):
+**size** (`scale`, round the set's middle, 30–300 %; ungrouped, each half's own — New M now has this as Appo did, so the QR code
+and signature size too), **boldness and colour** of each text half (`styles.label` / `styles.value` / `styles.whole`: `bold` 1–9,
+`color` #rrggbb), **on/off** (`show`) and, for the QR code, the colour of the square behind it (`fill`: a colour, or `"none"`).
+`src/lib/sticker-style.ts` holds the shared model: nine boldness steps made of the weights a font has plus a thin outline in the
+text's colour (`SERIF_STEPS` for Georgia / Times, regular and bold only; `POPPINS_STEPS` for Appo's values, with Poppins 400–800 in
+`public/appo-assets/fonts`, of which only the weights a sticker writes travel inside it, `poppinsWeights`). Anything as made is left
+out, so a sticker nobody restyled is drawn exactly as before. The editors share `StickerLookFields.tsx` (boldness and colour rows,
+the QR colour, and the "On the sticker" checkboxes). New M gains an **Approving officer's name** set, off until turned on; both
+stickers write the 7-digit document number in Times New Roman Bold.
+
 ## Document numbers
 
 Every New M and Appo document has a **7-digit document number** (`doc_number`, e.g. `4827153`), unique within its system.

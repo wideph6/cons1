@@ -172,7 +172,9 @@ export function RecordLookFields({
                 <Select
                   value={weight}
                   aria-label={`${piece.name}: boldness`}
-                  className="h-7 py-0 text-[12.5px] flex-1 min-w-0"
+                  className="flex-1 min-w-0"
+                  // Inline: the control's own padding would otherwise cut the text off at this height.
+                  style={{ height: 28, paddingTop: 0, paddingBottom: 0, fontSize: 12.5 }}
                   onChange={(e) => setWeight(Number(e.target.value))}
                 >
                   {LOOK_WEIGHTS.map((w) => (

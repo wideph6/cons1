@@ -1,6 +1,6 @@
 "use client";
 
-import { Crop, Download, FileCode, Group, ImageUp, Move, RotateCcw, Ungroup } from "lucide-react";
+import { Crop, Download, FileCode, Group, ImageUp, Minus, Move, Plus, RotateCcw, Ungroup } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Alert, Button, Checkbox, Field, Input, Loading, Modal, errorMessage, useToast } from "@/components/ui";
 import { api, downloadBlob, downloadSvgFile } from "@/lib/client";
@@ -24,7 +24,15 @@ import {
   withSize,
   type StickerSize,
   groupRect,
+  madeStyleBold,
   MAX_PIECE_TEXT,
+  MAX_SCALE,
+  MIN_SCALE,
+  scaleRect,
+  setShown,
+  shownGroupRect,
+  shownPartRect,
+  styleKeys,
   MIN_KEEP,
   NO_CROP,
   PIECES,
@@ -53,6 +61,8 @@ import {
 } from "@/lib/new-m-sticker";
 import type { NewMRecord } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
+import type { StyleKey, TextStyle } from "@/lib/sticker-style";
 
 /* ---------------- Shared pieces ---------------- */
 
@@ -156,6 +166,7 @@ function recordValues(record: NewMRecord, signature: string | null): StickerValu
     issuingAuthority: record.issuing_authority,
     attestationNumber: record.attestation_number,
     designation: record.officer_designation,
+    officerName: record.officer_name,
     docNumber: record.doc_number ?? "",
     signature,
     qrSvg: record.qr_svg,
@@ -324,6 +335,7 @@ function sampleValues(): StickerValues {
     issuingAuthority: "Ministry of Foreign Affairs",
     attestationNumber: NUMBER_EXAMPLE,
     designation: "Assistant Director",
+    officerName: "Muhammad Junaid Khalid",
     docNumber: DOC_NUMBER_EXAMPLE,
     signature: null,
     qrSvg: null,
@@ -364,9 +376,20 @@ function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean 
 
 function sameSet(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
   const close = (u: number, v: number) => Math.abs(u - v) < 0.01;
-  const same = (u: SetOffset | undefined, v: SetOffset | undefined) =>
-    close(u?.dx ?? 0, v?.dx ?? 0) && close(u?.dy ?? 0, v?.dy ?? 0);
-  return same(a, b) && Boolean(a?.split) === Boolean(b?.split) && SET_PARTS.every((p) => same(a?.parts?.[p], b?.parts?.[p]));
+  const same = (u: (SetOffset & { scale?: number }) | undefined, v: (SetOffset & { scale?: number }) | undefined) =>
+    close(u?.dx ?? 0, v?.dx ?? 0) && close(u?.dy ?? 0, v?.dy ?? 0) && Math.abs((u?.scale ?? 1) - (v?.scale ?? 1)) < 0.001;
+  return (
+    same(a, b) &&
+    Boolean(a?.split) === Boolean(b?.split) &&
+    SET_PARTS.every((p) => same(a?.parts?.[p], b?.parts?.[p])) &&
+    sameLook(a, b)
+  );
+}
+
+/** Two sets written the same: boldness and colour of each half, on or off, and the QR code's colour. */
+function sameLook(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
+  const styles = (l: SetLayout | undefined) => JSON.stringify((["label", "value", "whole"] as StyleKey[]).map((k) => [l?.styles?.[k]?.bold ?? null, l?.styles?.[k]?.color ?? null]));
+  return styles(a) === styles(b) && (a?.show ?? null) === (b?.show ?? null) && (a?.fill ?? null) === (b?.fill ?? null);
 }
 
 const STILL: SetOffset = { dx: 0, dy: 0 };
@@ -679,11 +702,12 @@ export function NewMBackgroundDialog({
     if (!b) return;
     setLayout((l) => {
       const cur = l[set];
-      if (!part) return { ...l, [set]: { ...cur, ...clampOffset(groupRect(b, cur), to(setMove(cur)), size) } };
+      if (!part) return { ...l, [set]: { ...cur, ...clampOffset(shownGroupRect(b, { ...cur, dx: 0, dy: 0 }), to(setMove(cur)), size) } };
       const r = b.parts[part];
       if (!r) return l;
-      const next = clampOffset(shiftRect(r, setMove(cur)), to(cur?.parts?.[part] ?? STILL), size);
-      return { ...l, [set]: { ...setMove(cur), ...cur, parts: { ...cur?.parts, [part]: next } } };
+      const pl = cur?.parts?.[part];
+      const next = clampOffset(shiftRect(scaleRect(r, pl?.scale), setMove(cur)), to(pl ?? STILL), size);
+      return { ...l, [set]: { ...setMove(cur), ...cur, parts: { ...cur?.parts, [part]: { ...pl, ...next } } } };
     });
   }
 
@@ -705,8 +729,32 @@ export function NewMBackgroundDialog({
     const d = setDrag.current;
     const frame = frameRef.current;
     if (!d || d.id !== e.pointerId || !frame) return;
-    const unit = size.width / frame.clientWidth;
+    // A half inside a set made bigger or smaller moves by that much less or more, to follow the pointer.
+    const unit = size.width / frame.clientWidth / (d.part ? (layout[d.set]?.scale ?? 1) : 1);
     movePicked(d, () => ({ dx: d.from.dx + (e.clientX - d.x) * unit, dy: d.from.dy + (e.clientY - d.y) * unit }));
+  }
+
+  /** The size of the picked set or half (1 = as made). */
+  function pickedScale({ set, part }: Picked): number {
+    const cur = layout[set];
+    return (part ? cur?.parts?.[part]?.scale : cur?.scale) ?? 1;
+  }
+
+  /** Makes the picked set (or half) bigger or smaller, around its middle. */
+  function setPickedScale({ set, part }: Picked, value: number) {
+    const sc = Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, value)) * 1000) / 1000;
+    setLayout((l) => {
+      const cur = { ...setMove(l[set]), ...l[set] };
+      if (!part) {
+        if (sc === 1) delete cur.scale;
+        else cur.scale = sc;
+        return { ...l, [set]: cur };
+      }
+      const pl = { ...STILL, ...cur.parts?.[part] };
+      if (sc === 1) delete pl.scale;
+      else pl.scale = sc;
+      return { ...l, [set]: { ...cur, parts: { ...cur.parts, [part]: pl } } };
+    });
   }
 
   function onSetUp(e: PointerEvent<HTMLDivElement>) {
@@ -722,6 +770,35 @@ export function NewMBackgroundDialog({
       return { ...l, [set]: cur };
     });
     setSelected({ set, part: split ? "label" : null });
+  }
+
+  /** A half's boldness and colour, or back as made (null). */
+  function setStyle(set: StickerSetId, key: StyleKey, style: TextStyle | null) {
+    setLayout((l) => {
+      const cur = { ...setMove(l[set]), ...l[set] };
+      const styles = { ...cur.styles };
+      if (style) styles[key] = style;
+      else delete styles[key];
+      if (Object.keys(styles).length) cur.styles = styles;
+      else delete cur.styles;
+      return { ...l, [set]: cur };
+    });
+  }
+
+  /** Turns a set on or off the sticker. */
+  function setOn(set: StickerSetId, on: boolean) {
+    setLayout((l) => ({ ...l, [set]: { ...setMove(l[set]), ...l[set], show: on } }));
+    if (!on) setSelected((cur) => (cur?.set === set ? null : cur));
+  }
+
+  /** The colour behind the QR code: left out for white, NO_FILL for none. */
+  function setQrFill(fill: string | undefined) {
+    setLayout((l) => {
+      const cur = { ...setMove(l.qr), ...l.qr };
+      if (fill) cur.fill = fill;
+      else delete cur.fill;
+      return { ...l, qr: cur };
+    });
   }
 
   function putBack(set: StickerSetId) {
@@ -749,11 +826,11 @@ export function NewMBackgroundDialog({
     const b = setBoxes[id];
     if (!b) return [];
     const l = layout[id];
-    const off = setMove(l);
+    if (!setShown(layout, id)) return [];
     if (isSplit(id)) {
-      return SET_PARTS.map((part) => ({ picked: { set: id, part }, rect: shiftRect(shiftRect(b.parts[part]!, l?.parts?.[part] ?? STILL), off) }));
+      return SET_PARTS.map((part) => ({ picked: { set: id, part }, rect: shownPartRect(b, l, part) ?? b.whole }));
     }
-    return [{ picked: { set: id, part: null }, rect: shiftRect(groupRect(b, l), off) }];
+    return [{ picked: { set: id, part: null }, rect: shownGroupRect(b, l) }];
   });
 
   /* ----- Cropping ----- */
@@ -1089,6 +1166,42 @@ export function NewMBackgroundDialog({
               >
                 {arranging ? "Done moving" : "Move text & QR"}
               </Button>
+              {arranging && selected ? (
+                <span className="inline-flex items-center gap-1.5" title={`Size of ${pickedName(selected)}`}>
+                  <span>Size</span>
+                  <Button
+                    size="sm"
+                    icon={<Minus className="size-3.5" />}
+                    disabled={busy || pickedScale(selected) <= MIN_SCALE}
+                    title="Smaller (5%)"
+                    onClick={() => setPickedScale(selected, pickedScale(selected) - 0.05)}
+                  />
+                  <input
+                    type="range"
+                    min={MIN_SCALE}
+                    max={MAX_SCALE}
+                    step={0.01}
+                    value={pickedScale(selected)}
+                    disabled={busy}
+                    onChange={(e) => setPickedScale(selected, Number(e.target.value))}
+                    className="w-28 accent-teal-600"
+                    aria-label={`Size of ${pickedName(selected)}`}
+                  />
+                  <Button
+                    size="sm"
+                    icon={<Plus className="size-3.5" />}
+                    disabled={busy || pickedScale(selected) >= MAX_SCALE}
+                    title="Bigger (5%)"
+                    onClick={() => setPickedScale(selected, pickedScale(selected) + 0.05)}
+                  />
+                  <span className="tabular-nums w-11">{Math.round(pickedScale(selected) * 100)}%</span>
+                  {pickedScale(selected) !== 1 ? (
+                    <Button size="sm" disabled={busy} onClick={() => setPickedScale(selected, 1)}>
+                      As made
+                    </Button>
+                  ) : null}
+                </span>
+              ) : null}
               {arranging && selected && canSplit(selected.set) ? (
                 isSplit(selected.set) ? (
                   <Button size="sm" icon={<Group className="size-3.5" />} disabled={busy} onClick={() => setSplit(selected.set, false)}>
@@ -1118,6 +1231,34 @@ export function NewMBackgroundDialog({
                 </Button>
               ) : null}
             </div>
+            {arranging && selected && (styleKeys(selected.set).length || selected.set === "qr") ? (
+              <div className="rounded-md border bg-surface-2 p-3 space-y-2">
+                <div className="text-[12.5px] font-medium">
+                  How {SET_NAMES[selected.set]} is written
+                  <span className="font-normal text-text-muted">
+                    {selected.set === "qr"
+                      ? " · its size is set with Size above."
+                      : " · boldness and colour of its words and its value, each on its own; its size is set with Size above (ungroup it to size its words and value apart)."}
+                  </span>
+                </div>
+                {styleKeys(selected.set).length ? (
+                  <StickerTextLook
+                    rows={styleKeys(selected.set)
+                      .filter((k) => !selected.part || k === selected.part)
+                      .filter((k) => k !== "label" || !hasFrame)
+                      .map((k) => ({ key: k, name: k === "label" ? "Words" : k === "value" ? "Value" : SET_NAMES[selected.set] }))}
+                    styles={layout[selected.set]?.styles}
+                    madeBold={(k) => madeStyleBold(selected.set, k)}
+                    disabled={busy}
+                    onChange={(k, st) => setStyle(selected.set, k, st)}
+                  />
+                ) : null}
+                {selected.set === "qr" ? <QrPaperField value={layout.qr?.fill} disabled={busy} onChange={setQrFill} /> : null}
+              </div>
+            ) : null}
+            {arranging ? (
+              <StickerSetsShown sets={STICKER_SETS} shown={(id) => setShown(layout, id)} disabled={busy} onChange={setOn} />
+            ) : null}
             {arranging && selectedPieces.length ? (
               <div className="rounded-md border bg-surface-2 p-3 space-y-2">
                 <div className="text-[12.5px] font-medium">

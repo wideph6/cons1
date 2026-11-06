@@ -27,9 +27,14 @@ noto-serif-latin-wght.woff2  Noto Serif (variable weight, Latin)
                              Copyright 2022 The Noto Project Authors. SIL Open Font License 1.1.
                              https://github.com/notofonts/latin-greek-cyrillic
 
-Sticker — the values each document writes on its Appo sticker (not its labels or dates).
+Sticker — the values each document writes on its Appo sticker (not its labels or dates). SemiBold is how
+they are made; the other weights are there for values the super admin makes lighter or bolder.
 
+poppins-regular-latin.woff2  Poppins Regular (400, Latin)
+poppins-medium-latin.woff2   Poppins Medium (500, Latin)
 poppins-semibold-latin.woff2 Poppins SemiBold (600, Latin)
+poppins-bold-latin.woff2     Poppins Bold (700, Latin)
+poppins-extrabold-latin.woff2 Poppins ExtraBold (800, Latin)
                              Copyright 2020 The Poppins Project Authors. SIL Open Font License 1.1.
                              https://github.com/itfoundry/Poppins (via @fontsource/poppins 5.0.8)
 
