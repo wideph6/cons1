@@ -185,6 +185,7 @@ export function MobilePage({ content: c, record, assets, editor, preview }: Mobi
               buttonProps={editing ? ed("header.menu_button", h.menu_button.hidden) : undefined}
               panelProps={editing ? ed("menu.panel") : undefined}
               panelStyle={panelStyle(menu.panel)}
+              changes={h.menu_button_changes}
               open={editing ? Boolean(editor?.menuOpen) : undefined}
             >
               <nav className="apom-menu" aria-label="Main">

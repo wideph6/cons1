@@ -1606,7 +1606,15 @@ function Inspector({
     );
   } else if (path === "header.menu_button") {
     body = (
-      <MenuButtonFields value={value as PText} set={set} menuOpen={menuOpen} onMenuOpen={onMenuOpen} onPanel={() => onPick("menu.panel")} />
+      <MenuButtonFields
+        value={value as PText}
+        set={set}
+        changes={(content as MobileContent).header.menu_button_changes}
+        onChanges={(v) => onChange("header.menu_button_changes", v)}
+        menuOpen={menuOpen}
+        onMenuOpen={onMenuOpen}
+        onPanel={() => onPick("menu.panel")}
+      />
     );
   } else if (path === "menu.panel") {
     body = <MenuPanelFields value={value as MenuPanel} onChange={(v) => onChange("menu.panel", v)} />;
@@ -2651,12 +2659,16 @@ function MenuPanelFields({ value, onChange }: { value: MenuPanel; onChange: (v: 
 function MenuButtonFields({
   value,
   set,
+  changes,
+  onChanges,
   menuOpen,
   onMenuOpen,
   onPanel,
 }: {
   value: PText;
   set: (f: string, v: unknown) => void;
+  changes: boolean;
+  onChanges: (v: boolean) => void;
   menuOpen: boolean;
   onMenuOpen: (open: boolean) => void;
   onPanel: () => void;
@@ -2668,6 +2680,12 @@ function MenuButtonFields({
         header; a tap on a link, outside the menu, or on the button again closes it.
       </p>
       <Checkbox label="Show the menu open in this preview" checked={menuOpen} onChange={(e) => onMenuOpen(e.target.checked)} />
+      <Checkbox
+        label="Change the button while the menu is open"
+        description="On, its three lines turn into an ✕ on a darker square while the menu is open. Off, the button keeps its ☰ look whether the menu is open or shut."
+        checked={changes}
+        onChange={(e) => onChanges(e.target.checked)}
+      />
       <Button size="sm" onClick={onPanel}>
         The menu panel&apos;s width and position…
       </Button>

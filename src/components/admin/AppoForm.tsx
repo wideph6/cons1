@@ -1,12 +1,13 @@
 "use client";
 
 import { FileUp, ImageUp, RefreshCw, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { LinkQrPreview } from "@/components/admin/AppoQr";
+import { SavedPicker, type PickerChoice } from "@/components/admin/SavedPicker";
 import { useSession } from "@/components/SessionProvider";
 import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } from "@/components/ui";
 import { needsApproval, type PendingEditInfo } from "@/lib/pending-shared";
-import { api } from "@/lib/client";
+import { api, ClientError } from "@/lib/client";
 import { uploadAppoFile, type UploadedObject } from "@/lib/appo-client";
 import { DEFAULT_NUMBER_PREFIX, numberExample, NUMBER_RE, randomNumber, resolveLink, tidyNumber } from "@/lib/appo-link";
 import { APPO_FIELDS, type AppoDomain, type AppoLists, type AppoOfficer, type AppoOption, type AppoOptionKind, type AppoRecord } from "@/lib/appo-types";
@@ -84,8 +85,11 @@ export function AppoForm({
   onListsChanged: () => Promise<void> | void;
 }) {
   const { toast } = useToast();
-  const { user: me } = useSession();
+  const { user: me, can } = useSession();
   const editing = Boolean(record);
+  /** May take saved values and officers off their lists (the super admin always may). */
+  const canRemove = can("appo_settings");
+  const officerFieldId = useId();
 
   const [draft, setDraft] = useState<Draft>({
     domain_id: "",
@@ -232,6 +236,67 @@ export function AppoForm({
   const carriesRemovedOfficer = Boolean(
     record && (record.officer_name || record.officer_signature_r2_key) && !officers.some((o) => o.id === record.officer_id),
   );
+
+  /** A removal the server no longer finds was already done elsewhere; anything else is said and stops it. */
+  function removalFailed(e: unknown) {
+    if (e instanceof ClientError && e.status === 404) return;
+    toast(errorMessage(e), "danger");
+    throw e;
+  }
+
+  /**
+   * Takes a value off its saved list, so later uploads no longer offer it. Documents that use it keep it;
+   * a value picked on this upload goes with it, unless the document being edited already carried it.
+   */
+  async function removeOption(kind: AppoOptionKind, o: AppoOption) {
+    try {
+      await api(`/api/admin/appo/options/${o.id}`, { method: "DELETE" });
+    } catch (e) {
+      removalFailed(e);
+    }
+    toast(`“${o.value}” will no longer be suggested`);
+    await onListsChanged();
+    const same = (v: string | null | undefined) => (v ?? "").trim().toLowerCase() === o.value.toLowerCase();
+    setDraft((d) => (same(d[kind]) && !same(record?.[kind]) ? { ...d, [kind]: "" } : d));
+  }
+
+  /**
+   * Takes an officer off the saved list. Documents given this officer keep their own copy of the name,
+   * designation and signature, so the document being edited keeps them too, as saved on it.
+   */
+  async function removeOfficer(o: AppoOfficer) {
+    try {
+      await api(`/api/admin/appo/officers/${o.id}`, { method: "DELETE" });
+    } catch (e) {
+      removalFailed(e);
+    }
+    toast(`${o.name || "The officer"} will no longer be suggested`);
+    await onListsChanged();
+    if (record && record.officer_id === o.id) {
+      setDraft((d) => (d.officer === o.id ? { ...d, officer: CURRENT_OFFICER } : d));
+      if (record.officer_signature_r2_key) {
+        api<{ data_uri: string | null }>(`/api/admin/appo/${record.id}/signature`)
+          .then((r) => setCurrentSignature(r.data_uri))
+          .catch(() => setCurrentSignature(null));
+      }
+    } else {
+      setDraft((d) => (d.officer === o.id ? { ...d, officer: NO_OFFICER } : d));
+    }
+  }
+
+  const officerChoices: PickerChoice[] = [
+    { value: NO_OFFICER, text: "— no officer —", kind: "none" },
+    ...(carriesRemovedOfficer
+      ? [{ value: CURRENT_OFFICER, text: `${record?.officer_name || "Unnamed"} (as saved on this document)`, kind: "kept" as const }]
+      : []),
+    ...officers.map((o) => ({
+      value: o.id,
+      text: o.name,
+      detail: o.designation || undefined,
+      remove: canRemove ? () => removeOfficer(o) : undefined,
+    })),
+    { value: NEW_OFFICER, text: "+ Add a new officer…", kind: "add" },
+  ];
 
   async function save() {
     setError(null);
@@ -497,6 +562,7 @@ export function AppoForm({
               options={lists?.options[f.kind] ?? []}
               disabled={busy}
               onChange={(v) => set(f.kind, v)}
+              onRemove={canRemove ? (o) => removeOption(f.kind, o) : undefined}
             />
           ))}
         </div>
@@ -504,25 +570,22 @@ export function AppoForm({
         <div className="rounded-md border p-3 space-y-3">
           <Field
             label="Approving officer"
+            htmlFor={officerFieldId}
             hint={
               officers.length
                 ? "Picking a saved officer fills in their designation and signature too."
                 : "No officers saved yet. Choose “Add a new officer” to save the first one."
             }
           >
-            <Select value={draft.officer} disabled={busy} onChange={(e) => set("officer", e.target.value)}>
-              <option value={NO_OFFICER}>— no officer —</option>
-              {carriesRemovedOfficer ? (
-                <option value={CURRENT_OFFICER}>{record?.officer_name || "Unnamed"} (as saved on this document)</option>
-              ) : null}
-              {officers.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                  {o.designation ? ` — ${o.designation}` : ""}
-                </option>
-              ))}
-              <option value={NEW_OFFICER}>+ Add a new officer…</option>
-            </Select>
+            <SavedPicker
+              key={session}
+              id={officerFieldId}
+              value={draft.officer}
+              choices={officerChoices}
+              disabled={busy}
+              onChange={(v) => set("officer", v)}
+              removeNote="Documents already given this officer keep their name, designation and signature."
+            />
           </Field>
 
           {pickedOfficer ? (
@@ -637,7 +700,8 @@ const ADD_NEW = "__new";
 
 /**
  * A field that offers every value saved so far and lets a new one be typed. A new value joins the
- * saved list when the document is saved, so it can be picked on every later upload.
+ * saved list when the document is saved, so it can be picked on every later upload. With `onRemove`,
+ * each saved value has a bin beside it that stops it being offered again.
  */
 function OptionField({
   label,
@@ -645,13 +709,16 @@ function OptionField({
   options,
   disabled,
   onChange,
+  onRemove,
 }: {
   label: string;
   value: string;
   options: AppoOption[];
   disabled?: boolean;
   onChange: (value: string) => void;
+  onRemove?: (option: AppoOption) => Promise<void>;
 }) {
+  const id = useId();
   const saved = options.find((o) => o.value.toLowerCase() === value.trim().toLowerCase());
   // Typing when there is nothing to pick from yet; otherwise picking, with "add new" one choice away.
   const [typing, setTyping] = useState(options.length === 0);
@@ -683,30 +750,31 @@ function OptionField({
     );
   }
 
+  const choices: PickerChoice[] = [
+    { value: "", text: "— none —", kind: "none" },
+    // A value this document carries that has since been removed from the saved list.
+    ...(value && !saved ? [{ value, text: `${value} (not in saved list)`, kind: "kept" as const }] : []),
+    ...options.map((o) => ({ value: o.value, text: o.value, remove: onRemove ? () => onRemove(o) : undefined })),
+    { value: ADD_NEW, text: "+ Add new…", kind: "add" },
+  ];
+
   return (
-    <Field label={label}>
-      <Select
+    <Field label={label} htmlFor={id}>
+      <SavedPicker
+        id={id}
         value={saved ? saved.value : value}
+        choices={choices}
         disabled={disabled}
-        onChange={(e) => {
-          if (e.target.value === ADD_NEW) {
+        onChange={(v) => {
+          if (v === ADD_NEW) {
             setTyping(true);
             onChange("");
           } else {
-            onChange(e.target.value);
+            onChange(v);
           }
         }}
-      >
-        <option value="">— none —</option>
-        {/* A value this document carries that has since been removed from the saved list. */}
-        {value && !saved ? <option value={value}>{value} (not in saved list)</option> : null}
-        {options.map((o) => (
-          <option key={o.id} value={o.value}>
-            {o.value}
-          </option>
-        ))}
-        <option value={ADD_NEW}>+ Add new…</option>
-      </Select>
+        removeNote="Documents that already use it keep it."
+      />
     </Field>
   );
 }

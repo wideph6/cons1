@@ -663,7 +663,7 @@ Sidebar → **New M** → **Upload document**. Aik waqt mein aik PDF. Sab se nay
 | Link | Us domain ke links mein se |
 | Date of attestation | Khali chhoren to aaj ki tareekh. Link ke date formula mein `DDMMYYYY` ban kar jati hai (31-10-2026 → `31102026`) |
 | Attestation number | Khali chhoren to khud banta hai. **Generate** dabane se pehle hi nazar aa jata hai. Apna likhna ho to format `GEN-NMPD-SSTI-FBDS` — pehle teen huroof hamesha `GEN`, phir chaar chaar capital English huroof ke teen hisse. Har number poore system mein aik hi dafa use ho sakta hai, chahe domain alag ho |
-| Document type, Issuing office, Issuing authority | List se chunen, ya **+ Add new…** se naya likhen. Naya likha hua save hote hi aage hamesha list mein milega |
+| Document type, Issuing office, Issuing authority | List se chunen, ya **+ Add new…** se naya likhen. Naya likha hua save hote hi aage hamesha list mein milega. Super admin ko list mein har saved value ke saamne **dustbin** nazar aata hai (aage dekhen) |
 | Approving officer | List se officer chunen to us ka naam, designation aur signature **teeno aik saath** lag jate hain. **+ Add a new officer…** chunen to teeno ke alag khane khulte hain (naam, designation, signature image) aur ye officer aage ke liye save ho jata hai |
 
 Poora link = `https://` + domain + link (formulas mein document ki values). Misaal:
@@ -679,6 +679,12 @@ https://baxoq.pk/verify-general-attestation-by-qr?attestation_number=GEN-NMPD-SS
 - **Delete** (dustbin): document aur us ki PDF dono hamesha ke liye chali jati hain.
 - **Search**: upar wala aik hi box saare domains mein dhoondta hai — number, document type, office, authority, officer, domain, link ka naam, file ka naam, aur date (`31102026`, `31-10-2026`, `31/10/26` ya `2026-10-31`). Saath wale dropdown se aik domain tak mehdood bhi kar sakte hain.
 - **Saved values**: wahan saari saved lists aur officers nazar aate hain. Kisi ghalat value ya officer ko wahan se hata sakte hain — jo documents pehle se us ko use kar rahe hain un par koi asar nahi parta.
+- **Form ke andar se hatana:** naya case add karte (ya edit karte) waqt Document type, office, authority (Appo mein har field) aur
+  Approving officer ki list kholen — super admin (aur jis admin ko "Remove saved values" ki ijazat ho) ko har saved value ke saamne
+  **dustbin** nazar aata hai. Dabane par aik dafa poochta hai (**Remove** / **Keep it**); Remove se woh value aage ki suggestions mein
+  nahi aati, lekin jin records mein pehle se lagi hai un mein waisi hi rehti hai (koi record minus nahi hota). Agar wohi value is naye
+  case mein chuni hui thi to field khali ho jata hai; edit wale record ki apni value us record mein rehti hai. Lambi list mein oopar
+  search box bhi aata hai. Wohi value baad mein dobara **+ Add new…** se likh kar save karen to phir se list mein aa jati hai.
 
 ## 13.5 QR code
 
@@ -890,6 +896,9 @@ Sidebar → **New M page** (ya New M page par **Page design**). Yahan poora page
   - **☰ button par click** (ya upar **Menu open**) se menu preview mein khul jata hai; phir har menu item par click kar ke us ka
     **naam, link, icon** badlen, hide/show, tarteeb, duplicate/delete; **+** se naya item. Menu ki koi cheez select ho to menu khula
     rehta hai. ☰ button ka naam (screen readers ke liye) aur hide/show bhi yahin.
+  - **☰ button ka style:** ☰ button par click kar ke **Change the button while the menu is open** — tick karen to menu khulne par
+    button ki teen lakeerein ✕ ban jati hain aur us ka dabba thora gehra ho jata hai. Tick na karen (shuru mein yehi hai) to menu
+    khula ho ya band, button bilkul waisa hi ☰ rehta hai. Phir **Save**.
   - Kuch select na ho to **Mobile page settings** mein **Menu: also show quick links and social icons** — on karen to quick links,
     "Quick links" heading, "Connect with NPLS" aur social icons menu items ke neeche aa jate hain aur pehle ki tarah click se editable
     hain. Off (shuru mein) par menu sirf items dikhata hai, design jaisa.

@@ -12,6 +12,7 @@ export function MobileMenu({
   buttonProps,
   panelProps,
   panelStyle,
+  changes = false,
   open: forced,
   children,
 }: {
@@ -25,6 +26,8 @@ export function MobileMenu({
   panelProps?: { className?: string; "data-edit"?: string };
   /** The panel's width and place, as the super admin set them. */
   panelStyle?: CSSProperties;
+  /** The button turns into an ✕ while the menu is open; otherwise it keeps its look. */
+  changes?: boolean;
   /** Set by the editor to hold the menu open or shut; visitors toggle it themselves. */
   open?: boolean;
   children: ReactNode;
@@ -52,7 +55,7 @@ export function MobileMenu({
         ref={button}
         type="button"
         {...buttonProps}
-        className={["apom-burger", open ? "is-open" : "", buttonProps?.className ?? ""].join(" ").trim()}
+        className={["apom-burger", open && changes ? "is-open" : "", buttonProps?.className ?? ""].join(" ").trim()}
         aria-label={label}
         aria-expanded={open}
         aria-controls={id}

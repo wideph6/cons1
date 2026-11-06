@@ -211,6 +211,11 @@ export interface MobileContent {
     subtitle: PText;
     /** The hamburger button: its spoken name, and whether it is shown at all. */
     menu_button: PText;
+    /**
+     * Whether the ☰ button changes while its menu is open (its three lines turn into an ✕ on a darker
+     * square). Off, it keeps its look whether the menu is open or shut.
+     */
+    menu_button_changes: boolean;
   };
   menu: {
     items: PLink[];
@@ -624,6 +629,7 @@ export const DEFAULT_MOBILE: MobileContent = {
     title: { ...DEFAULT_DESKTOP.header.title },
     subtitle: { ...DEFAULT_DESKTOP.header.subtitle },
     menu_button: t("Menu"),
+    menu_button_changes: false,
   },
   menu: {
     items: copyLinks(DEFAULT_DESKTOP.nav.items, (l) => ({ text: l.text.replace(/\s*\n\s*/g, " "), width: null })),
@@ -1066,6 +1072,7 @@ export function cleanMobile(input: unknown): MobileContent {
       title: cleanLinkText(header.title, d.header.title),
       subtitle: cleanText(header.subtitle, d.header.subtitle),
       menu_button: cleanText(header.menu_button, d.header.menu_button),
+      menu_button_changes: bool(header.menu_button_changes, d.header.menu_button_changes),
     },
     menu: {
       items: cleanLinks(menu.items, d.menu.items, "menu"),
@@ -1132,6 +1139,7 @@ export function mobileFromDesktop(desk: DesktopContent, mob: MobileContent): Mob
       title: desk.header.title,
       subtitle: desk.header.subtitle,
       menu_button: mob.header.menu_button,
+      menu_button_changes: mob.header.menu_button_changes,
     },
     menu: {
       ...mob.menu,

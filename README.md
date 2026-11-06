@@ -138,7 +138,7 @@ For example `/verify-general-attestation-by-qr?attestation_number={attestation_n
 
 Documents uploaded while New M still used the Domains page are moved by `new-m.sql`: each hostname they used becomes a New M domain with the standard link, so their links and QR codes stay the same.
 
-**Saved values** — document type, issuing office and issuing authority each offer every value typed so far; a new value joins its list when the document is saved. **Approving officers** are saved as name + designation + signature, so picking one fills in all three; "Add a new officer" asks for the three separately and saves them for next time. A document keeps its own copy of the officer, so removing an officer from the list (under **Saved values**) leaves documents already uploaded unchanged. A signature image is only deleted from storage once no officer and no document still shows it.
+**Saved values** — document type, issuing office and issuing authority each offer every value typed so far; a new value joins its list when the document is saved. **Approving officers** are saved as name + designation + signature, so picking one fills in all three; "Add a new officer" asks for the three separately and saves them for next time. A document keeps its own copy of the officer, so removing an officer from the list leaves documents already uploaded unchanged. Whoever may remove saved values (`new_m_settings` / `appo_settings`; the super admin always) sees a bin beside each saved value and officer right in the upload form's lists (`SavedPicker`), as well as under **Saved values**: it asks once, takes the value off its list for every later upload, and leaves the documents that use it as they are. A value removed while it was picked on a new upload is cleared from that form; the document being edited keeps its own. A long list opens with a search box. A signature image is only deleted from storage once no officer and no document still shows it.
 
 **Editing** — every field can be changed afterwards, and choosing a new PDF removes the old one. Changing the domain, the link, the number or the date changes the complete link.
 
@@ -188,7 +188,9 @@ hero's text, one item per row (54 design px, Roboto 15.4), a touched or hovered 
 on the desktop nav; the page behind is not dimmed. The quick links and social icons follow the items only when **Menu: also show quick
 links and social icons** (`menu.extras`, off by default) is on in the mobile view's settings. The panel's width, left-right and up-down
 place (`menu.panel`, design pixels of the 360 px grid: 320 wide, 20 from the left, 0 below the header as drawn; `cleanMenuPanel` keeps it
-on the page) are set from **Menu panel** in the editor. Escape, a tap on a link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button that
+on the page) are set from **Menu panel** in the editor. The ☰ button keeps its look while the menu is open, unless **Change the button
+while the menu is open** (`header.menu_button_changes`, off by default) is ticked in its settings: then its lines turn into an ✕ on a
+darker square. Escape, a tap on a link or outside closes it. The document card shows the file the way a phone browser does (PDF icon, name, an Open button that
 downloads the PDF) or, if chosen, every page drawn with PDF.js at the phone's width (`MobilePdf`; nothing is downloaded while the view is hidden).
 Its fonts are the mobile design's: Roboto and Noto Serif, served from `public/nm-assets/fonts` (OFL).
 
