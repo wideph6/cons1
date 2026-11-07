@@ -239,8 +239,9 @@ New M. Run [`supabase/appo.sql`](supabase/appo.sql) once before using it.
 
 Only what the whole app shares knows about both: the middleware (it looks a host up in New M's and Appo's domains side by side
 and hands the visit to the system it belongs to; on a host set up in both, a link goes to New M when it matches one of New
-M's, else to Appo, so give the two systems different link patterns there, and a document's PDF address goes to New M, which
-hands it on to Appo when the document is not its own), the permission list, the admin sidebar, the activity log's wording and the storage report. Appo's tab shows to the super
+M's, else to Appo, so give the two systems different link patterns there, and a document's PDF address, which both write
+the same way, is looked up in both at once, one round trip as anywhere else, and answered by whichever has it, in
+`src/lib/document-tab.ts`), the permission list, the admin sidebar, the activity log's wording and the storage report. Appo's tab shows to the super
 admin and to admins given any Appo permission; its page design is the super admin's only, as for New M.
 
 Appo's page starts from the design's defaults. **Copy New M's design** in Appo's page editor brings in New M's page as it is
