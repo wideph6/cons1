@@ -79,16 +79,21 @@ const INTERNAL_ROUTES = ["/nm-view", "/nm-doc", "/appo-view", "/appo-doc"];
 
 /**
  * Hands a New M or Appo visit to the app's own route for it, with the address the visitor opened in
- * headers named after the system (x-nm-… or x-appo-…).
+ * headers named after the system (x-nm-… or x-appo-…). also names the other system too, for a route that
+ * hands the visit on when it is not its own. Such headers sent by the visitor are dropped first, so only
+ * the middleware ever sets them.
  */
-function serve(req: NextRequest, host: string, route: string, prefix: "x-nm" | "x-appo"): NextResponse {
+function serve(req: NextRequest, host: string, route: string, prefix: "x-nm" | "x-appo", also?: "x-nm" | "x-appo"): NextResponse {
   const target = req.nextUrl.clone();
   target.pathname = route;
   target.search = "";
   const headers = new Headers(req.headers);
-  headers.set(`${prefix}-host`, host);
-  headers.set(`${prefix}-path`, encodeURIComponent(req.nextUrl.pathname));
-  headers.set(`${prefix}-search`, encodeURIComponent(req.nextUrl.search));
+  for (const p of ["x-nm", "x-appo"]) for (const k of ["host", "path", "search"]) headers.delete(`${p}-${k}`);
+  for (const p of also ? [prefix, also] : [prefix]) {
+    headers.set(`${p}-host`, host);
+    headers.set(`${p}-path`, encodeURIComponent(req.nextUrl.pathname));
+    headers.set(`${p}-search`, encodeURIComponent(req.nextUrl.search));
+  }
   return NextResponse.rewrite(target, { request: { headers } });
 }
 
@@ -111,7 +116,11 @@ export async function middleware(req: NextRequest) {
       const search = req.nextUrl.search;
       const [newM, appo] = await Promise.all([domainLinks(NEW_M, host), domainLinks(APPO, host)]);
       // A document's PDF address (/storage/applications/…/documents/….pdf) on any New M domain, then a link.
-      if (newM !== null && readDocumentAddress(pathname)) return serve(req, host, "/nm-doc", "x-nm");
+      // On a host Appo serves too, the address may be one of Appo's documents: New M hands it on to Appo when
+      // the document is not its own (otherwise Appo's "View document" on such a host would never open).
+      if (newM !== null && readDocumentAddress(pathname)) {
+        return serve(req, host, "/nm-doc", "x-nm", appo !== null && readAppoAddress(pathname) ? "x-appo" : undefined);
+      }
       if (newM?.some((t) => matchTemplate(t, pathname, search))) return serve(req, host, "/nm-view", "x-nm");
       // The same for Appo's own domains. A host set up in both answers as New M.
       if (appo !== null && readAppoAddress(pathname)) return serve(req, host, "/appo-doc", "x-appo");

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { GET as appoDocument } from "@/app/appo-doc/route";
 import { readDocumentAddress } from "@/lib/new-m-link";
 import { DEFAULT_DESKTOP, faviconHref, fillTitle, type DesktopContent } from "@/lib/new-m-page";
 import { getDesktop, publicFilename, rowByAddress } from "@/lib/new-m-page-server";
@@ -107,7 +108,11 @@ export async function GET(req: NextRequest) {
     console.error("[new-m document tab]", e);
     return plain(503, "The document is temporarily unavailable. Please try again in a moment.");
   }
-  if (!row) return plain(404, "Not found");
+  if (!row) {
+    // On a host Appo serves as well (the middleware then names it too), the address may be an Appo document's.
+    if (req.headers.get("x-appo-host")) return appoDocument(req);
+    return plain(404, "Not found");
+  }
 
   const filename = publicFilename(row);
   if (params.has("download") || params.has("view")) {
