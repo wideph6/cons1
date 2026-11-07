@@ -9,7 +9,11 @@ import { db } from "./supabase";
 import type { FileRow, LinkRow, User } from "./types";
 import { guessContentType } from "./utils";
 
-export const FILE_SELECT = "*, users(name,email), links!inner(id,path,domain_id,domains(id,hostname))";
+/**
+ * A file with its uploader and its link and domain. The uploader is named by its column: files has a second
+ * user column (reviewed_by, supabase/commission.sql), and a plain users(...) would then be ambiguous.
+ */
+export const FILE_SELECT = "*, users:uploaded_by(name,email), links!inner(id,path,domain_id,domains(id,hostname))";
 
 interface RawFile extends Omit<FileRow, "uploader" | "link"> {
   users?: { name: string; email: string } | null;
