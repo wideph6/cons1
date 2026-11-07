@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { FileHistoryDialog, PendingReviewDialog } from "@/components/admin/FileHistory";
+import { CaseStatus } from "@/components/admin/CaseStatus";
 import { useCallback, useEffect, useState } from "react";
 import { NewMDomains } from "@/components/admin/NewMDomains";
 import { NewMForm } from "@/components/admin/NewMForm";
@@ -377,6 +378,7 @@ export function NewMManager() {
                           Doc no. <span className="font-mono font-medium text-text">{r.doc_number}</span>
                         </div>
                       ) : null}
+                      <CaseStatus system="new_m" id={r.id} label={r.attestation_number} row={r} onChanged={() => void load()} />
                       {r.pending_edit ? (
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           <Badge tone="warn">

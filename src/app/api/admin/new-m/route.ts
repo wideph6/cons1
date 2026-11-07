@@ -25,6 +25,7 @@ import {
   withCurrentQr,
 } from "@/lib/new-m";
 import { resolveLink } from "@/lib/new-m-link";
+import { isCommission, newCaseReview } from "@/lib/review";
 import { db } from "@/lib/supabase";
 import { previousCounts, sweepReplaced } from "@/lib/file-history";
 import { pendingFor } from "@/lib/pending-edits";
@@ -64,6 +65,8 @@ export async function GET(req: NextRequest) {
 
     const list = (columns: readonly string[]) => {
       let query = db().from("new_m_view").select("*", { count: "exact" });
+      // A commission user only ever sees the documents they uploaded.
+      if (isCommission(user)) query = query.eq("created_by", user.id);
       if (domainId) query = query.eq("domain_id", domainId);
       if (q) {
         // , ( ) and quotes would break the or() filter; % _ * are wildcards there.
@@ -174,6 +177,8 @@ export async function POST(req: NextRequest) {
       // The QR code of the complete link — domain, link, number and date — is saved with the document.
       ...qrColumns(resolveLink(link.hostname, link.template, number, issueDate)),
       created_by: user.id,
+      // A commission user's document waits for the super admin before visitors can see it.
+      ...newCaseReview(user),
     };
 
     // The document and any new saved values are written together. A saved value that fails to save

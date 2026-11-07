@@ -76,23 +76,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       .maybeSingle();
     if (!link) return notFound("link_not_found", host);
 
-    let { data: file } = await db()
-      .from("files")
-      .select("id,r2_key,filename,content_type,size")
-      .eq("link_id", link.id)
-      .eq("filename", filename)
-      .maybeSingle();
-    if (!file) {
-      // Tolerate case differences in the typed URL.
-      const res = await db()
-        .from("files")
-        .select("id,r2_key,filename,content_type,size")
-        .eq("link_id", link.id)
-        .ilike("filename", filename.replace(/[%_]/g, "\\$&"))
-        .limit(1)
-        .maybeSingle();
-      file = res.data;
-    }
+    // Only files the super admin let through: a commission user's upload waits for approval. Before
+    // supabase/commission.sql there is no such column, and every file is live.
+    const findFile = async (exact: boolean) => {
+      const query = (approvedOnly: boolean) => {
+        let q = db().from("files").select("id,r2_key,filename,content_type,size").eq("link_id", link.id);
+        // Tolerate case differences in the typed URL.
+        q = exact ? q.eq("filename", filename) : q.ilike("filename", filename.replace(/[%_]/g, "\\$&"));
+        if (approvedOnly) q = q.eq("review_status", "approved");
+        return q.limit(1).maybeSingle();
+      };
+      const res = await query(true);
+      return res.error?.code === "42703" ? query(false) : res;
+    };
+    let { data: file } = await findFile(true);
+    if (!file) file = (await findFile(false)).data;
     if (!file) return notFound("file_not_found", host);
 
     await db().rpc("increment_download", { file_uuid: file.id });

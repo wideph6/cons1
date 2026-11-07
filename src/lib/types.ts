@@ -1,6 +1,8 @@
 import type { PendingEditInfo } from "./pending-shared";
+import type { OldMPendingInfo, ReviewStatus } from "./review-shared";
 
-export type Role = "superadmin" | "admin";
+/** A commission user creates cases and reads and edits only their own; each waits for the super admin's approval. */
+export type Role = "superadmin" | "admin" | "commission";
 
 /**
  * What each user's counts are made of: Old M uploads, replaces, renames and deletes, and the New M and Appo
@@ -124,6 +126,13 @@ export interface FileRow {
   last_downloaded_at: string | null;
   uploader?: { name: string; email: string } | null;
   link?: { id: string; path: string; domain: { id: string; hostname: string } } | null;
+  /** Where the case stands: a commission user's new case waits for the super admin (supabase/commission.sql). */
+  review_status?: ReviewStatus;
+  /** Why the super admin turned it down. */
+  review_note?: string;
+  reviewed_at?: string | null;
+  /** A commission user's replace, rename or move of this approved file, waiting for approval. */
+  pending_change?: OldMPendingInfo | null;
 }
 
 export interface Activity {
@@ -177,6 +186,8 @@ export interface UserWithCounts extends User {
   counts: Counts;
   /** What the user owes now (0 before supabase/finance.sql). */
   pending?: number;
+  /** For a commission user: what they are owed now (0 before supabase/commission.sql). */
+  owed?: number;
 }
 
 export interface DashboardStats {
@@ -354,6 +365,11 @@ export interface NewMRecord {
   verify_url: string;
   /** Earlier PDFs still kept after a replace, for the super admin to compare (15 days each). */
   previous_files?: number;
-  /** An edit waiting for the super admin's approval (documents uploaded more than a month ago). */
+  /** An edit waiting for the super admin's approval (documents uploaded more than a month ago, or by a commission user). */
   pending_edit?: PendingEditInfo | null;
+  /** Where the case stands: a commission user's new case waits for the super admin (supabase/commission.sql). */
+  review_status?: ReviewStatus;
+  /** Why the super admin turned it down. */
+  review_note?: string;
+  reviewed_at?: string | null;
 }

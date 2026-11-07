@@ -155,6 +155,24 @@ async function readView(query: (columns: string) => PromiseLike<ViewRead>): Prom
   return res.error?.code === "42703" ? query(ROW_COLUMNS) : res;
 }
 
+/**
+ * The same for what visitors are shown: only documents the super admin let through (a commission user's new
+ * document waits for approval). Before supabase/commission.sql there is no such column and every document
+ * is live; a missing column is told apart from the address columns by its name.
+ */
+async function readLive(query: (columns: string, approvedOnly: boolean) => PromiseLike<ViewRead>): Promise<ViewRead> {
+  let columns = `${ROW_COLUMNS},${ADDRESS_COLUMNS}`;
+  let approvedOnly = true;
+  for (let tries = 0; tries < 3; tries++) {
+    const res = await query(columns, approvedOnly);
+    if (res.error?.code !== "42703") return res;
+    if (approvedOnly && /review_status/.test(res.error.message)) approvedOnly = false;
+    else if (columns !== ROW_COLUMNS) columns = ROW_COLUMNS;
+    else return res;
+  }
+  return query(columns, approvedOnly);
+}
+
 /** The same-site address of a document's PDF; the number and date are what unlock it. */
 export function documentPath(number: string, isoDate: string, mode?: "open" | "download"): string {
   const sp = new URLSearchParams({ number, date: isoDate });
@@ -218,15 +236,11 @@ export async function pageRecordById(id: string): Promise<PageRecord> {
 
 /** The document whose number and date unlock its PDF. */
 export async function rowByNumberAndDate(number: string, isoDate: string): Promise<ViewRow | null> {
-  const { data, error } = await readView((columns) =>
-    db()
-      .from("appo_view")
-      .select(columns)
-      .eq("attestation_number", number)
-      .eq("issue_date", isoDate)
-      .limit(1)
-      .maybeSingle(),
-  );
+  const { data, error } = await readLive((columns, approvedOnly) => {
+    let q = db().from("appo_view").select(columns).eq("attestation_number", number).eq("issue_date", isoDate);
+    if (approvedOnly) q = q.eq("review_status", "approved");
+    return q.limit(1).maybeSingle();
+  });
   if (error) {
     if (isMissingTable(error)) return null;
     throw dbError(error);
@@ -239,14 +253,19 @@ export async function rowByNumberAndDate(number: string, isoDate: string): Promi
  * document's own domain. Null before appo.sql has added the address columns.
  */
 export async function rowByAddress(host: string, storageNumber: string, hashName: string): Promise<ViewRow | null> {
-  const { data, error } = await db()
-    .from("appo_view")
-    .select(`${ROW_COLUMNS},${ADDRESS_COLUMNS}`)
-    .eq("doc_storage_number", storageNumber)
-    .eq("doc_hash_name", hashName)
-    .in("domain_hostname", hostCandidates(host))
-    .limit(1)
-    .maybeSingle();
+  const query = (approvedOnly: boolean) => {
+    let q = db()
+      .from("appo_view")
+      .select(`${ROW_COLUMNS},${ADDRESS_COLUMNS}`)
+      .eq("doc_storage_number", storageNumber)
+      .eq("doc_hash_name", hashName)
+      .in("domain_hostname", hostCandidates(host));
+    if (approvedOnly) q = q.eq("review_status", "approved");
+    return q.limit(1).maybeSingle();
+  };
+  let { data, error } = await query(true);
+  // Before supabase/commission.sql every document is live.
+  if (error?.code === "42703" && /review_status/.test(error.message)) ({ data, error } = await query(false));
   if (error) {
     if (isMissingTable(error) || error.code === "42703") return null;
     throw dbError(error);
@@ -291,8 +310,9 @@ export async function findVisit(host: string, pathname: string, search: string):
     if (!m) continue;
     if (!m.valid) return { matched: true, record: null };
 
-    const { data: rows, error: rowError } = await readView((columns) => {
+    const { data: rows, error: rowError } = await readLive((columns, approvedOnly) => {
       let q = db().from("appo_view").select(columns).eq("domain_id", domain.id);
+      if (approvedOnly) q = q.eq("review_status", "approved");
       if (m.number) q = q.eq("attestation_number", m.number);
       if (m.date) q = q.eq("issue_date", m.date);
       // Without a number in the link, only the link itself tells documents apart.

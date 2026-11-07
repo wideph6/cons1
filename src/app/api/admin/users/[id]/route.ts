@@ -6,8 +6,9 @@ import { countsFromRows } from "@/lib/counts";
 import { getBalances, getRates } from "@/lib/finance";
 import { NO_BALANCE } from "@/lib/finance-shared";
 import { sanitizePermissions } from "@/lib/permissions";
+import { REVIEW_MISSING } from "@/lib/review";
 import { db } from "@/lib/supabase";
-import type { BreakdownRow, CounterRow, User } from "@/lib/types";
+import type { BreakdownRow, CounterRow, Role, User } from "@/lib/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -64,6 +65,16 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   });
 }
 
+/** A role as sent: super admin, commission based, or (anything else) admin. */
+function roleOf(input: unknown): Role {
+  return input === "superadmin" ? "superadmin" : input === "commission" ? "commission" : "admin";
+}
+
+/** The database turned the role down: commission users need supabase/commission.sql first. */
+function roleRefused(error: { code?: string; message?: string }): boolean {
+  return error.code === "23514" && /role/.test(error.message ?? "");
+}
+
 /** PATCH /api/admin/users/:id  { name?, email?, role?, permissions?, is_active?, password? } */
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   return run(async () => {
@@ -93,12 +104,14 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(400, "Enter a valid email address");
       patch.email = email;
     }
+    const role = body.role !== undefined ? roleOf(body.role) : target.role;
     if (body.role !== undefined) {
-      const role = body.role === "superadmin" ? "superadmin" : "admin";
       if (isSelf && role !== "superadmin") throw new ApiError(400, "You cannot remove your own super admin role");
       patch.role = role;
     }
-    if (body.permissions !== undefined) patch.permissions = sanitizePermissions(body.permissions);
+    // A commission user keeps only what such a user may have, also when they were an admin before.
+    if (body.permissions !== undefined) patch.permissions = sanitizePermissions(body.permissions, role);
+    else if (body.role !== undefined && role === "commission") patch.permissions = sanitizePermissions(target.permissions, role);
     if (body.is_active !== undefined) {
       if (isSelf && !body.is_active) throw new ApiError(400, "You cannot disable your own account");
       patch.is_active = Boolean(body.is_active);
@@ -111,6 +124,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const { data, error } = await db().from("users").update(patch).eq("id", id).select(USER_COLUMNS).single();
     if (error) {
       if (error.code === "23505") throw new ApiError(409, "A user with that email already exists");
+      if (roleRefused(error)) throw new ApiError(400, REVIEW_MISSING);
       throw new ApiError(500, error.message);
     }
 

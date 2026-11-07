@@ -16,6 +16,7 @@ import {
   withCurrentQr,
 } from "@/lib/new-m";
 import { deleteObject } from "@/lib/r2";
+import { requireOwnCase } from "@/lib/review";
 import { db } from "@/lib/supabase";
 import { editNewMRecord, type PatchBody } from "@/lib/new-m-edit";
 
@@ -27,7 +28,9 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     const user = await requireUser();
     requireNewMAccess(user);
     const { id } = await params;
-    const [item] = await withCurrentQr([await getRecord(id)]);
+    const record = await getRecord(id);
+    requireOwnCase(user, record.created_by);
+    const [item] = await withCurrentQr([record]);
     return ok({ item });
   });
 }

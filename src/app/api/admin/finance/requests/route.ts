@@ -12,6 +12,8 @@ export async function POST(req: NextRequest) {
   return run(async () => {
     const me = await requireUser();
     if (me.role === "superadmin") throw new ApiError(400, "The super admin records payments on the user's account instead.");
+    // A commission user is paid by the super admin, not the other way round.
+    if (me.role === "commission") throw new ApiError(400, "Payments to you are sent by the super admin; accept them in your Finance tab.");
     if (!(await canSeeOwnAccount(me.id))) throw new ApiError(403, "Payment requests are not open to you. Ask the super admin.");
     const body = await readBody<{ amount?: unknown; note?: unknown }>(req);
     const amount = parseAmount(body.amount);

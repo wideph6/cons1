@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { ok, requireUser, run } from "@/lib/api";
+import { requireOwnCase } from "@/lib/review";
 import { getRecord, requireNewMAccess } from "@/lib/new-m";
 import { presignDownload } from "@/lib/r2";
 
@@ -12,6 +13,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     requireNewMAccess(user);
     const { id } = await params;
     const record = await getRecord(id);
+    requireOwnCase(user, record.created_by);
 
     const download = req.nextUrl.searchParams.get("download") === "1";
     const url = await presignDownload(

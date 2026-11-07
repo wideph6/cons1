@@ -25,6 +25,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileHistoryDialog } from "@/components/admin/FileHistory";
 import { FilePreview } from "@/components/admin/FilePreview";
+import { CaseStatus, OldMChangeBadge } from "@/components/admin/CaseStatus";
 import { LinkCheck } from "@/components/admin/LinkCheck";
 import { useSession } from "@/components/SessionProvider";
 import {
@@ -54,7 +55,7 @@ const SERVER_FALLBACK_LIMIT = 4 * 1024 * 1024;
 type SortKey = "filename" | "size" | "uploaded_at" | "updated_at" | "download_count";
 
 export function FileManager() {
-  const { can, isSuper } = useSession();
+  const { can, isSuper, isCommission } = useSession();
   const { toast } = useToast();
   const router = useRouter();
   const sp = useSearchParams();
@@ -183,8 +184,8 @@ export function FileManager() {
     if (!renameTarget) return;
     setBusy(true);
     try {
-      await api(`/api/admin/files/${renameTarget.id}`, { method: "PATCH", json: { filename: name } });
-      toast(`Renamed to ${name}`);
+      const r = await api<{ item: FileRow }>(`/api/admin/files/${renameTarget.id}`, { method: "PATCH", json: { filename: name } });
+      toast(r.item.pending_change ? `Renaming to ${name} sent for approval. Visitors keep the current name until the super admin approves it.` : `Renamed to ${name}`);
       setRenameTarget(null);
       await refreshAll();
     } catch (e) {
@@ -285,7 +286,11 @@ export function FileManager() {
           r.moved ? "ok" : "danger",
         );
       } else {
-        toast(`Moved ${r.moved} file${r.moved === 1 ? "" : "s"}`);
+        toast(
+          isCommission
+            ? `${r.moved} file${r.moved === 1 ? "" : "s"} moved. A file that is already live moves once the super admin approves it.`
+            : `Moved ${r.moved} file${r.moved === 1 ? "" : "s"}`,
+        );
       }
       await refreshAll();
     } catch (e) {
@@ -531,6 +536,8 @@ export function FileManager() {
                               <FileText className="size-4 text-text-faint shrink-0" />
                               <span className="truncate">{f.filename}</span>
                             </button>
+                            <CaseStatus system="old_m" id={f.id} label={f.filename} row={f} onChanged={() => void (selectedLinkId && loadFiles(selectedLinkId))} />
+                            <OldMChangeBadge change={f.pending_change} />
                           </td>
                           <td className="tabular-nums whitespace-nowrap">{formatBytes(f.size)}</td>
                           <td className="whitespace-nowrap">
@@ -972,6 +979,7 @@ function UploadDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const changedRef = useRef(false);
   const { toast } = useToast();
+  const { isCommission } = useSession();
 
   useEffect(() => {
     if (open) {
@@ -1270,6 +1278,7 @@ function UploadDialog({
       {doneCount > 0 && pending === 0 && !running ? (
         <p className="mt-3 text-[12.5px] text-ok-600">
           Upload complete.{" "}
+          {isCommission ? "New files go live once the super admin approves them; a new version of a live file waits for approval too. " : null}
           <button
             className="underline"
             onClick={async () => {

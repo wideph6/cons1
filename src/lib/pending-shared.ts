@@ -6,9 +6,13 @@
 /** A document uploaded longer ago than this (by its upload date, not its attestation date) needs approval to change. */
 export const APPROVAL_AFTER_DAYS = 30;
 
-/** Whether an edit by this user to a document uploaded at createdAt waits for approval. The super admin's never does. */
+/**
+ * Whether an edit by this user to a live document uploaded at createdAt waits for approval. The super admin's
+ * never does; a commission user's always does.
+ */
 export function needsApproval(role: string, createdAt: string, now = Date.now()): boolean {
   if (role === "superadmin") return false;
+  if (role === "commission") return true;
   const t = Date.parse(createdAt);
   return Number.isFinite(t) && now - t > APPROVAL_AFTER_DAYS * 86_400_000;
 }

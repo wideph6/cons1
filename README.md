@@ -378,6 +378,34 @@ page says so.
   `new_m_pending_edits` / `appo_pending_edits` instead (`src/lib/*-edit.ts`, which the PATCH route and the approval share).
   `/api/admin/{new-m,appo}/:id/pending` shows it and approves (re-running the edit as its requester) or turns it down.
 
+## Commission users
+
+Run [`supabase/commission.sql`](supabase/commission.sql) after the other SQL files (safe to re-run). Until then a commission user
+cannot be made and everything works as before.
+
+- **Role `commission`** (`users.role`): may be given only `COMMISSION_PERMISSIONS` — Old M `upload`, `replace`, `rename`,
+  `move`, `preview`; `new_m_create` / `_edit`; `appo_create` / `_edit`. Every list, record, preview, rename, move and
+  replace route lets them reach only their own cases (`requireOwnCase`, `uploaded_by` / `created_by`); link, domain and
+  dashboard counts are their own (`withOwnCounts`).
+- **Review** (`review_status` approved | pending | rejected, `review_note`, `reviewed_by`, `reviewed_at` on `files`,
+  `new_m_records`, `appo_records`; existing rows are approved): a commission user's new case starts `pending`, and visitors
+  are only ever served approved cases (`[...slug]`, `findVisit`, `rowByNumberAndDate`, `rowByAddress`, falling back to
+  everything while the column is missing). `commission_review` approves or turns down a waiting case and, approving, pays the
+  user's rate for its system in the same step (`commission_entries`, once per case). A turned-down case stays hidden with its
+  reason until its user edits it or sends it again (`RESUBMIT`). Their edits of a live case wait: New M / Appo through the
+  existing `*_pending_edits` (`needsApproval` is always true for them), Old M through `old_m_pending_edits` (one per file: a
+  new file uploaded but not attached, a new name, another link; `/api/admin/files/:id/pending`). Edits earn nothing.
+  `/api/admin/reviews` is the super admin's queue (`reviewQueue`, `reviewCount` for the sidebar badge) and decisions;
+  `CaseStatus.tsx` shows the state in each list.
+- **Commission** (`commission_rates` per user and system; `commission_entries`: `commission`, `reversal`, `payment`;
+  `commission_balances`): deleting an approved case, directly or through its link or domain, takes its commission back once
+  (`commission_reverse_deleted` triggers). The super admin pays at most what is still owed less payments already waiting
+  (`payCommission`): to a user who sees their Finance tab (`finance_accounts.visible`) it is a `commission_requests` row they
+  accept or turn down (`commission_decide_request`, once, only by them; the super admin may take it back while it waits); to one
+  who does not, it is recorded at once. Code: `src/lib/commission*.ts`, `src/lib/review*.ts`, `src/lib/old-m-pending.ts`,
+  `src/app/api/admin/{commission,reviews}`, `CommissionAccount.tsx`, `ReviewsPage.tsx`. Commission users are never charged by
+  the admins' finance (its trigger charges `role = 'admin'` only).
+
 ## Permissions
 
 Super admins can do everything. Admin users get only the boxes ticked for them:

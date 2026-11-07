@@ -1,3 +1,4 @@
+import type { CommissionOverviewRow } from "./commission-shared";
 import type { CountedAction } from "./types";
 
 /**
@@ -96,8 +97,13 @@ export interface FinanceOverview {
   /** False until supabase/finance.sql has been run. */
   ready: boolean;
   rates: FinanceRates;
+  /** Admins (and the super admin): what they owe. */
   users: FinanceOverviewRow[];
   requests: FinanceRequest[];
+  /** False until supabase/commission.sql has been run. */
+  commission_ready: boolean;
+  /** Commission users: what they are owed. */
+  commission: CommissionOverviewRow[];
 }
 
 /** Money as the panel writes it: Rs 1,250 or Rs 1,250.50. */

@@ -3,6 +3,7 @@
 import { Check, HandCoins, Send, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { CommissionOverview, MyCommission } from "@/components/admin/CommissionAccount";
 import { useSession } from "@/components/SessionProvider";
 import {
   Alert,
@@ -391,8 +392,9 @@ export function UserFinance({ userId, onChanged }: { userId: string; onChanged?:
 /* ---------------- The Finance page ---------------- */
 
 export function FinancePage() {
-  const { isSuper } = useSession();
-  return isSuper ? <FinanceOverviewPage /> : <MyFinance />;
+  const { isSuper, isCommission } = useSession();
+  // A commission user is owed money for their cases; everyone else owes for their entries.
+  return isSuper ? <FinanceOverviewPage /> : isCommission ? <MyCommission /> : <MyFinance />;
 }
 
 /** The super admin's page: the rates, the requests waiting, and every user's balance. */
@@ -439,7 +441,7 @@ function FinanceOverviewPage() {
     <>
       <PageHeader
         title="Finance"
-        description="What each admin owes for the entries they make, what they have paid, and the payments they tell you about."
+        description="What each admin owes for the entries they make and has paid, and what you owe each commission user for their approved cases."
       />
       {error ? <Alert tone="danger" className="mb-4">{error}</Alert> : null}
       {!data && !error ? <Loading /> : null}
@@ -475,6 +477,8 @@ function FinanceOverviewPage() {
           <Card title={`Payment requests waiting${data.requests.length ? ` (${data.requests.length})` : ""}`}>
             <RequestsTable requests={data.requests} showUser onDecide={(request, accept) => setDeciding({ request, accept })} />
           </Card>
+
+          <CommissionOverview rows={data.commission} ready={data.commission_ready} />
 
           <Card title={`Users · pending in all ${formatMoney(totalPending)}`} padded={false}>
             {data.users.length === 0 ? (

@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  ClipboardCheck,
   FolderOpen,
   FolderTree,
   Globe,
@@ -27,17 +28,25 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   show: boolean;
+  /** A count shown beside the label (things waiting). */
+  badge?: number;
 }
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
-  const { user, isSuper, can, financeVisible } = useSession();
+  const { user, isSuper, isCommission, can, financeVisible, reviews } = useSession();
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const nav: NavItem[] = [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard, show: true },
-    { href: "/admin/old-m", label: "Old M", icon: FolderTree, show: true },
+    // A commission user sees Old M only when they may upload or change their own files there.
+    {
+      href: "/admin/old-m",
+      label: "Old M",
+      icon: FolderTree,
+      show: !isCommission || can("upload") || can("replace") || can("rename") || can("move") || can("preview"),
+    },
     {
       href: "/admin/new-m",
       label: "New M",
@@ -64,7 +73,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         can("appo_domains"),
     },
     { href: "/admin/appo/page-design", label: "Appo page", icon: LayoutTemplate, show: isSuper },
-    { href: "/admin/domains", label: "Domains", icon: Globe, show: true },
+    { href: "/admin/reviews", label: "Reviews", icon: ClipboardCheck, show: isSuper, badge: reviews },
+    { href: "/admin/domains", label: "Domains", icon: Globe, show: !isCommission },
     { href: "/admin/storage", label: "Storage", icon: HardDrive, show: isSuper },
     { href: "/admin/search", label: "Search by date", icon: Search, show: isSuper || can("search") },
     { href: "/admin/activity", label: "Activity", icon: Activity, show: isSuper || can("view_activity") },
@@ -113,6 +123,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               >
                 <n.icon className="size-4 shrink-0" />
                 {n.label}
+                {n.badge ? (
+                  <span className="ml-auto rounded-full bg-warn-600 text-white text-[11px] font-semibold px-1.5 min-w-5 text-center tabular-nums">
+                    {n.badge}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

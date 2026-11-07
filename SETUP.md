@@ -1191,6 +1191,50 @@ appo.sql ke baad). Dobara chalana theek hai. Jab tak ye na chale, Finance page y
   nayi PDF mit jati hai).
 - Aik document par aik waqt mein aik hi change waiting reh sakta hai. Super admin ke apne changes foran live hote hain.
 
+# Hissa 17 — Commission users (commission par kaam karne wale)
+
+**Pehle:** Supabase → SQL Editor → `supabase/commission.sql` ka poora content paste karen → **Run** (schema.sql, new-m.sql,
+appo.sql, doc-number.sql aur finance.sql ke baad). Dobara chalana mehfooz hai. Jab tak ye na chale, Commission user bana nahi sakte
+(bataya jata hai) aur baqi sab pehle ki tarah chalta hai.
+
+## 17.1 Commission user banana
+
+- **Users → New user → Role: Commission based.** Neeche sirf wohi permissions aati hain jo aise user ko mil sakti hain: Old M mein
+  file upload, replace, rename, move aur preview; New M aur Appo mein document upload aur edit. Delete, settings, domains/links,
+  search aur doosron ke cases kabhi nahi.
+- Wahin **Commission** bhi likhen: har approved naye case ka kitna (Old M file, New M document, Appo document — alag alag). Baad mein
+  user ke page (**Users → user → Commission account**) par badal sakte hain; naya amount aage approve hone wale cases par lagta hai,
+  pehle diya hua commission waisa hi rehta hai.
+- Commission user ko **sirf apne cases** nazar aate hain (list, search, dashboard, Old M ki file ginti bhi) — kisi aur ka case us ke
+  liye "not found" hai.
+
+## 17.2 Naya case aur edit — approval ke baad live
+
+- Commission user ka **naya case** (Old M file, New M ya Appo document) save hote hi **Waiting for approval** hota hai:
+  verification page, PDF aur Old M ka download link visitors ke liye **tab tak nahi khulte** jab tak super admin approve na kare.
+- Super admin ke sidebar mein **Reviews** (sath mein ginti): **New cases waiting** aur **Changes waiting**. **View** se file/PDF
+  dekhen, **Approve** se case live aur user ko us ka commission; **Turn down** par wajah likhna zaroori hai. Lists (Old M / New M /
+  Appo) mein bhi case ke neeche wahin Approve / Turn down aata hai.
+- **Turn down** kiya hua case chhupa rehta hai, user ko wajah dikhti hai. User **Edit** kar ke theek kare (save hote hi dobara review
+  mein) ya **Send again** dabaye. Is par koi commission nahi.
+- Approved case ki **edit** (New M/Appo ki koi field ya PDF, Old M ka replace / rename / move) bhi review mein jati hai; tab tak
+  visitors ko **purana approved version** hi milta hai. Approve par change lagta hai, Turn down par kuch nahi badalta. **Edit par
+  koi commission nahi.** Jo case abhi approve nahi hua us ki edit foran lagti hai aur case dobara review mein chala jata hai.
+
+## 17.3 Finance — remaining amount aur payment
+
+- Har approved naye case par us user ka commission **Remaining** mein jud jata hai (aik case par aik hi dafa). Approved case baad
+  mein delete ho (khud, ya link/domain ke sath) to us ka commission **khud wapas** (minus) ho jata hai — history mein likha aata hai.
+- **Users → user → Commission account:** Remaining, Earned, Taken back, Paid; commission ke amounts; history.
+- **Show this user their Finance tab** ka tick:
+  - **Tick laga:** user ke sidebar mein **Finance** aata hai. Aap **Send** se payment bhejte hain — wo user ke paas **request** ki
+    tarah jati hai; user **Accept** kare to amount us ke Remaining se minus hota hai (Turn down kare to kuch nahi badalta). Jab tak
+    user accept na kare, aap **Take back** se wapas le sakte hain.
+  - **Tick nahi:** user ko Finance nahi dikhta, request ki zarurat nahi — **Record** dabate hi payment Remaining se minus ho jati hai.
+- Payment kabhi Remaining se zyada nahi ho sakti (jo bheji ja chuki aur waiting hai woh bhi gin kar).
+- **Finance** page par **Commission users** ki alag table: har user ka Remaining, Earned, Paid aur waiting payments. Admins wala
+  purana hisaab (jo admin dete hain) bilkul pehle jaisa hai; commission user par entry ka koi charge nahi lagta.
+
 # Hissa 16 — 7 digit document number
 
 **Pehle:** Supabase → SQL Editor → `supabase/doc-number.sql` ka poora content paste karen → **Run** (new-m.sql aur appo.sql ke

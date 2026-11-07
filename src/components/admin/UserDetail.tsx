@@ -4,7 +4,8 @@ import { ArrowLeft, KeyRound, Minus, RotateCcw, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PermissionGrid, generatePassword } from "@/components/admin/UsersManager";
+import { COMMISSION_DEFAULTS, PermissionGrid, RoleBadge, generatePassword } from "@/components/admin/UsersManager";
+import { UserCommission } from "@/components/admin/CommissionAccount";
 import { actionTone, describeActivity } from "@/components/admin/ActivityLog";
 import { UserFinance } from "@/components/admin/FinanceAccount";
 import { useSession } from "@/components/SessionProvider";
@@ -28,7 +29,7 @@ import {
 import { api } from "@/lib/client";
 import { emptyCounts } from "@/lib/counts";
 import { BILLED_ACTIONS, countChangeAmount, formatMoney, NO_BALANCE, NO_RATES, type FinanceBalance, type FinanceRates } from "@/lib/finance-shared";
-import { COUNTED_ACTIONS, type Activity, type BreakdownRow, type CountChange, type CountedAction, type CounterRow, type Counts, type Paged, type User } from "@/lib/types";
+import { COUNTED_ACTIONS, type Activity, type BreakdownRow, type CountChange, type CountedAction, type CounterRow, type Counts, type Paged, type Role, type User } from "@/lib/types";
 import { ACTION_LABELS, displayPath, formatDateTime } from "@/lib/utils";
 
 interface DetailResponse {
@@ -65,7 +66,7 @@ export function UserDetail({ id }: { id: string }) {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "superadmin">("admin");
+  const [role, setRole] = useState<Role>("admin");
   const [active, setActive] = useState(true);
   const [perms, setPerms] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
@@ -214,7 +215,7 @@ export function UserDetail({ id }: { id: string }) {
         title={u.name || u.email}
         description={
           <span className="inline-flex items-center gap-2">
-            {u.email} {u.role === "superadmin" ? <Badge tone="teal">Super admin</Badge> : <Badge>Admin</Badge>}
+            {u.email} <RoleBadge role={u.role} />
             {!u.is_active ? <Badge tone="warn">Disabled</Badge> : null}
             {isSelf ? <Badge tone="info">This is you</Badge> : null}
           </span>
@@ -382,7 +383,11 @@ export function UserDetail({ id }: { id: string }) {
         )}
       </Card>
 
-      <UserFinance key={financeKey} userId={u.id} onChanged={() => void load()} />
+      {u.role === "commission" ? (
+        <UserCommission userId={u.id} />
+      ) : (
+        <UserFinance key={financeKey} userId={u.id} onChanged={() => void load()} />
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         {/* Profile + permissions */}
@@ -402,8 +407,18 @@ export function UserDetail({ id }: { id: string }) {
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </Field>
             <Field label="Role">
-              <Select value={role} onChange={(e) => setRole(e.target.value as "admin" | "superadmin")} disabled={isSelf}>
+              <Select
+                value={role}
+                onChange={(e) => {
+                  const next = e.target.value as Role;
+                  setRole(next);
+                  // A commission user keeps only what such a user may have.
+                  if (next === "commission") setPerms((p) => Object.fromEntries(Object.entries(p).filter(([k]) => k in COMMISSION_DEFAULTS)));
+                }}
+                disabled={isSelf}
+              >
                 <option value="admin">Admin</option>
+                <option value="commission">Commission based</option>
                 <option value="superadmin">Super admin</option>
               </Select>
             </Field>
@@ -411,7 +426,15 @@ export function UserDetail({ id }: { id: string }) {
               <Checkbox label="Account is active" description="Disabled users cannot sign in." checked={active} disabled={isSelf} onChange={(e) => setActive(e.target.checked)} />
             </div>
           </div>
-          {role === "admin" ? (
+          {role === "commission" ? (
+            <div className="space-y-3">
+              <Alert tone="info">
+                A commission user makes cases and reads and changes only their own. Each new case and each change waits for your
+                approval (Reviews) before visitors see it; each new case you approve earns the commission set in their account above.
+              </Alert>
+              <PermissionGrid value={perms} onChange={setPerms} role="commission" />
+            </div>
+          ) : role === "admin" ? (
             <PermissionGrid value={perms} onChange={setPerms} />
           ) : (
             <Alert tone="teal">Super admins have every permission and can manage users and counters.</Alert>

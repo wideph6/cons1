@@ -1,4 +1,5 @@
 import type { PendingEditInfo } from "./pending-shared";
+import type { ReviewStatus } from "./review-shared";
 
 /* ---------------- Appo ---------------- */
 
@@ -126,6 +127,11 @@ export interface AppoRecord {
   verify_url: string;
   /** Earlier PDFs still kept after a replace, for the super admin to compare (15 days each). */
   previous_files?: number;
-  /** An edit waiting for the super admin's approval (documents uploaded more than a month ago). */
+  /** An edit waiting for the super admin's approval (documents uploaded more than a month ago, or by a commission user). */
   pending_edit?: PendingEditInfo | null;
+  /** Where the case stands: a commission user's new case waits for the super admin (supabase/commission.sql). */
+  review_status?: ReviewStatus;
+  /** Why the super admin turned it down. */
+  review_note?: string;
+  reviewed_at?: string | null;
 }

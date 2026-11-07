@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
-import { filenameTaken, getFileWithContext } from "@/lib/files";
+import { commissionPlaceFile, filenameTaken, getFileFor, getFileWithContext } from "@/lib/files";
+import { isCommission } from "@/lib/review";
 import { deleteObject } from "@/lib/r2";
 import { db } from "@/lib/supabase";
 import { cleanFilename, guessContentType } from "@/lib/utils";
@@ -11,9 +12,9 @@ type Ctx = { params: Promise<{ id: string }> };
 /** GET /api/admin/files/:id */
 export async function GET(_req: NextRequest, { params }: Ctx) {
   return run(async () => {
-    await requireUser();
+    const user = await requireUser();
     const { id } = await params;
-    return ok({ item: await getFileWithContext(id) });
+    return ok({ item: await getFileFor(user, id) });
   });
 }
 
@@ -24,9 +25,11 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     requirePermission(user, "rename");
     const { id } = await params;
     const body = await readBody<{ filename?: string }>(req);
-    const file = await getFileWithContext(id);
+    const file = await getFileFor(user, id);
     const next = cleanFilename(body.filename);
     if (next === file.filename) return ok({ item: file });
+    // A commission user's rename of a live file waits for the super admin; of one not live yet it is made now.
+    if (isCommission(user)) return ok({ item: await commissionPlaceFile(user, file, { filename: next }) });
 
     if (await filenameTaken(file.link_id, next, id)) {
       throw new ApiError(409, `A file named "${next}" already exists in this link`);

@@ -7,8 +7,10 @@ import { useSession } from "@/components/SessionProvider";
 import { Alert, Badge, Button, Card, Checkbox, EmptyState, Field, Input, Loading, Modal, PageHeader, Select, errorMessage, useToast } from "@/components/ui";
 import { api } from "@/lib/client";
 import { formatMoney } from "@/lib/finance-shared";
-import { ALL_PERMISSIONS, PERMISSIONS, type Permission } from "@/lib/permissions";
-import type { UserWithCounts } from "@/lib/types";
+import { COMMISSION_LABELS, NO_COMMISSION_RATES, type CommissionRates } from "@/lib/commission-shared";
+import { ALL_PERMISSIONS, COMMISSION_PERMISSIONS, PERMISSIONS, type Permission } from "@/lib/permissions";
+import { CASE_SYSTEMS } from "@/lib/review-shared";
+import type { Role, UserWithCounts } from "@/lib/types";
 import { formatDateTime, timeAgo } from "@/lib/utils";
 
 export function UsersManager() {
@@ -35,7 +37,7 @@ export function UsersManager() {
     <>
       <PageHeader
         title="Users"
-        description="Admin users can only do what you allow. Their upload, replace, rename and delete counts are tracked here."
+        description="Admin users can only do what you allow. Commission users make cases, see only their own, and earn commission on each one you approve. Everyone's upload, replace, rename and delete counts are tracked here."
         actions={
           <Button variant="primary" icon={<UserPlus className="size-4" />} onClick={() => setCreateOpen(true)}>
             New user
@@ -62,7 +64,7 @@ export function UsersManager() {
                   <th className="text-right">New M</th>
                   <th className="text-right">Appo</th>
                   <th className="text-right">Total</th>
-                  <th className="text-right">Pending</th>
+                  <th className="text-right" title="An admin: what they owe. A commission user: what is still to be paid to them.">Balance</th>
                   <th>Last sign-in</th>
                   <th></th>
                 </tr>
@@ -78,7 +80,9 @@ export function UsersManager() {
                         <div className="text-[12px] text-text-muted">{u.email}</div>
                       </Link>
                     </td>
-                    <td>{u.role === "superadmin" ? <Badge tone="teal">Super admin</Badge> : <Badge>Admin</Badge>}</td>
+                    <td>
+                      <RoleBadge role={u.role} />
+                    </td>
                     <td>{u.is_active ? <Badge tone="ok">Active</Badge> : <Badge tone="warn">Disabled</Badge>}</td>
                     <td className="text-right tabular-nums">{u.counts.upload}</td>
                     <td className="text-right tabular-nums">{u.counts.replace}</td>
@@ -87,7 +91,19 @@ export function UsersManager() {
                     <td className="text-right tabular-nums">{u.counts.create_new_m}</td>
                     <td className="text-right tabular-nums">{u.counts.create_appo}</td>
                     <td className="text-right tabular-nums font-semibold">{u.counts.total}</td>
-                    <td className="text-right tabular-nums whitespace-nowrap">{u.pending ? formatMoney(u.pending) : <span className="text-text-faint">—</span>}</td>
+                    <td className="text-right tabular-nums whitespace-nowrap">
+                      {u.role === "commission" ? (
+                        u.owed ? (
+                          <span title="Still to be paid to this commission user">{formatMoney(u.owed)} due</span>
+                        ) : (
+                          <span className="text-text-faint">—</span>
+                        )
+                      ) : u.pending ? (
+                        formatMoney(u.pending)
+                      ) : (
+                        <span className="text-text-faint">—</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap text-text-muted" title={formatDateTime(u.last_login_at)}>
                       {u.last_login_at ? timeAgo(u.last_login_at) : "never"}
                     </td>
@@ -116,6 +132,55 @@ export function UsersManager() {
   );
 }
 
+/** A user's role as the panel shows it. */
+export function RoleBadge({ role }: { role: Role }) {
+  if (role === "superadmin") return <Badge tone="teal">Super admin</Badge>;
+  if (role === "commission") return <Badge tone="info">Commission</Badge>;
+  return <Badge>Admin</Badge>;
+}
+
+/** What a new commission user may do from the start: every system's making and changing of their own cases. */
+export const COMMISSION_DEFAULTS: Record<string, boolean> = Object.fromEntries(COMMISSION_PERMISSIONS.map((k) => [k, true]));
+
+/** What each approved case earns a commission user, as typed. */
+export function CommissionRatesFields({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: Record<keyof CommissionRates, string>;
+  onChange: (next: Record<keyof CommissionRates, string>) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="border rounded-md p-3 space-y-2">
+      <div className="text-[13px] font-medium">
+        Commission
+        <span className="font-normal text-text-muted"> · in rupees, earned on each new case once you approve it (edits earn nothing)</span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {CASE_SYSTEMS.map((s) => (
+          <Field key={s} label={COMMISSION_LABELS[s]}>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              value={value[s]}
+              disabled={disabled}
+              onChange={(e) => onChange({ ...value, [s]: e.target.value })}
+            />
+          </Field>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function ratesText(rates: CommissionRates): Record<keyof CommissionRates, string> {
+  return { old_m: String(rates.old_m), new_m: String(rates.new_m), appo: String(rates.appo) };
+}
+
 export function generatePassword(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
   const bytes = new Uint32Array(14);
@@ -127,18 +192,23 @@ export function PermissionGrid({
   value,
   onChange,
   disabled,
+  role = "admin",
 }: {
   value: Record<string, boolean>;
   onChange: (next: Record<string, boolean>) => void;
   disabled?: boolean;
+  /** A commission user is offered only making and changing their own cases. */
+  role?: Role;
 }) {
-  const groups = Array.from(new Set(PERMISSIONS.map((p) => p.group)));
-  const allOn = PERMISSIONS.every((p) => value[p.key]);
+  const offered = role === "commission" ? PERMISSIONS.filter((p) => COMMISSION_PERMISSIONS.includes(p.key)) : [...PERMISSIONS];
+  const groups = Array.from(new Set(offered.map((p) => p.group)));
+  const allOn = offered.every((p) => value[p.key]);
+  const everything = role === "commission" ? COMMISSION_DEFAULTS : ALL_PERMISSIONS;
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-medium">Permissions</span>
-        <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChange(allOn ? {} : { ...ALL_PERMISSIONS })}>
+        <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChange(allOn ? {} : { ...everything })}>
           {allOn ? "Clear all" : "Allow everything"}
         </Button>
       </div>
@@ -147,7 +217,7 @@ export function PermissionGrid({
           <div key={g} className="border rounded-md p-3">
             <div className="text-[12px] text-text-muted mb-2">{g}</div>
             <div className="space-y-2">
-              {PERMISSIONS.filter((p) => p.group === g).map((p) => (
+              {offered.filter((p) => p.group === g).map((p) => (
                 <Checkbox
                   key={p.key}
                   label={p.label}
@@ -174,8 +244,9 @@ function CreateUserDialog({ open, onClose, onCreated }: { open: boolean; onClose
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"admin" | "superadmin">("admin");
+  const [role, setRole] = useState<Role>("admin");
   const [perms, setPerms] = useState<Record<string, boolean>>({ upload: true, replace: true, rename: true, preview: true, search: true, view_activity: true });
+  const [rates, setRates] = useState(ratesText(NO_COMMISSION_RATES));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -186,6 +257,7 @@ function CreateUserDialog({ open, onClose, onCreated }: { open: boolean; onClose
       setPassword(generatePassword());
       setRole("admin");
       setPerms({ upload: true, replace: true, rename: true, preview: true, search: true, view_activity: true });
+      setRates(ratesText(NO_COMMISSION_RATES));
       setError(null);
     }
   }, [open]);
@@ -195,7 +267,9 @@ function CreateUserDialog({ open, onClose, onCreated }: { open: boolean; onClose
     setBusy(true);
     setError(null);
     try {
-      await api("/api/admin/users", { json: { name, email, password, role, permissions: perms } });
+      await api("/api/admin/users", {
+        json: { name, email, password, role, permissions: perms, ...(role === "commission" ? { commission_rates: rates } : {}) },
+      });
       toast(`${name || email} created. Share the password with them securely.`);
       await onCreated();
     } catch (err) {
@@ -238,14 +312,32 @@ function CreateUserDialog({ open, onClose, onCreated }: { open: boolean; onClose
               </Button>
             </div>
           </Field>
-          <Field label="Role" hint={role === "superadmin" ? "Super admins can do everything, including managing users." : "Admins only get the permissions you tick below."}>
-            <Select value={role} onChange={(e) => setRole(e.target.value as "admin" | "superadmin")}>
+          <Field
+            label="Role"
+            hint={
+              role === "superadmin"
+                ? "Super admins can do everything, including managing users."
+                : role === "commission"
+                  ? "Makes cases and changes only their own. Each new case and each change waits for your approval before visitors see it."
+                  : "Admins only get the permissions you tick below."
+            }
+          >
+            <Select
+              value={role}
+              onChange={(e) => {
+                const next = e.target.value as Role;
+                setRole(next);
+                if (next === "commission") setPerms({ ...COMMISSION_DEFAULTS });
+              }}
+            >
               <option value="admin">Admin</option>
+              <option value="commission">Commission based</option>
               <option value="superadmin">Super admin</option>
             </Select>
           </Field>
         </div>
-        {role === "admin" ? <PermissionGrid value={perms} onChange={setPerms} /> : null}
+        {role !== "superadmin" ? <PermissionGrid value={perms} onChange={setPerms} role={role} /> : null}
+        {role === "commission" ? <CommissionRatesFields value={rates} onChange={setRates} /> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
       </form>
     </Modal>

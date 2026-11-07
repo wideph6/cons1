@@ -3,10 +3,23 @@ import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requireSuperadmin, requireUser, run } from "@/lib/api";
 import { hashPassword, USER_COLUMNS, validatePassword } from "@/lib/auth";
 import { countsFromRows, emptyCounts } from "@/lib/counts";
-import { getBalances } from "@/lib/finance";
+import { getCommissionBalances, setCommissionRates } from "@/lib/commission";
+import { REVIEW_MISSING } from "@/lib/review";
+import { cleanRates, getBalances } from "@/lib/finance";
 import { sanitizePermissions } from "@/lib/permissions";
 import { db } from "@/lib/supabase";
-import type { CounterRow, User, UserWithCounts } from "@/lib/types";
+import type { CounterRow, Role, User, UserWithCounts } from "@/lib/types";
+
+/** A role as sent: super admin, commission based, or (anything else) admin. */
+function roleOf(input: unknown): Role {
+  return input === "superadmin" ? "superadmin" : input === "commission" ? "commission" : "admin";
+}
+
+/** The database turned the role down: commission users need supabase/commission.sql first. */
+function roleRefused(error: { code?: string; message?: string }): boolean {
+  return error.code === "23514" && /role/.test(error.message ?? "");
+}
+
 
 /** GET /api/admin/users — all users with their action counts (super admin only). */
 export async function GET() {
@@ -27,11 +40,12 @@ export async function GET() {
       byUser.set(row.user_id, arr);
     }
 
-    const balances = await getBalances();
+    const [balances, owed] = await Promise.all([getBalances(), getCommissionBalances()]);
     const items: UserWithCounts[] = ((users ?? []) as User[]).map((u) => ({
       ...u,
       counts: countsFromRows(byUser.get(u.id) ?? []),
       pending: balances.get(u.id)?.pending ?? 0,
+      owed: owed.get(u.id)?.remaining ?? 0,
     }));
     return ok({ items });
   });
@@ -48,6 +62,8 @@ export async function POST(req: NextRequest) {
       password?: string;
       role?: string;
       permissions?: Record<string, boolean>;
+      /** For a commission user: what each approved case earns them. */
+      commission_rates?: unknown;
     }>(req);
 
     const email = (body.email ?? "").trim().toLowerCase();
@@ -55,8 +71,9 @@ export async function POST(req: NextRequest) {
     const name = (body.name ?? "").trim();
     if (!name) throw new ApiError(400, "Name is required");
     const password = validatePassword(body.password);
-    const role = body.role === "superadmin" ? "superadmin" : "admin";
-    const permissions = role === "superadmin" ? {} : sanitizePermissions(body.permissions);
+    const role = roleOf(body.role);
+    const permissions = role === "superadmin" ? {} : sanitizePermissions(body.permissions, role);
+    const rates = role === "commission" ? cleanRates(body.commission_rates) : null;
 
     const { data, error } = await db()
       .from("users")
@@ -65,13 +82,15 @@ export async function POST(req: NextRequest) {
       .single();
     if (error) {
       if (error.code === "23505") throw new ApiError(409, "A user with that email already exists");
+      if (roleRefused(error)) throw new ApiError(400, REVIEW_MISSING);
       throw new ApiError(500, error.message);
     }
+    if (rates) await setCommissionRates(data.id, rates, me.id);
 
     await logActivity({
       user_id: me.id,
       action: "create_user",
-      details: { target_user_id: data.id, email, role, permissions: Object.keys(permissions) },
+      details: { target_user_id: data.id, email, role, permissions: Object.keys(permissions), ...(rates ? { commission_rates: rates } : {}) },
     });
     return ok({ item: { ...(data as User), counts: emptyCounts() } }, { status: 201 });
   });

@@ -11,7 +11,8 @@ import type { Activity, DashboardStats, FileRow } from "@/lib/types";
 import { ACTION_LABELS, displayPath, formatBytes, formatDateTime, timeAgo } from "@/lib/utils";
 
 interface StatsResponse {
-  stats: DashboardStats;
+  /** Null for a commission user, who sees only their own work. */
+  stats: DashboardStats | null;
   activity: Activity[];
   recent_files: FileRow[];
 }
@@ -32,19 +33,21 @@ export function Dashboard() {
   if (!data) return <Loading />;
   const s = data.stats;
 
-  const tiles: Array<{ label: string; value: string; sub?: string }> = [
-    { label: "Domains", value: String(s.domains), sub: `${s.active_domains} active` },
-    { label: "Links", value: String(s.links) },
-    { label: "Files", value: String(s.files), sub: formatBytes(s.total_size) },
-    { label: "Downloads", value: String(s.downloads) },
-    { label: "Uploaded today", value: String(s.uploads_today), sub: `${s.uploads_7d} in 7 days` },
-  ];
+  const tiles: Array<{ label: string; value: string; sub?: string }> = s
+    ? [
+        { label: "Domains", value: String(s.domains), sub: `${s.active_domains} active` },
+        { label: "Links", value: String(s.links) },
+        { label: "Files", value: String(s.files), sub: formatBytes(s.total_size) },
+        { label: "Downloads", value: String(s.downloads) },
+        { label: "Uploaded today", value: String(s.uploads_today), sub: `${s.uploads_7d} in 7 days` },
+      ]
+    : [];
 
   return (
     <>
       <PageHeader
         title={`Welcome back, ${user.name || user.email}`}
-        description="What is happening across your domains and links."
+        description={s ? "What is happening across your domains and links." : "Your own uploads and what you did. New cases go live once the super admin approves them."}
         actions={
           <>
             {can("upload") ? (
@@ -61,7 +64,7 @@ export function Dashboard() {
         }
       />
 
-      <div className="bg-surface border rounded-md grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y sm:divide-y-0 mb-5">
+      <div className={`bg-surface border rounded-md grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y sm:divide-y-0 mb-5 ${tiles.length ? "" : "hidden"}`}>
         {tiles.map((t) => (
           <div key={t.label} className="px-4 py-3">
             <div className="text-[12px] text-text-muted">{t.label}</div>

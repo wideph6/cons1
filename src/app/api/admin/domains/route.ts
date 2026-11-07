@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
+import { withOwnCounts } from "@/lib/files";
+import { isCommission } from "@/lib/review";
 import { db } from "@/lib/supabase";
 import type { Domain, LinkRow } from "@/lib/types";
 import { normalizeHostname } from "@/lib/utils";
@@ -9,7 +11,7 @@ import { addDomainToProject, vercelConfigured } from "@/lib/vercel";
 /** GET /api/admin/domains?include=links  — all domains (optionally with their links and counts). */
 export async function GET(req: NextRequest) {
   return run(async () => {
-    await requireUser();
+    const user = await requireUser();
     const include = req.nextUrl.searchParams.get("include") ?? "";
 
     const { data: domains, error } = await db().from("domains").select("*").order("hostname");
@@ -18,8 +20,10 @@ export async function GET(req: NextRequest) {
     const { data: links, error: lErr } = await db().from("links_view").select("*").order("path");
     if (lErr) throw new ApiError(500, lErr.message);
 
+    // A commission user's counts are made of their own files only.
+    const counted = isCommission(user) ? await withOwnCounts(user.id, (links ?? []) as LinkRow[]) : ((links ?? []) as LinkRow[]);
     const byDomain = new Map<string, LinkRow[]>();
-    for (const l of (links ?? []) as LinkRow[]) {
+    for (const l of counted) {
       const arr = byDomain.get(l.domain_id) ?? [];
       arr.push(l);
       byDomain.set(l.domain_id, arr);

@@ -1,12 +1,15 @@
 import { ApiError, ok, requireUser, run } from "@/lib/api";
 import { FILE_SELECT, mapFile } from "@/lib/files";
+import { isCommission } from "@/lib/review";
 import { db } from "@/lib/supabase";
 
 export async function GET() {
   return run(async () => {
     const user = await requireUser();
 
-    const { data: stats, error } = await db().rpc("dashboard_stats");
+    // A commission user's dashboard shows only their own work.
+    const commission = isCommission(user);
+    const { data: stats, error } = commission ? { data: null, error: null } : await db().rpc("dashboard_stats");
     if (error) throw new ApiError(500, error.message);
 
     let activityQuery = db()
@@ -17,11 +20,9 @@ export async function GET() {
     if (user.role !== "superadmin") activityQuery = activityQuery.eq("user_id", user.id);
     const { data: activity } = await activityQuery;
 
-    const { data: recentFiles } = await db()
-      .from("files")
-      .select(FILE_SELECT)
-      .order("uploaded_at", { ascending: false })
-      .limit(10);
+    let filesQuery = db().from("files").select(FILE_SELECT).order("uploaded_at", { ascending: false }).limit(10);
+    if (commission) filesQuery = filesQuery.eq("uploaded_by", user.id);
+    const { data: recentFiles } = await filesQuery;
 
     return ok({
       stats,

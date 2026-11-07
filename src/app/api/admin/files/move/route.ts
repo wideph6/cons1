@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
-import { filenameTaken, getFileWithContext, getLinkWithDomain } from "@/lib/files";
+import { commissionPlaceFile, filenameTaken, getFileFor, getFileWithContext, getLinkWithDomain } from "@/lib/files";
+import { isCommission } from "@/lib/review";
 import { db } from "@/lib/supabase";
 import type { MoveResult } from "@/lib/types";
 
@@ -26,6 +27,20 @@ export async function POST(req: NextRequest) {
     let moved = 0;
 
     for (const id of ids) {
+      if (isCommission(user)) {
+        const file = await getFileFor(user, id);
+        if (file.link_id === target.id) {
+          skipped.push({ filename: file.filename, reason: "Already in that link" });
+          continue;
+        }
+        try {
+          await commissionPlaceFile(user, file, { linkId: target.id });
+          moved++;
+        } catch (e) {
+          skipped.push({ filename: file.filename, reason: e instanceof Error ? e.message : "Could not be moved" });
+        }
+        continue;
+      }
       const file = await getFileWithContext(id);
       if (file.link_id === target.id) {
         skipped.push({ filename: file.filename, reason: "Already in that link" });

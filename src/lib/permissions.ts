@@ -44,11 +44,28 @@ export function can(
   return Boolean(user.permissions?.[perm]);
 }
 
-/** Keep only known permission keys with boolean values. */
-export function sanitizePermissions(input: unknown): Record<string, boolean> {
+/**
+ * What a commission user may be given: making cases and changing their own, in each system. Everything else
+ * (deleting, settings, domains and links, searching, other people's cases) stays the super admin's.
+ */
+export const COMMISSION_PERMISSIONS: Permission[] = [
+  "upload",
+  "replace",
+  "rename",
+  "move",
+  "preview",
+  "new_m_create",
+  "new_m_edit",
+  "appo_create",
+  "appo_edit",
+];
+
+/** Keep only known permission keys with boolean values (for a commission user, only those it may have). */
+export function sanitizePermissions(input: unknown, role?: Role): Record<string, boolean> {
   const out: Record<string, boolean> = {};
+  const allowed = role === "commission" ? COMMISSION_PERMISSIONS : PERMISSION_KEYS;
   if (input && typeof input === "object") {
-    for (const key of PERMISSION_KEYS) {
+    for (const key of allowed) {
       const v = (input as Record<string, unknown>)[key];
       if (v === true) out[key] = true;
     }

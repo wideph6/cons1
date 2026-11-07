@@ -7,6 +7,7 @@ import { SavedPicker, type PickerChoice } from "@/components/admin/SavedPicker";
 import { useSession } from "@/components/SessionProvider";
 import { Alert, Button, Field, Input, Modal, Select, errorMessage, useToast } from "@/components/ui";
 import { needsApproval, type PendingEditInfo } from "@/lib/pending-shared";
+import { reviewOf } from "@/lib/review-shared";
 import { api, ClientError } from "@/lib/client";
 import { uploadNewMFile, type UploadedObject } from "@/lib/new-m-client";
 import {
@@ -95,7 +96,7 @@ export function NewMForm({
   onListsChanged: () => Promise<void> | void;
 }) {
   const { toast } = useToast();
-  const { user: me, can } = useSession();
+  const { user: me, can, isCommission } = useSession();
   const editing = Boolean(record);
   /** May take saved values and officers off their lists (the super admin always may). */
   const canRemove = can("new_m_settings");
@@ -396,7 +397,9 @@ export function NewMForm({
       toast(
         r.pending
           ? `${r.item.attestation_number}: change sent for approval. It goes live once the super admin approves it.`
-          : `${r.item.attestation_number} ${editing ? "updated" : "uploaded"}`,
+          : isCommission && r.item.review_status === "pending"
+            ? `${r.item.attestation_number} ${editing ? "updated and" : ""} sent for approval. Visitors see it once the super admin approves it.`.replace("  ", " ")
+            : `${r.item.attestation_number} ${editing ? "updated" : "uploaded"}`,
       );
       // The list takes the saved document as returned, so the form closes without waiting for a reload.
       onSaved(r.item, !editing, listsChanged);
@@ -432,6 +435,14 @@ export function NewMForm({
           <Alert tone="warn">
             A change to this document is already waiting for the super admin&apos;s approval. Another one can be sent once it is
             approved or turned down.
+          </Alert>
+        ) : isCommission ? (
+          <Alert tone="info">
+            {!record
+              ? "Your document goes live, and earns its commission, once the super admin approves it. Until then visitors cannot open it."
+              : reviewOf(record) === "approved"
+                ? "Your changes (and a replaced PDF) go live only after the super admin approves them; until then the verification page shows it as it is now. Changes earn no commission."
+                : "This document is not live yet: your changes are saved now, and it goes to the super admin for approval again."}
           </Alert>
         ) : record && needsApproval(me.role, record.created_at) ? (
           <Alert tone="info">

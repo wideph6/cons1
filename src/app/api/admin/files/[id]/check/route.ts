@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { ok, requireUser, run } from "@/lib/api";
-import { getFileWithContext } from "@/lib/files";
+import { getFileFor } from "@/lib/files";
 import { headObject, presignDownload, probeUrl, type ProbeResult } from "@/lib/r2";
 import { probeHostname } from "@/lib/reach";
 import { db } from "@/lib/supabase";
@@ -28,9 +28,9 @@ export interface LinkCheckResult {
  */
 export async function GET(_req: NextRequest, { params }: Ctx) {
   return run(async () => {
-    await requireUser();
+    const user = await requireUser();
     const { id } = await params;
-    const file = await getFileWithContext(id);
+    const file = await getFileFor(user, id);
     if (!file.link) throw new Error("File has no link");
 
     const hostname = file.link.domain.hostname;

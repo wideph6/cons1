@@ -2,6 +2,8 @@ import { after, type NextRequest } from "next/server";
 import { ApiError, intParam, ok, requirePermission, requireUser, run } from "@/lib/api";
 import { previousCounts, sweepReplaced } from "@/lib/file-history";
 import { FILE_SELECT, mapFile } from "@/lib/files";
+import { oldMPendingFor } from "@/lib/old-m-pending";
+import { isCommission } from "@/lib/review";
 import { db } from "@/lib/supabase";
 
 /**
@@ -28,7 +30,8 @@ export async function GET(req: NextRequest) {
     if (linkId) q = q.eq("link_id", linkId);
     const domainId = sp.get("domain_id");
     if (domainId) q = q.eq("links.domain_id", domainId);
-    const uploadedBy = sp.get("uploaded_by");
+    // A commission user only ever sees the files they uploaded.
+    const uploadedBy = isCommission(user) ? user.id : sp.get("uploaded_by");
     if (uploadedBy) q = q.eq("uploaded_by", uploadedBy);
     const from = sp.get("from");
     if (from) {
@@ -54,8 +57,10 @@ export async function GET(req: NextRequest) {
 
     const files = (data ?? []).map((f) => mapFile(f as never));
     // Earlier versions still kept after a replace, for the super admin to compare.
-    const previous = await previousCounts("old_m", files.map((f) => f.id));
-    const items = files.map((f) => ({ ...f, previous_files: previous.get(f.id) ?? 0 }));
+    const ids = files.map((f) => f.id);
+    // And a commission user's change waiting for approval.
+    const [previous, pending] = await Promise.all([previousCounts("old_m", ids), oldMPendingFor(ids)]);
+    const items = files.map((f) => ({ ...f, previous_files: previous.get(f.id) ?? 0, pending_change: pending.get(f.id) ?? null }));
     after(() => sweepReplaced());
     return ok({ items, total: count ?? 0, limit, offset });
   });

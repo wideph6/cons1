@@ -1,19 +1,23 @@
 import type { NextRequest } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { ApiError, must, ok, readBody, requirePermission, requireUser, run } from "@/lib/api";
+import { withOwnCounts } from "@/lib/files";
+import { isCommission } from "@/lib/review";
 import { db } from "@/lib/supabase";
 import { normalizePath } from "@/lib/utils";
 
 /** GET /api/admin/links?domain_id=  — links (with file counts) for a domain, or all. */
 export async function GET(req: NextRequest) {
   return run(async () => {
-    await requireUser();
+    const user = await requireUser();
     const domainId = req.nextUrl.searchParams.get("domain_id");
     let q = db().from("links_view").select("*").order("path");
     if (domainId) q = q.eq("domain_id", domainId);
     const { data, error } = await q;
     if (error) throw new ApiError(500, error.message);
-    return ok({ items: data ?? [] });
+    if (!isCommission(user)) return ok({ items: data ?? [] });
+    // A commission user sees every link (to upload into) but counts only their own files in each.
+    return ok({ items: await withOwnCounts(user.id, (data ?? []) as Array<Record<string, unknown> & { id: string }>) });
   });
 }
 

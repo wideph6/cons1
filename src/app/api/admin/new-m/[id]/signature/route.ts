@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { ok, requireUser, run } from "@/lib/api";
+import { requireOwnCase } from "@/lib/review";
 import { getRecord, requireNewMAccess, signatureDataUri } from "@/lib/new-m";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -14,6 +15,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     requireNewMAccess(user);
     const { id } = await params;
     const record = await getRecord(id);
+    requireOwnCase(user, record.created_by);
     return ok({ data_uri: await signatureDataUri(record.officer_signature_r2_key), officer_name: record.officer_name });
   });
 }

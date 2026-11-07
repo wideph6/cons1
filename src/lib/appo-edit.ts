@@ -29,6 +29,8 @@ import { db } from "@/lib/supabase";
 import type { AppoOptionKind } from "@/lib/appo-types";
 import { addPending, shown, type PendingTable } from "@/lib/pending-edits";
 import { needsApproval, type PendingChange, type PendingEditInfo } from "@/lib/pending-shared";
+import { isCommission, requireOwnCase, RESUBMIT } from "@/lib/review";
+import { reviewOf } from "@/lib/review-shared";
 import type { User } from "@/lib/types";
 import type { AppoRecord } from "@/lib/appo-types";
 import { formatIssued } from "@/lib/utils";
@@ -105,6 +107,9 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
     if (read instanceof Error) throw read;
     return read;
   };
+  // A commission user only ever changes their own documents.
+  requireOwnCase(user, existing.created_by);
+  const live = reviewOf(existing) === "approved";
 
   const domainChanged = body.domain_id !== undefined && body.domain_id !== existing.domain_id;
   const domainId = domainChanged ? (body.domain_id as string) : existing.domain_id;
@@ -164,8 +169,9 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
   // until then visitors keep seeing the document as it was. The edit is kept as it was sent and is run
   // again when it is approved, checked against the document as it is then. A change that only redraws
   // the QR code (nothing the user changed) goes through as it always did.
+  // A commission user's change to a live document always waits; one that is not live yet is changed now.
   const changes = summarize(existing, patch, link);
-  if (!opts.approved && changes.length && needsApproval(user.role, existing.created_at)) {
+  if (!opts.approved && changes.length && live && needsApproval(user.role, existing.created_at)) {
     const pending = await addPending(PENDING_TABLE, {
       recordId: id,
       request: body,
@@ -185,6 +191,8 @@ export async function editAppoRecord(user: User, id: string, body: PatchBody, op
     return { item: { ...existing, pending_edit: pending }, pending };
   }
   patch.updated_at = new Date().toISOString();
+  // A commission user's document that is not live yet, changed, waits for the super admin (again).
+  if (isCommission(user) && !live && changes.length) Object.assign(patch, RESUBMIT);
 
   // Only values this edit changed join the saved lists, so one removed from a list on purpose is not
   // brought back by editing a document that still carries it. Written alongside the document.
