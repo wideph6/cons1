@@ -71,8 +71,8 @@ import {
 } from "@/lib/new-m-sticker";
 import type { NewMRecord } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
-import { PageWidthField, QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
-import type { StyleKey, TextStyle } from "@/lib/sticker-style";
+import { PageWidthField, QrLineField, QrPaperField, StickerSetsShown, StickerTextLook } from "@/components/admin/StickerLookFields";
+import { QR_LINE, type StyleKey, type TextStyle } from "@/lib/sticker-style";
 
 /* ---------------- Shared pieces ---------------- */
 
@@ -431,10 +431,10 @@ function sameSet(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
   );
 }
 
-/** Two sets written the same: boldness and colour of each half, on or off, and the QR code's colour. */
+/** Two sets written the same: boldness and colour of each half, on or off, and the QR code's colour and line. */
 function sameLook(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
   const styles = (l: SetLayout | undefined) => JSON.stringify((["label", "value", "whole"] as StyleKey[]).map((k) => [l?.styles?.[k]?.bold ?? null, l?.styles?.[k]?.color ?? null]));
-  return styles(a) === styles(b) && (a?.show ?? null) === (b?.show ?? null) && (a?.fill ?? null) === (b?.fill ?? null);
+  return styles(a) === styles(b) && (a?.show ?? null) === (b?.show ?? null) && (a?.fill ?? null) === (b?.fill ?? null) && (a?.border ?? null) === (b?.border ?? null);
 }
 
 const STILL: SetOffset = { dx: 0, dy: 0 };
@@ -950,6 +950,16 @@ export function NewMBackgroundDialog({
     });
   }
 
+  /** The line round the QR code: its thickness (0 for none), or undefined for as made. */
+  function setQrLine(line: number | undefined) {
+    setLayout((l) => {
+      const cur = { ...setMove(l.qr), ...l.qr };
+      if (line === undefined) delete cur.border;
+      else cur.border = line;
+      return { ...l, qr: cur };
+    });
+  }
+
   function putBack(set: StickerSetId) {
     setLayout((l) => {
       const next = { ...l };
@@ -1430,7 +1440,7 @@ export function NewMBackgroundDialog({
                   How {SET_NAMES[selected.set]} is written
                   <span className="font-normal text-text-muted">
                     {selected.set === "qr"
-                      ? " · its size is set with Size above."
+                      ? " · its size is set with Size above; here, the colour behind it and the line round it."
                       : " · boldness and colour of its words and its value, each on its own; its size is set with Size above (ungroup it to size its words and value apart)."}
                   </span>
                 </div>
@@ -1447,6 +1457,9 @@ export function NewMBackgroundDialog({
                   />
                 ) : null}
                 {selected.set === "qr" ? <QrPaperField value={layout.qr?.fill} disabled={busy} onChange={setQrFill} /> : null}
+                {selected.set === "qr" ? (
+                  <QrLineField value={layout.qr?.border} made={hasFrame ? 0 : QR_LINE} disabled={busy} onChange={setQrLine} />
+                ) : null}
               </div>
             ) : null}
             {arranging ? (

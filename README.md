@@ -265,7 +265,7 @@ Where Appo differs from New M:
   views. `record.certificate`
   is the box's look per view. All of it is page content in `appo_page_settings`.
 - **Sticker.** Its own sets (`appo-sticker.ts`): two-line Country, Document Type and 2–4; one-line 5–8 (a value starts where its
-  words end); "Date:"; the signature with the officer's name under it; the QR code with no border. Downloaded as a one-page A4-wide
+  words end); "Date:"; the signature with the officer's name under it; the QR code with no border (one can be added). Downloaded as a one-page A4-wide
   PDF, and its background may be a PDF (first page drawn in the browser, `pdfPage` kept in the placement), exactly as
   New M's (`src/lib/sticker-pdf.ts`).
 
@@ -297,7 +297,10 @@ serif keeps regular and bold, and the phone's Roboto and Noto Serif cover every 
 Both stickers' background editors set, per set, in `*_settings.background_placement.layout` (no database change):
 **size** (`scale`, round the set's middle, 30–300 %; ungrouped, each half's own — New M now has this as Appo did, so the QR code
 and signature size too), **boldness and colour** of each text half (`styles.label` / `styles.value` / `styles.whole`: `bold` 1–9,
-`color` #rrggbb), **on/off** (`show`) and, for the QR code, the colour of the square behind it (`fill`: a colour, or `"none"`).
+`color` #rrggbb), **on/off** (`show`) and, for the QR code, the colour of the square behind it (`fill`: a colour, or `"none"`)
+and the **line round it** (`border`: its thickness in sticker units, 0.5–10, or 0 for none; left out as made — New M's 1.4 line, or
+none on a background with its own; Appo none). Up to 1.4 thick the line lies just inside the square's edge; thicker, it grows
+outward, so it never covers more of the code (`qrLineSvg`).
 `src/lib/sticker-style.ts` holds the shared model: nine boldness steps made of the weights a font has plus a thin outline in the
 text's colour (`SERIF_STEPS` for Georgia / Times, regular and bold only; `POPPINS_STEPS` for Appo's values, with Poppins 400–800 in
 `public/appo-assets/fonts`, of which only the weights a sticker writes travel inside it, `poppinsWeights`). Anything as made is left

@@ -778,13 +778,17 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
     shades aik click mein (gehra ya halka), ya koi bhi rang. **As made** se wapas.
   - **QR code** chunen to **Behind the QR**: code ke bilkul peechhe wale chokor ka rang (shuru mein safed), ya **No colour** taake
     background nazar aaye. Rang halka rakhen warna phone code nahi parhega.
+  - Usi panel mein **Border**: **Line round the QR code** ka tick lagayen to QR ke gird siyah line aa jati hai, tick hata den to line
+    hat jati hai. Tick ho to **Thickness** slider se line patli ya moti karen (0.5 se 10 px). New M mein ye line shuru se lagi hoti
+    hai (1.4 px; background par border pehle se chhapi ho to nahi), Appo mein shuru mein nahi hoti. Moti line bahar ki taraf barhti
+    hai, is liye QR code ka zyada hissa kabhi nahi dhakti. **As made** se wapas shuru wali halat.
   - **On the sticker** list: har set ke saath checkbox — tick hata den to woh set har sticker se gayab, tick karen to wapas.
   - New M mein **Approving officer's name** naya set hai (shuru mein off): tick karen to officer ka naam designation ke neeche aata
     hai; phir hila kar, size aur bold/rang set karen.
   - Appo mein **Designation** naya set hai (shuru mein off): **On the sticker** list mein tick karen to officer ki designation
     us ke naam ke neeche aati hai; phir hila kar, size aur bold/rang set karen.
   - **7 digit document number** sticker par **Times New Roman Bold** mein likha jata hai (seedhe, aik oonchai wale number).
-- Ye sab (jagah, size, ungroup, badle hue lafz, bold, rang, on/off, QR ka rang) **database** mein background ki position ke saath
+- Ye sab (jagah, size, ungroup, badle hue lafz, bold, rang, on/off, QR ka rang aur border) **database** mein background ki position ke saath
   save hota hai — code mein kahin nahi. Pehle ki tarah **Save position** dabayen.
 - Sab theek ho to **Use this background** (nayi image) ya **Save position** (sirf jagah/crop/text ki jagah badli ho).
   Wohi jagah aur crop save hote hain aur har sticker — screen par bhi aur download mein bhi — bilkul waisa hi banta hai.

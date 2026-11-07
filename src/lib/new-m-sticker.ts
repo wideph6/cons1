@@ -2,12 +2,15 @@ import { qrToPathData } from "./new-m-qr";
 import { verifyQr } from "./new-m-link";
 import {
   cleanFill,
+  cleanQrLine,
   cleanTextStyle,
   INK,
   inkAttrs,
   inkOf,
   NO_FILL,
   QR_PAPER,
+  qrLineReach,
+  qrLineSvg,
   SERIF_STEPS,
   STYLE_KEYS,
   type StyleKey,
@@ -176,7 +179,8 @@ export interface PartLayout extends SetOffset {
  * middle (1 = as made). Ungrouped (split), its label and its value are moved and sized each on its own,
  * by parts; grouped again, they keep where and how big they were made and move together. styles sets the
  * boldness and colour of its words and its value (or of a one-piece set); show turns it off or on; fill is
- * the colour behind the QR code ("none" for no colour).
+ * the colour behind the QR code ("none" for no colour), and border how thick the line round it is (0 for
+ * none; left out as made).
  */
 export interface SetLayout extends SetOffset {
   split?: boolean;
@@ -185,6 +189,7 @@ export interface SetLayout extends SetOffset {
   styles?: Partial<Record<StyleKey, TextStyle>>;
   show?: boolean;
   fill?: string;
+  border?: number;
 }
 
 /** The smallest and largest a set or half may be made, against its size as made. */
@@ -353,11 +358,11 @@ export function madeStyleBold(set: StickerSetId, key: StyleKey): number {
 }
 
 /**
- * The QR code in its square, on white, with its border when the app draws the frame. The saved code
- * (an SVG with a four-module margin) is used when it can be read; otherwise the same code is drawn
- * again from the link.
+ * The QR code in its square, on white, with the line round it line units thick (0 for none). paperInset is
+ * how far inside the square the colour behind the code starts. The saved code (an SVG with a four-module
+ * margin) is used when it can be read; otherwise the same code is drawn again from the link.
  */
-function qrEl(savedSvg: string | null, url: string, withBorder: boolean, fill: string = QR_PAPER): string {
+function qrEl(savedSvg: string | null, url: string, line: number, paperInset: number, fill: string = QR_PAPER): string {
   let size: number | null = null;
   let path: string | null = null;
   const vb = savedSvg ? /viewBox="0 0 (\d+) \1"/.exec(savedSvg) : null;
@@ -374,23 +379,27 @@ function qrEl(savedSvg: string | null, url: string, withBorder: boolean, fill: s
   if (!size || !path) return "";
 
   const b = QR_BORDER;
-  const half = LINE / 2;
-  // White inside the border, the code, then the border drawn over the code's outer edge. A background
-  // with its own border shows that border under the code's edge the same way.
-  const border = withBorder
-    ? `<rect x="${n(b.x + half)}" y="${n(b.y + half)}" width="${n(b.width - LINE)}" height="${n(b.height - LINE)}" fill="none" stroke="#000000" stroke-width="${LINE}"/>`
-    : "";
-  // The colour behind the code, inside its border (white unless the super admin chose another, or none).
+  // The colour behind the code (white unless the super admin chose another, or none), then the code, then the
+  // line drawn over the code's outer edge. A background with its own line shows it under the code's edge the
+  // same way.
   const paper =
     fill === NO_FILL
       ? ""
-      : `<rect x="${n(b.x + LINE)}" y="${n(b.y + LINE)}" width="${n(b.width - 2 * LINE)}" height="${n(b.height - 2 * LINE)}" fill="${fill}"/>`;
+      : `<rect x="${n(b.x + paperInset)}" y="${n(b.y + paperInset)}" width="${n(b.width - 2 * paperInset)}" height="${n(b.height - 2 * paperInset)}" fill="${fill}"/>`;
   return (
     paper +
     `<svg x="${n(QR_BOX.x)}" y="${n(QR_BOX.y)}" width="${n(QR_BOX.width)}" height="${n(QR_BOX.height)}" viewBox="0 0 ${size} ${size}" ` +
     `preserveAspectRatio="none" shape-rendering="crispEdges"><path fill="#000000" d="${path}"/></svg>` +
-    border
+    qrLineSvg(b, line)
   );
+}
+
+/**
+ * How thick the line round the QR code is: as the super admin set it (0 for none), else as made — New M's
+ * line, or none on a background that has its own printed on it.
+ */
+export function qrLineOf(input: { drawFrame: boolean; layout?: StickerLayout }): number {
+  return input.layout?.qr?.border ?? (input.drawFrame ? LINE : 0);
 }
 
 /* ---------------- The background's position ---------------- */
@@ -559,8 +568,12 @@ function tidySet(set: StickerSetId, o: SetLayout | undefined): SetLayout | null 
   if (set === "qr") {
     const fill = cleanFill(o.fill);
     if (fill) out.fill = fill;
+    const line = o.border === undefined ? null : cleanQrLine(o.border);
+    if (line !== null) out.border = line;
   }
-  return out.split || out.parts || moves(out) || sized(out) || out.styles || out.show !== undefined || out.fill ? out : null;
+  return out.split || out.parts || moves(out) || sized(out) || out.styles || out.show !== undefined || out.fill || out.border !== undefined
+    ? out
+    : null;
 }
 
 /** The placement with only the sets that were really moved or ungrouped, or with no layout when none were. */
@@ -620,6 +633,11 @@ function cleanLayout(v: unknown): StickerLayout | null {
     if (raw.fill !== undefined && raw.fill !== null) {
       const fill = cleanFill(raw.fill);
       if (fill) entry.fill = fill;
+    }
+    if (set === "qr" && raw.border !== undefined && raw.border !== null) {
+      const line = cleanQrLine(raw.border);
+      if (line === null) return null;
+      entry.border = line;
     }
     if (raw.styles !== undefined && raw.styles !== null) {
       if (typeof raw.styles !== "object" || Array.isArray(raw.styles)) return null;
@@ -913,7 +931,13 @@ function contentEl(input: StickerContent, measure: Measure): string {
     const slot = SLOTS[set as keyof typeof SLOTS];
     if (on(set)) parts.push(moved(set, null, valueEl(slot, wholeText(input, set), measure, styleOf(set, "whole"))));
   }
-  if (on("qr")) parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, input.drawFrame, input.layout?.qr?.fill ?? QR_PAPER)));
+  if (on("qr")) {
+    const set = input.layout?.qr?.border;
+    // As made, the colour behind the code stops where the line as made lies (a background's own line too);
+    // with a line set, it reaches that line's inner edge, or the whole square with no line.
+    const inset = set === undefined ? LINE : Math.min(set, LINE);
+    parts.push(moved("qr", null, qrEl(input.qrSvg, input.qrUrl, qrLineOf(input), inset, input.layout?.qr?.fill ?? QR_PAPER)));
+  }
   return parts.join("");
 }
 
@@ -967,6 +991,11 @@ function union(rects: Rect[]): Rect {
   return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
 }
 
+/** r grown by d on every side. */
+function grownRect(r: Rect, d: number): Rect {
+  return d > 0 ? { x: r.x - d, y: r.y - d, width: r.width + 2 * d, height: r.height + 2 * d } : r;
+}
+
 export function shiftRect(r: Rect, o: SetOffset): Rect {
   return { ...r, x: r.x + o.dx, y: r.y + o.dy };
 }
@@ -1004,7 +1033,7 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
     else blank[set] = textBox(slot.x, slot.y, slot.size, Math.min(EMPTY_VALUE_WIDTH, slot.maxWidth), slot.anchor);
   }
   add("signature", "whole", SIGNATURE_BOX);
-  add("qr", "whole", QR_BORDER);
+  add("qr", "whole", grownRect(QR_BORDER, qrLineReach(qrLineOf(input))));
 
   const boxes: Partial<Record<StickerSetId, SetBoxes>> = {};
   for (const { id: set } of STICKER_SETS) {

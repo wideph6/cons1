@@ -105,6 +105,39 @@ export function cleanFill(v: unknown): string | null {
   return c && c !== QR_PAPER ? c : null;
 }
 
+/** The line round the QR code as New M draws it, in sticker units; a line the super admin turns on starts this thick. */
+export const QR_LINE = 1.4;
+/** The thinnest and thickest line round the QR code the super admin may set, in sticker units. */
+export const MIN_QR_LINE = 0.5;
+export const MAX_QR_LINE = 10;
+
+/** The line round the QR code as sent or saved: its thickness to a tenth (0 for no line), or null when it is not one. */
+export function cleanQrLine(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > MAX_QR_LINE + 1e-9) return null;
+  const t = Math.round(v * 10) / 10;
+  return t > 0 && t < MIN_QR_LINE ? MIN_QR_LINE : t;
+}
+
+/** How far a line of thickness t round the QR code reaches out past the edge of its square. */
+export function qrLineReach(t: number): number {
+  return Math.max(0, t - QR_LINE);
+}
+
+/**
+ * A black line of thickness t round the QR code's square b, drawn over what is under it. Up to QR_LINE thick it
+ * lies just inside b's edge, where New M's line has always been; thicker, it keeps that line's inner edge and
+ * grows outward, so it never covers more of the code than the line as made. Nothing for no line.
+ */
+export function qrLineSvg(b: { x: number; y: number; width: number; height: number }, t: number): string {
+  if (!(t > 0)) return "";
+  const r = (v: number) => Math.round(v * 100) / 100;
+  const out = qrLineReach(t);
+  return (
+    `<rect x="${r(b.x - out + t / 2)}" y="${r(b.y - out + t / 2)}" width="${r(b.width + 2 * out - t)}" ` +
+    `height="${r(b.height + 2 * out - t)}" fill="none" stroke="#000000" stroke-width="${r(t)}"/>`
+  );
+}
+
 /** SVG attributes that write text in a colour with an outline of the same colour (none when it has no outline). */
 export function inkAttrs(fill: string, outline: number): string {
   const o = outline > 0 ? ` stroke="${fill}" stroke-width="${Math.round(outline * 100) / 100}" stroke-linejoin="round"` : "";

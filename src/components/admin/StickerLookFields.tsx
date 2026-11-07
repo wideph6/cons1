@@ -3,7 +3,20 @@
 import { Minus, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Checkbox, Select } from "@/components/ui";
-import { BOLD_MAX, BOLD_MIN, BOLD_NAMES, clampBold, INK, NO_FILL, QR_PAPER, type StyleKey, type TextStyle } from "@/lib/sticker-style";
+import {
+  BOLD_MAX,
+  BOLD_MIN,
+  BOLD_NAMES,
+  clampBold,
+  INK,
+  MAX_QR_LINE,
+  MIN_QR_LINE,
+  NO_FILL,
+  QR_LINE,
+  QR_PAPER,
+  type StyleKey,
+  type TextStyle,
+} from "@/lib/sticker-style";
 
 /** Shades from black to grey, for making text darker or lighter in one click. */
 const SHADES = ["#000000", "#262626", "#404040", "#595959", "#737373", "#8c8c8c"];
@@ -189,6 +202,66 @@ export function StickerSetsShown<Id extends string>({
           <Checkbox key={s.id} label={s.name} checked={shown(s.id)} disabled={disabled} onChange={(e) => onChange(s.id, e.target.checked)} />
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The line round the QR code: on or off, and how thick, in the sticker's own px (the units its words are
+ * measured in). made is how thick it is as made: 0 for none.
+ */
+export function QrLineField({
+  value,
+  made,
+  disabled,
+  onChange,
+}: {
+  /** Left out: as made. 0: no line. */
+  value: number | undefined;
+  made: number;
+  disabled?: boolean;
+  /** The new thickness, or undefined for as made. */
+  onChange: (line: number | undefined) => void;
+}) {
+  const line = value ?? made;
+  const on = line > 0;
+  // A line as thick as it is made is kept as made.
+  const put = (t: number) => onChange(Math.abs(t - made) < 0.05 ? undefined : Math.round(t * 10) / 10);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <span className="w-24 shrink-0 text-[12.5px] font-medium">Border</span>
+      <Checkbox
+        label="Line round the QR code"
+        checked={on}
+        disabled={disabled}
+        onChange={(e) => put(e.target.checked ? made || QR_LINE : 0)}
+      />
+      {on ? (
+        <label className="inline-flex items-center gap-1.5 text-[12.5px]">
+          <span className="text-text-muted">Thickness</span>
+          <input
+            type="range"
+            min={MIN_QR_LINE}
+            max={MAX_QR_LINE}
+            step={0.1}
+            value={line}
+            disabled={disabled}
+            aria-label="Thickness of the line round the QR code"
+            className="w-40 accent-teal-600"
+            onChange={(e) => put(Number(e.target.value))}
+          />
+          <span className="tabular-nums w-12">{line.toFixed(1)} px</span>
+        </label>
+      ) : null}
+      {value !== undefined ? (
+        <Button size="sm" disabled={disabled} onClick={() => onChange(undefined)}>
+          As made
+        </Button>
+      ) : null}
+      <span className="basis-full text-[12px] text-text-muted">
+        A black line round the code&apos;s square ({made > 0 ? `as made, ${made} px` : "none as made"}). Untick it for no line; a
+        thicker line grows outward, so it never covers more of the code.
+      </span>
     </div>
   );
 }
