@@ -440,6 +440,13 @@ export interface BackgroundPlacement {
    * more cuts its sides); the page is as long as the sticker at that width. Left out at 1.
    */
   pageFill?: number;
+  /**
+   * How big the whole sticker prints, in points per sticker unit: the background and everything on it, as one
+   * set. With it, a larger background image prints larger (its words keep their size), and the white at the
+   * sides of the A4 page is what the sticker leaves. Left out on stickers saved before it could be set: they
+   * print as wide as the page (or the share of it in pageFill).
+   */
+  printScale?: number;
 }
 
 /** The narrowest a sticker may be set to print (1 cm), in points. */
@@ -751,9 +758,18 @@ export function cleanPlacement(v: unknown): BackgroundPlacement | null {
     if (typeof k !== "number" || !Number.isFinite(k) || k < MIN_PAGE_FILL - 1e-9 || k > MAX_PAGE_FILL + 1e-9) return null;
     pageFill = k;
   }
-  const placed = withPageFill(
-    withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage), printWidth),
-    pageFill,
+  let printScale: number | null = null;
+  if (raw.printScale !== undefined && raw.printScale !== null) {
+    const k = raw.printScale;
+    if (typeof k !== "number" || !Number.isFinite(k) || k < MIN_PRINT_SCALE - 1e-9 || k > MAX_PRINT_SCALE + 1e-9) return null;
+    printScale = k;
+  }
+  const placed = withPrintScale(
+    withPageFill(
+      withPrintWidth(withPdfPage(withSize(withTexts(withLayout(withCrop(p, crop), layout), texts), size), pdfPage), printWidth),
+      pageFill,
+    ),
+    printScale,
   );
   const s = visibleRect(placed);
   const onSticker = s.x < size.width && s.y < size.height && s.x + s.width > 0 && s.y + s.height > 0;
@@ -1184,6 +1200,32 @@ export function withPageFill(p: BackgroundPlacement, k: number | null | undefine
   return k && Math.abs(k - 1) > 0.0005 ? { ...rest, pageFill: Math.round(k * 10000) / 10000 } : rest;
 }
 
+/** Points per sticker unit when none are set: a sticker of the width its words were made for prints as wide as A4. */
+export const DEFAULT_PRINT_SCALE = A4_WIDTH / STICKER_W;
+/**
+ * The smallest and largest the whole sticker may print, in points per sticker unit: wide enough for every
+ * setting of the page's slider (1 cm wide to twice the page) at any sticker size.
+ */
+export const MIN_PRINT_SCALE = 0.0005;
+export const MAX_PRINT_SCALE = 100;
+
+/** The placement with how big the whole sticker prints, in points per sticker unit (none for the default). */
+export function withPrintScale(p: BackgroundPlacement, k: number | null | undefined): BackgroundPlacement {
+  const rest = { ...p };
+  delete rest.printScale;
+  return k ? { ...rest, printScale: Math.round(k * 1e6) / 1e6 } : rest;
+}
+
+/**
+ * How big a sticker prints, in points per sticker unit: as set. A sticker saved before it could be set prints
+ * as it did: as wide as the page, or the share of it saved with pageFill (one of the old fixed size, at the
+ * default).
+ */
+export function printScaleOf(p: { size?: StickerSize; pageFill?: number; printScale?: number } | null | undefined): number {
+  if (p?.printScale) return p.printScale;
+  return ((p?.pageFill ?? 1) * A4_WIDTH) / stickerSize(p).width;
+}
+
 /** The PDF a sticker prints as: the page, and where the sticker sits on it, in points. */
 export interface PdfLayout {
   page: { width: number; height: number };
@@ -1191,16 +1233,16 @@ export interface PdfLayout {
 }
 
 /**
- * The page is as wide as A4, and as long as the sticker printed at that width: the sticker is pageFill times
- * the page's width (1 = edge to edge; less leaves white on both sides; more cuts its sides), centred, and its
- * length follows. A page longer than a PDF may be (200 inches) is made smaller as a whole.
+ * The page is as wide as A4, and as long as the sticker: the whole sticker prints at its print scale, centred
+ * across the page — narrower than the page leaves white on both sides, wider has its sides cut. A page longer
+ * than a PDF may be (200 inches) is made smaller as a whole.
  */
-export function pdfLayout(p: { size?: StickerSize; pageFill?: number } | null | undefined): PdfLayout {
+export function pdfLayout(p: { size?: StickerSize; pageFill?: number; printScale?: number } | null | undefined): PdfLayout {
   const size = stickerSize(p);
-  const k = p?.pageFill ?? 1;
+  const k = printScaleOf(p);
   let pageWidth = A4_WIDTH;
-  let width = A4_WIDTH * k;
-  let height = (size.height * width) / size.width;
+  let width = size.width * k;
+  let height = size.height * k;
   const most = MAX_PDF_SIDE / Math.max(height, pageWidth);
   if (most < 1) {
     pageWidth *= most;

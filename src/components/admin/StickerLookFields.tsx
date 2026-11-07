@@ -193,77 +193,83 @@ export function StickerSetsShown<Id extends string>({
   );
 }
 
-/** A4 paper's width, in millimetres. */
+/** A4 paper's width, in millimetres and in points. */
 const A4_MM = 210;
+const A4_PT = 595.28;
+const MM_PER_PT = 25.4 / 72;
 
 /**
- * How the sticker sits across an A4 page, set with one slider once its words, values and QR code are in place:
- * white left on both sides, edge to edge, or its sides cut. The page is A4-wide; its length follows the sticker,
- * so the longer the image, the longer the page.
+ * How big the whole sticker — its background with every word, value and the QR code on it, as one set — prints
+ * on its A4-wide page, set with one slider once its words, values and QR code are in place. The slider reads as
+ * the white left at each side: more white makes the whole sticker smaller, less makes it larger, and below
+ * nothing its sides are cut. The page's length follows the sticker.
  */
 export function PageWidthField({
   size,
-  value,
+  scale,
   disabled,
   onChange,
 }: {
   /** The sticker's own size, in sticker units (its background as shown). */
   size: { width: number; height: number };
-  /** The sticker's width against the page's (1 = edge to edge). */
-  value: number;
+  /** How big it prints, in points per sticker unit. */
+  scale: number;
   disabled?: boolean;
-  onChange: (k: number) => void;
+  onChange: (scale: number) => void;
 }) {
-  const min = 0.2;
-  const max = 2;
-  const put = (k: number) => onChange(Math.round(Math.min(max, Math.max(min, k)) * 1000) / 1000);
-  // The slider runs in millimetres left at each side: positive is white, negative is cut off.
-  const side = ((1 - value) * A4_MM) / 2;
-  const toFill = (mm: number) => 1 - (2 * mm) / A4_MM;
-  const stickerMm = A4_MM * value;
-  const lengthMm = (stickerMm * size.height) / size.width;
+  const stickerMm = size.width * scale * MM_PER_PT;
+  const lengthMm = size.height * scale * MM_PER_PT;
+  const side = (A4_MM - stickerMm) / 2;
+  const minSide = -A4_MM / 2;
+  const maxSide = (A4_MM - 10) / 2;
+  const put = (mm: number) => {
+    const m = Math.min(maxSide, Math.max(minSide, mm));
+    onChange((A4_MM - 2 * m) / MM_PER_PT / size.width);
+  };
   const [draft, setDraft] = useState<string | null>(null);
-  useEffect(() => setDraft(null), [value]);
+  useEffect(() => setDraft(null), [scale, size.width]);
+  const round = (v: number) => Math.round(v * 10) / 10;
   return (
     <div className="rounded-md border bg-surface-2 p-3 space-y-2">
       <div className="text-[12.5px] font-medium">
         Page width (A4)
         <span className="font-normal text-text-muted">
           {" "}
-          · set once the words, values and QR code are in place: how much white is left at the sides of an A4 page, none,
-          or how much of the sticker&apos;s sides is cut. The page&apos;s length follows on its own.
+          · once the words, values and QR code are in place: the whole sticker grows or shrinks on its A4 page (the white
+          in the view above), leaving more or less white at the sides — or none, or cutting its sides. The page&apos;s length
+          follows the sticker.
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
         <span className="w-28">White at each side</span>
         <input
           type="range"
-          min={-((max - 1) * A4_MM) / 2}
-          max={((1 - min) * A4_MM) / 2}
+          min={minSide}
+          max={maxSide}
           step={0.5}
-          value={side}
+          value={Math.min(maxSide, Math.max(minSide, side))}
           disabled={disabled}
           aria-label="White at each side of the A4 page, in millimetres (less than 0 cuts the sticker's sides)"
           className="w-64 accent-teal-600"
-          onChange={(e) => put(toFill(Number(e.target.value)))}
+          onChange={(e) => put(Number(e.target.value))}
         />
         <input
           type="number"
           step={0.5}
-          value={draft ?? String(Math.round(side * 10) / 10)}
+          value={draft ?? String(round(side))}
           disabled={disabled}
           aria-label="White at each side, in millimetres"
           className="w-20 rounded-md border border-line-strong bg-surface px-2 h-8"
           onChange={(e) => {
             setDraft(e.target.value);
             const n = Number(e.target.value);
-            if (e.target.value.trim() !== "" && Number.isFinite(n)) put(toFill(n));
+            if (e.target.value.trim() !== "" && Number.isFinite(n)) put(n);
           }}
           onBlur={() => setDraft(null)}
         />
         <span>mm</span>
-        {Math.abs(value - 1) > 0.0005 ? (
-          <Button size="sm" disabled={disabled} onClick={() => onChange(1)}>
+        {Math.abs(side) >= 0.25 ? (
+          <Button size="sm" disabled={disabled} onClick={() => onChange(A4_PT / size.width)}>
             Edge to edge
           </Button>
         ) : null}
@@ -272,8 +278,8 @@ export function PageWidthField({
         {Math.abs(side) < 0.25
           ? "Edge to edge: "
           : side > 0
-            ? `${(Math.round(side * 10) / 10).toString()} mm of white on the left and on the right: `
-            : `${(Math.round(-side * 10) / 10).toString()} mm cut off each side: `}
+            ? `${round(side)} mm of white on the left and on the right: `
+            : `${round(-side)} mm cut off each side: `}
         the sticker prints {(stickerMm / 10).toFixed(1)} cm wide on a page 21.0 cm wide and {(lengthMm / 10).toFixed(1)} cm long.
       </p>
     </div>

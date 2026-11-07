@@ -17,6 +17,10 @@ import {
   pdfLayout,
   refitToBackground,
   withPageFill,
+  withPrintScale,
+  printScaleOf,
+  A4_WIDTH,
+  DEFAULT_PRINT_SCALE,
   type PdfLayout,
   DEFAULT_SIZE,
   FULL_PLACEMENT,
@@ -216,9 +220,12 @@ function drawnPlacement(bg: Background, values: StickerValues): BackgroundPlacem
   }
   // The sticker is its background as shown: the image's width and length, nothing cut by a frame.
   const r = refitToBackground(p, layout);
-  return withPageFill(
-    withPrintWidth(withPdfPage(withSize(withTexts(withLayout(r.placement, r.layout), saved?.texts ?? {}), r.size), saved?.pdfPage), saved?.printWidth),
-    saved?.pageFill,
+  return withPrintScale(
+    withPageFill(
+      withPrintWidth(withPdfPage(withSize(withTexts(withLayout(r.placement, r.layout), saved?.texts ?? {}), r.size), saved?.pdfPage), saved?.printWidth),
+      saved?.pageFill,
+    ),
+    saved?.printScale,
   );
 }
 
@@ -294,8 +301,8 @@ export async function downloadSticker(record: AppoRecord): Promise<void> {
 const MAX_BACKGROUND = 4 * 1024 * 1024;
 
 /** What the PDF comes to, e.g. "an A4-wide page 21.0 × 16.6 cm, the sticker 19.0 cm wide". */
-function pageSizeText(size: StickerSize, pageFill: number): string {
-  const l = pdfLayout({ size, pageFill });
+function pageSizeText(size: StickerSize, printScale: number): string {
+  const l = pdfLayout({ size, printScale });
   const cm = (pt: number) => ((pt / 72) * 2.54).toFixed(1);
   return `an A4-wide page ${cm(l.page.width)} × ${cm(l.page.height)} cm, the sticker ${cm(l.sticker.width)} cm wide`;
 }
@@ -436,7 +443,7 @@ function box(p: BackgroundPlacement): BackgroundPlacement {
 function samePlacement(a: BackgroundPlacement, b: BackgroundPlacement): boolean {
   if (Boolean(a.pdfPage) !== Boolean(b.pdfPage)) return false;
   if (Math.abs((a.printWidth ?? 0) - (b.printWidth ?? 0)) >= 0.01) return false;
-  if (Math.abs((a.pageFill ?? 1) - (b.pageFill ?? 1)) >= 0.0005) return false;
+  if (Math.abs(printScaleOf(a) - printScaleOf(b)) >= 1e-6) return false;
   if (a.pdfPage && b.pdfPage && (Math.abs(a.pdfPage.width - b.pdfPage.width) >= 0.01 || Math.abs(a.pdfPage.height - b.pdfPage.height) >= 0.01)) {
     return false;
   }
@@ -539,8 +546,8 @@ export function AppoBackgroundDialog({
   const [crop, setCrop] = useState<BackgroundCrop>(NO_CROP);
   /** The page size of the PDF the background was drawn from, which gives the PDF sticker its real size; null for an image. */
   const [pdfPage, setPdfPage] = useState<PdfPage | null>(null);
-  /** How wide the sticker prints against an A4 page's width (1 = edge to edge). */
-  const [pageFill, setPageFill] = useState(1);
+  /** How big the whole sticker prints, in points per sticker unit (the background and everything on it). */
+  const [printScale, setPrintScale] = useState(DEFAULT_PRINT_SCALE);
   /** Reading a chosen PDF. */
   const [reading, setReading] = useState(false);
   /** The sticker had the old fixed size and was just made its background's length here, not saved yet. */
@@ -578,6 +585,19 @@ export function AppoBackgroundDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
+  /** The view's box, whose width is the A4 page's width on screen at 100%. */
+  const viewBoxRef = useRef<HTMLDivElement>(null);
+  const [boxWidth, setBoxWidth] = useState(0);
+  useEffect(() => {
+    const el = viewBoxRef.current;
+    if (!el) return;
+    const measure = () => setBoxWidth(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [image]);
+
   const drag = useRef<{ id: number; x: number; y: number; from: BackgroundPlacement } | null>(null);
   const cropDrag = useRef<{ id: number; side: Side } | null>(null);
   const setDrag = useRef<{ id: number; set: StickerSetId; part: SetPart | null; x: number; y: number; from: SetOffset } | null>(null);
@@ -586,7 +606,7 @@ export function AppoBackgroundDialog({
     setPlacement(box(p ?? fullPlacement(stickerSize(p))));
     setSize(stickerSize(p));
     setPdfPage(p?.pdfPage ?? null);
-    setPageFill(p?.pageFill ?? 1);
+    setPrintScale(printScaleOf(p));
     setCrop(p?.crop ?? NO_CROP);
     setLayout(p?.layout ?? {});
     setTexts(p?.texts ?? {});
@@ -698,6 +718,8 @@ export function AppoBackgroundDialog({
     setImage({ dataUri, ...px, file, fromPdf });
     setPdfPage(page);
     setSize(next);
+    // It prints as wide on the page as the sticker it replaces: the white at the page's sides stays as it was.
+    setPrintScale((size.width * printScale) / next.width);
     setPlacement(fitPlacement(px.width, px.height, next));
     setCrop(NO_CROP);
     setCropping(false);
@@ -758,9 +780,9 @@ export function AppoBackgroundDialog({
     try {
       // Saved as the sticker is: its background as shown.
       const fitted = refitToBackground(withCrop(placement, crop), layout);
-      const sent = withPageFill(
+      const sent = withPrintScale(
         withPdfPage(withSize(withTexts(withLayout(fitted.placement, fitted.layout), texts), fitted.size), pdfPage),
-        pageFill,
+        printScale,
       );
       let next: BackgroundInfo;
       if (image.file) {
@@ -803,6 +825,32 @@ export function AppoBackgroundDialog({
   }
 
   const zoom = placement.width / STICKER_W;
+
+  /*
+   * The view: the A4 page as wide as the box (times the view's zoom), and on it the sticker as big as it prints.
+   * So the screen keeps one scale: a larger background image shows larger while its words keep their size, and
+   * the page's width setting grows or shrinks the whole sticker on the page.
+   */
+  const pagePx = Math.max(240, (boxWidth || 800) * viewZoom);
+  const pxPerUnit = (pagePx / A4_WIDTH) * printScale;
+  const stickerPxWidth = size.width * pxPerUnit;
+  const stageWidth = Math.max(pagePx, stickerPxWidth);
+  const stage = {
+    width: stageWidth,
+    height: size.height * pxPerUnit,
+    pageWidth: pagePx,
+    pageLeft: (stageWidth - pagePx) / 2,
+    stickerWidth: stickerPxWidth,
+    stickerLeft: (stageWidth - stickerPxWidth) / 2,
+    cut: Math.max(0, (stickerPxWidth - pagePx) / 2),
+  };
+
+  // The page stays in the middle of the view when the sticker is wider than it, its cut sides either side.
+  useEffect(() => {
+    const el = viewBoxRef.current;
+    if (el) el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+  }, [stage.width]);
+
 
   function zoomTo(z: number) {
     if (!image) return;
@@ -1047,7 +1095,7 @@ export function AppoBackgroundDialog({
       (image.file ||
         hasFrame !== (info?.has_frame ?? false) ||
         !samePlacement(
-          withPageFill(withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage), pageFill),
+          withPrintScale(withPdfPage(withSize(withTexts(withLayout(withCrop(placement, crop), layout), texts), size), pdfPage), printScale),
           info?.placement ?? FULL_PLACEMENT,
         )),
   );
@@ -1110,7 +1158,7 @@ export function AppoBackgroundDialog({
         {image?.file ? (
           <Alert tone="info">
             {image.fromPdf
-              ? `New PDF: ${image.fromPdf.name}${image.fromPdf.pages > 1 ? ` (page 1 of ${image.fromPdf.pages} is used)` : ""}, drawn at ${image.width} × ${image.height}. The PDF sticker will be ${pageSizeText(size, pageFill)}.`
+              ? `New PDF: ${image.fromPdf.name}${image.fromPdf.pages > 1 ? ` (page 1 of ${image.fromPdf.pages} is used)` : ""}, drawn at ${image.width} × ${image.height}. The PDF sticker will be ${pageSizeText(size, printScale)}.`
               : `New image: ${image.file.name} (${image.width} × ${image.height}).`}{" "}
             Line it up below, then press Use this background. It takes the current image&apos;s place.
           </Alert>
@@ -1122,7 +1170,7 @@ export function AppoBackgroundDialog({
               In use: {info.filename ?? "uploaded image"}
               {info.placement?.pdfPage ? " (from a PDF)" : ""}
               {info.updated_at ? `, set ${formatDateTime(info.updated_at)}` : ""}. PDF stickers come out{" "}
-              {pageSizeText(size, pageFill)}.
+              {pageSizeText(size, printScale)}.
             </p>
             {fitted ? (
               <Alert tone="info">
@@ -1150,7 +1198,7 @@ export function AppoBackgroundDialog({
                 size="sm"
                 icon={<ZoomOut className="size-3.5" />}
                 disabled={busy || viewZoom <= VIEW_ZOOMS[0]}
-                title="Show the sticker smaller"
+                title="Show the page smaller"
                 onClick={() => setViewZoom((z) => [...VIEW_ZOOMS].reverse().find((v) => v < z) ?? VIEW_ZOOMS[0])}
               />
               <span className="tabular-nums w-11 text-center">{Math.round(viewZoom * 100)}%</span>
@@ -1158,7 +1206,7 @@ export function AppoBackgroundDialog({
                 size="sm"
                 icon={<ZoomIn className="size-3.5" />}
                 disabled={busy || viewZoom >= VIEW_ZOOMS[VIEW_ZOOMS.length - 1]}
-                title="Show the sticker bigger"
+                title="Show the page bigger"
                 onClick={() => setViewZoom((z) => VIEW_ZOOMS.find((v) => v > z) ?? z)}
               />
               {viewZoom !== 1 ? (
@@ -1167,23 +1215,25 @@ export function AppoBackgroundDialog({
                 </Button>
               ) : null}
               <span className="text-text-faint">
-                Only magnifies this view — scroll to move around. The sticker itself stays {Math.round(size.width)} × {Math.round(size.height)}.
+                The white is the A4 page the sticker prints on; anything darkened beside it is cut off in print. View only
+                magnifies — scroll to move around.
               </span>
             </div>
-            <div className="max-h-[70vh] overflow-auto border rounded bg-surface-2">
+            <div ref={viewBoxRef} className="max-h-[70vh] overflow-auto border rounded bg-surface-2">
+            <div className="relative" style={{ width: stage.width, height: stage.height }}>
+            {/* The A4 page, as long as the sticker. */}
+            <div
+              aria-hidden="true"
+              className="absolute bg-white shadow-sm ring-1 ring-black/10"
+              style={{ left: stage.pageLeft, top: 0, width: stage.pageWidth, height: stage.height }}
+            />
             <div
               ref={frameRef}
               tabIndex={0}
               role="group"
               aria-label="Background position: drag to move, arrow keys to nudge"
-              className="relative overflow-hidden bg-white select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
-              style={{
-                aspectRatio: `${size.width} / ${size.height}`,
-                // At 100% the whole sticker shows, however long it is: as wide as the box, or as tall as it (the box is
-                // 70% of the window high); larger views magnify that, and the box scrolls.
-                width: `calc(${viewZoom} * min(100%, calc((70vh - 2px) * ${Math.round((size.width / size.height) * 10000) / 10000})))`,
-                marginInline: "auto",
-              }}
+              className="absolute overflow-hidden bg-white select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+              style={{ left: stage.stickerLeft, top: 0, width: stage.stickerWidth, height: stage.height }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -1285,6 +1335,22 @@ export function AppoBackgroundDialog({
                     );
                   })
                 : null}
+            </div>
+            {/* What reaches past the page's sides is cut off in print. */}
+            {stage.cut > 0.5 ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="absolute top-0 pointer-events-none bg-ink-950/45"
+                  style={{ left: stage.stickerLeft, width: stage.cut, height: stage.height }}
+                />
+                <div
+                  aria-hidden="true"
+                  className="absolute top-0 pointer-events-none bg-ink-950/45"
+                  style={{ left: stage.pageLeft + stage.pageWidth, width: stage.cut, height: stage.height }}
+                />
+              </>
+            ) : null}
             </div>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[12.5px] text-text-muted">
@@ -1419,7 +1485,7 @@ export function AppoBackgroundDialog({
                 </Button>
               ) : null}
             </div>
-            <PageWidthField size={size} value={pageFill} disabled={busy} onChange={setPageFill} />
+            <PageWidthField size={size} scale={printScale} disabled={busy} onChange={setPrintScale} />
             {arranging && selected && (styleKeys(selected.set).length || selected.set === "qr") ? (
               <div className="rounded-md border bg-surface-2 p-3 space-y-2">
                 <div className="text-[12.5px] font-medium">

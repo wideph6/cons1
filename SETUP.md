@@ -704,8 +704,8 @@ Har document ke **poore link** (domain/subdomain samet) ka QR code **khud ban ja
 Har document ka "General Attestation" sticker list se hi bante hain:
 
 - **View sticker** — sticker dikhata hai, wahin se **Download PDF** (aur SVG).
-- **Download PDF** — seedha PDF download (dekhe baghair). PDF ka size asal sticker jitna: background PDF se bani ho to usi PDF
-  ke page jitna (jaise 4 × 3 inch), image se bani ho to 96 units fi inch. Andar sticker 3 guna (ya background jitni) tezi se bana hota hai.
+- **Download PDF** — seedha PDF download (dekhe baghair). PDF ka page A4 jitna chaura aur sticker jitna lamba hota hai, aur sticker
+  us par utna bara jitna super admin ne **Page width (A4)** se set kiya (Hissa 13A.6). Andar sticker 3 guna (ya background jitni) tezi se bana hota hai.
 
 Sticker **har dafa document ke mojooda data** se banta hai, is liye edit ke baad agla sticker khud naya data aur naya QR dikhata hai.
 
@@ -749,7 +749,7 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
 - **Upload an image or PDF / Choose a new image or PDF** — JPG, PNG ya WebP (4 MB tak), ya **PDF** (30 MB tak). PDF ka
   **pehla page** browser mein hi tasveer ban kar (lambi taraf 3200 px) upload hota hai; PDF ke kai page hon to bataya jata hai ke
   page 1 use hua. Sticker khud us page ki lambai le leta hai, aur values pehle ki tarah us par hila kar set hoti hain. Download hone
-  wali PDF sticker us PDF ke asal size ki banti hai — editor mein likha aata hai (jaise "10.2 × 7.6 cm").
+  wali PDF A4 chaudai ke page par banti hai — editor mein likha aata hai (jaise "A4-wide page 21.0 × 29.7 cm, the sticker 19.0 cm wide").
 - Preview mein image ke upar list ke **pehle document ka asal data** (values, signature, QR) usi jagah dikhta hai jahan har sticker
   par aata hai. Koi document na ho to sample values.
 - Image ko **mouse se ghaseet kar** kisi bhi taraf (upar, neeche, daen, baen) hilayen, **arrow keys** se 1 (Shift ke saath 10) qadam,
@@ -1096,28 +1096,31 @@ Ye saare lafz aur settings **database** (`appo_page_settings`) mein save hote ha
 ## 13A.6 Background image: view zoom aur size
 
 - **Sticker = background, lambai aur chaudai free (New M aur Appo dono):** sticker hamesha apni background image (ya PDF ka
-  pehla page) jitna hota hai — jitna hissa crop ke baad bacha, usi zoom par. **Image size** barhayen to sticker ki **lambai aur
-  chaudai dono** barh jati hain (image kabhi kisi frame se nahi katti); kam karen to dono kam. 100% wo chaudai hai jis ke liye
-  sticker ke lafz bane hain (958) — image bari karne se lafz us ke muqable mein chhote lagte hain, chhoti karne se bare. Image
-  ghaseet kar ya teer se hilane, ya crop karne ke baad sticker khud image ki nayi jagah aur naap le leta hai; values, QR aur signature
-  image par apni jagah rehte hain. **Reset position**: poori image 100% par. "Sticker W × H" mein naap nazar aata hai.
-- **Page width (A4) — aik slider:** text, values aur QR set karne ke baad **Page width (A4)** panel mein aik scroll se tay karen ke
-  A4 page ki chaudai (21 cm) par sticker kaise aaye: **White at each side** ko mm mein barhayen to dono taraf utni safed jagah bachti
-  hai, **0** par sticker page ki poori chaudai leta hai (**Edge to edge**), aur minus mein le jayen to sticker ki sides utni kat jati
-  hain. **Page ki lambai khud** sticker ke saath badalti hai — jitni lambi image, utna lamba page. Neeche likha aata hai ke sticker
-  kitne cm chaura aur page kitna lamba banega. Download hone wali PDF bilkul isi page ki hoti hai (print par "Actual size" / 100%).
-  Phir **Save position**.
+  pehla page) jitna hota hai — jitna hissa crop ke baad bacha, usi zoom par. **Image size** barhayen to **image bari** hoti hai aur
+  sticker ki **lambai aur chaudai dono** us ke saath barh jati hain; text, values aur QR apne size par rehte hain (image kabhi kisi
+  frame se nahi katti). Kam karen to image aur sticker dono chhote. 100% wo chaudai hai jis ke liye sticker ke lafz bane hain (958).
+  Image ghaseet kar ya teer se hilane, ya crop karne ke baad sticker khud image ki nayi jagah aur naap le leta hai; values, QR aur
+  signature image par apni jagah rehte hain. **Reset position**: poori image 100% par. "Sticker W × H" mein naap nazar aata hai.
+- **Editor ka view (New M aur Appo dono):** safed hissa **A4 page** hai (21 cm chaura) aur sticker us par usi size mein dikhta hai jis
+  mein print hoga. Sticker page se chaura ho jaye to page se bahar wala hissa **gehra** dikhta hai — woh print mein kat jayega (side
+  par scroll kar ke dekhen). **View** (− / +) sirf tasveer bari karta hai, sticker ya print ko nahi badalta.
+- **Page width (A4) — aik slider:** text, values aur QR set karne ke baad **Page width (A4)** panel mein aik scroll se **poora
+  sticker** (image, text, values aur QR — sab aik set) page par chhota ya bara karen: **White at each side** barhayen to poora sticker
+  chhota hota hai aur dono taraf safed jagah barhti hai; kam karen to sticker bara aur safed jagah kam; **0** par sticker page ki
+  poori chaudai leta hai (**Edge to edge**); minus mein sticker page se bara ho kar us ki sides utni kat jati hain. **Page ki lambai
+  khud** sticker ke saath badalti hai — jitni bari image, utna lamba sticker aur page. Neeche likha aata hai ke sticker kitne cm chaura
+  aur page kitna lamba banega. Download hone wali PDF bilkul isi page ki hoti hai (print par "Actual size" / 100%). Naya background
+  upload karen to page ki safed jagah wahi rehti hai. Phir **Save position**.
 - **Purane stickers:** jo sticker pehle fix size (958 × 761) ya kisi aur frame par save the, woh ab khud apni background jitne
   ban jate hain — khinchi hui image wapas sahi tanasub mein, aur values image par apni jagah. Editor kholen to neela paigham
-  batata hai; sab theek ho to **Save position**.
-- **View (Appo):** 100% par poora sticker box mein nazar aata hai, chahe kitna lamba ho; − / + se bara kar ke scroll karen, **Fit** se
-  wapas poora.
-- **Appo mein bhi PDF:** list ka **Download PDF** aur sticker window ka **Download PDF** — PDF asal sticker ke size ki banti hai
-  (background PDF se bani ho to usi PDF jitni). Background image ki jagah **PDF** bhi upload ho sakti hai (pehla page; sticker us ki
+  batata hai; sab theek ho to **Save position**. Jo sticker is slider se pehle save hue, woh pehle ki tarah (page ki poori chaudai
+  par) print hote hain, jab tak slider badal kar dobara save na karen.
+- **Appo mein bhi PDF:** list ka **Download PDF** aur sticker window ka **Download PDF** — PDF A4 chaudai ke page par, upar wali
+  **Page width (A4)** setting ke mutabiq banti hai. Background image ki jagah **PDF** bhi upload ho sakti hai (pehla page; sticker us ki
   lambai le leta hai, values pehle ki tarah us par set hoti hain) — bilkul New M jaisa (Hissa 13.5a / 13.5b).
 
 - **View** (− / + / Fit): sirf editor ki tasveer bari karta hai (100% se 400%). Bari karne par scroll aa jata hai, taake lambi image
-  par bhi har cheez bilkul sahi jagah rakhi ja sake. Sticker ka asal size 958 × 761 hi rehta hai.
+  par bhi har cheez bilkul sahi jagah rakhi ja sake. Sticker ka size aur print is se nahi badalte.
 - **Image size**: background image ka sticker par size (pehle "Zoom" kehlata tha).
 - **Size** (Move text & QR mein): jo set chuna ho — koi value apne lafzon ke saath, ungroup kiya hua aadha hissa, QR code,
   signature ya officer ka naam — usay − / + ya slider se 30% se 300% tak chhota bara karen. **As made** se wapas asal size.
