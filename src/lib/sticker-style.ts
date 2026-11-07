@@ -9,17 +9,27 @@
  * way every font goes from light to heavy in even steps, and the sticker is drawn the same everywhere.
  */
 
-/** A text half's look. Left out: as the sticker was made. */
+/** A text's look. Left out: as the sticker was made. */
 export interface TextStyle {
   /** Boldness, BOLD_MIN (lightest) to BOLD_MAX (heaviest). */
   bold?: number;
   /** #rrggbb. */
   color?: string;
+  /** Room added after each letter, in sticker units; less than 0 draws the letters closer. */
+  letterSpacing?: number;
+  /** Room added to each space between words, in sticker units; less than 0 draws the words closer. */
+  wordSpacing?: number;
 }
 
-/** Which text of a set a style is for: its fixed words, its value, or the whole of a one-piece set. */
-export type StyleKey = "label" | "value" | "whole";
-export const STYLE_KEYS: StyleKey[] = ["label", "value", "whole"];
+/** Which text of a set a style is for: its number, its fixed words, its value, or the whole of a one-piece set. */
+export type StyleKey = "number" | "label" | "value" | "whole";
+export const STYLE_KEYS: StyleKey[] = ["number", "label", "value", "whole"];
+
+/** How far letters and words may be drawn closer or spread apart, in sticker units (the px a word is measured in). */
+export const MIN_LETTER_SPACING = -5;
+export const MAX_LETTER_SPACING = 20;
+export const MIN_WORD_SPACING = -10;
+export const MAX_WORD_SPACING = 60;
 
 export const BOLD_MIN = 1;
 export const BOLD_MAX = 9;
@@ -95,7 +105,34 @@ export function cleanTextStyle(v: unknown, designBold: number): TextStyle | null
   }
   const color = cleanColor(o.color);
   if (color && color !== INK) out.color = color;
+  const letters = cleanSpacing(o.letterSpacing, MIN_LETTER_SPACING, MAX_LETTER_SPACING);
+  if (letters) out.letterSpacing = letters;
+  const words = cleanSpacing(o.wordSpacing, MIN_WORD_SPACING, MAX_WORD_SPACING);
+  if (words) out.wordSpacing = words;
   return Object.keys(out).length ? out : null;
+}
+
+/** A spacing as sent or saved, kept within its range, to a tenth; 0 (as made) when it is not a number. */
+export function cleanSpacing(v: unknown, min: number, max: number): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) return 0;
+  return Math.round(Math.min(max, Math.max(min, v)) * 10) / 10;
+}
+
+/** How much wider a text's letter and word spacing make it, in sticker units (narrower below 0). */
+export function spacingExtra(text: string, style: TextStyle | undefined): number {
+  const letters = style?.letterSpacing ?? 0;
+  const words = style?.wordSpacing ?? 0;
+  if (!letters && !words) return 0;
+  return letters * [...text].length + words * (text.match(/ /g)?.length ?? 0);
+}
+
+/** SVG attributes for a text's letter and word spacing; none as made. */
+export function spacingAttrs(style: TextStyle | undefined): string {
+  const r = (v: number) => Math.round(v * 100) / 100;
+  let out = "";
+  if (style?.letterSpacing) out += ` letter-spacing="${r(style.letterSpacing)}"`;
+  if (style?.wordSpacing) out += ` word-spacing="${r(style.wordSpacing)}"`;
+  return out;
 }
 
 /** The colour behind the QR code as sent or saved: a colour, or "none"; null for the usual white. */

@@ -8,8 +8,13 @@ import {
   BOLD_MIN,
   BOLD_NAMES,
   clampBold,
+  cleanSpacing,
   INK,
+  MAX_LETTER_SPACING,
   MAX_QR_LINE,
+  MAX_WORD_SPACING,
+  MIN_LETTER_SPACING,
+  MIN_WORD_SPACING,
   MIN_QR_LINE,
   NO_FILL,
   QR_LINE,
@@ -22,8 +27,9 @@ import {
 const SHADES = ["#000000", "#262626", "#404040", "#595959", "#737373", "#8c8c8c"];
 
 /**
- * The boldness and colour of a picked set's text on the sticker, one row per text half (its words, its
- * value, or the whole of a one-piece set). Used by New M's and Appo's background editors alike.
+ * The boldness, colour and letter and word spacing of a picked set's text on the sticker, one row per text
+ * (its number, its words, its value, or the whole of a one-piece set). Used by New M's and Appo's background
+ * editors alike.
  */
 export function StickerTextLook({
   rows,
@@ -51,6 +57,10 @@ export function StickerTextLook({
           const out: TextStyle = {};
           if (next.bold !== undefined && next.bold !== made) out.bold = clampBold(next.bold);
           if (next.color && next.color !== INK) out.color = next.color;
+          const letters = cleanSpacing(next.letterSpacing, MIN_LETTER_SPACING, MAX_LETTER_SPACING);
+          if (letters) out.letterSpacing = letters;
+          const words = cleanSpacing(next.wordSpacing, MIN_WORD_SPACING, MAX_WORD_SPACING);
+          if (words) out.wordSpacing = words;
           onChange(key, Object.keys(out).length ? out : null);
         };
         return (
@@ -122,6 +132,24 @@ export function StickerTextLook({
                 onChange={(e) => put({ ...st, color: e.target.value })}
               />
             </span>
+            <SpacingStepper
+              label="Letter spacing"
+              name={name}
+              value={st?.letterSpacing ?? 0}
+              min={MIN_LETTER_SPACING}
+              max={MAX_LETTER_SPACING}
+              disabled={disabled}
+              onChange={(v) => put({ ...st, letterSpacing: v })}
+            />
+            <SpacingStepper
+              label="Word spacing"
+              name={name}
+              value={st?.wordSpacing ?? 0}
+              min={MIN_WORD_SPACING}
+              max={MAX_WORD_SPACING}
+              disabled={disabled}
+              onChange={(v) => put({ ...st, wordSpacing: v })}
+            />
             {st ? (
               <button type="button" className="text-[12px] text-teal-700 hover:underline" disabled={disabled} onClick={() => onChange(key, null)}>
                 As made
@@ -131,6 +159,61 @@ export function StickerTextLook({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Room between letters, or between words, in the sticker's px: half a px less or more at a click, or typed.
+ * 0 is as made; below 0 draws them closer.
+ */
+function SpacingStepper({
+  label,
+  name,
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  /** The text's name, for screen readers. */
+  name: string;
+  value: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const put = (v: number) => onChange(Math.round(Math.min(max, Math.max(min, v)) * 10) / 10);
+  const lower = label.toLowerCase();
+  const step = "grid place-items-center size-7 border rounded-md bg-surface hover:bg-surface-2 disabled:opacity-40";
+  return (
+    <span className="inline-flex items-center gap-1" title={`${label} in px: more spreads it out, less draws it closer (0 as made)`}>
+      <span className="text-[12px] text-text-muted">{label}</span>
+      <button type="button" className={step} title="Less" aria-label={`${name}: less ${lower}`} disabled={disabled || value <= min} onClick={() => put(value - 0.5)}>
+        <Minus className="size-3.5" />
+      </button>
+      <input
+        type="number"
+        step={0.5}
+        min={min}
+        max={max}
+        value={draft ?? String(value)}
+        disabled={disabled}
+        aria-label={`${name}: ${lower}, in px`}
+        className="w-14 h-7 rounded-md border border-line-strong bg-surface px-1.5 text-[12.5px] tabular-nums"
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const v = Number(e.target.value);
+          if (e.target.value.trim() !== "" && Number.isFinite(v)) put(v);
+        }}
+        onBlur={() => setDraft(null)}
+      />
+      <button type="button" className={step} title="More" aria-label={`${name}: more ${lower}`} disabled={disabled || value >= max} onClick={() => put(value + 0.5)}>
+        <Plus className="size-3.5" />
+      </button>
+    </span>
   );
 }
 

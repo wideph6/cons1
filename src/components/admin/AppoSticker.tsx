@@ -55,6 +55,7 @@ import {
   visibleRect,
   withCrop,
   withLayout,
+  withNumberApart,
   withTexts,
   type BackgroundCrop,
   type BackgroundPlacement,
@@ -468,12 +469,18 @@ function sameSet(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
   const close = (u: number, v: number) => Math.abs(u - v) < 0.01;
   const same = (u: (SetOffset & { scale?: number }) | undefined, v: (SetOffset & { scale?: number }) | undefined) =>
     close(u?.dx ?? 0, v?.dx ?? 0) && close(u?.dy ?? 0, v?.dy ?? 0) && Math.abs((u?.scale ?? 1) - (v?.scale ?? 1)) < 0.001;
-  return (same(a, b) && Boolean(a?.split) === Boolean(b?.split) && SET_PARTS.every((p) => same(a?.parts?.[p], b?.parts?.[p]))) && sameLook(a, b);
+  return (same(a, b) && Boolean(a?.split) === Boolean(b?.split) && Boolean(a?.numberApart) === Boolean(b?.numberApart) && SET_PARTS.every((p) => same(a?.parts?.[p], b?.parts?.[p]))) && sameLook(a, b);
 }
 
-/** Two sets written the same: boldness and colour of each half, on or off, and the QR code's colour and line. */
+/** Two sets written the same: boldness, colour and spacing of each text, on or off, and the QR code's colour and line. */
 function sameLook(a: SetLayout | undefined, b: SetLayout | undefined): boolean {
-  const styles = (l: SetLayout | undefined) => JSON.stringify((["label", "value", "whole"] as StyleKey[]).map((k) => [l?.styles?.[k]?.bold ?? null, l?.styles?.[k]?.color ?? null]));
+  const styles = (l: SetLayout | undefined) =>
+    JSON.stringify(
+      (["number", "label", "value", "whole"] as StyleKey[]).map((k) => {
+        const st = l?.styles?.[k];
+        return [st?.bold ?? null, st?.color ?? null, st?.letterSpacing ?? null, st?.wordSpacing ?? null];
+      }),
+    );
   return styles(a) === styles(b) && (a?.show ?? null) === (b?.show ?? null) && (a?.fill ?? null) === (b?.fill ?? null) && (a?.border ?? null) === (b?.border ?? null);
 }
 
@@ -486,9 +493,11 @@ const STILL: SetOffset = { dx: 0, dy: 0 };
 const VIEW_ZOOMS = [1, 1.5, 2, 3, 4];
 /** Breathing room round a set's box in the editor, in sticker units. */
 const SET_PAD = 3;
+/** How far below the sticker's top edge a set brought back onto it is put, in sticker units. */
+const TOP_GAP = 12;
 
 const SET_NAMES = Object.fromEntries(STICKER_SETS.map((s) => [s.id, s.name])) as Record<StickerSetId, string>;
-const PART_NAMES: Record<SetPart, string> = { label: "words", value: "value" };
+const PART_NAMES: Record<SetPart, string> = { label: "words", value: "value", number: "number" };
 
 /** What is picked while moving: a whole set, or one half of an ungrouped one. */
 interface Picked {
@@ -907,6 +916,11 @@ export function AppoBackgroundDialog({
 
   /* ----- Moving the values, labels and QR code ----- */
 
+  /** A set as it is edited part by part: its number set apart from its words first (withNumberApart). */
+  function apart(set: StickerSetId, cur: SetLayout | undefined): SetLayout {
+    return withNumberApart(setBoxes[set], cur ?? { ...STILL });
+  }
+
   /** Moves one set, or one half of an ungrouped set, never off the sticker. */
   function movePicked({ set, part }: Picked, to: (from: SetOffset) => SetOffset) {
     const b = setBoxes[set];
@@ -916,16 +930,17 @@ export function AppoBackgroundDialog({
       if (!part) return { ...l, [set]: { ...cur, ...clampOffset(shownGroupRect(b, { ...cur, dx: 0, dy: 0 }), to(setMove(cur)), size) } };
       const r = b.parts[part];
       if (!r) return l;
-      const pl = cur?.parts?.[part];
-      const next = clampOffset(shiftRect(scaleRect(r, pl?.scale), setMove(cur)), to(pl ?? STILL), size);
-      return { ...l, [set]: { ...setMove(cur), ...cur, parts: { ...cur?.parts, [part]: { ...pl, ...next } } } };
+      const own = apart(set, cur);
+      const pl = own.parts?.[part];
+      const next = clampOffset(shiftRect(scaleRect(r, pl?.scale), setMove(own)), to(pl ?? STILL), size);
+      return { ...l, [set]: { ...own, parts: { ...own.parts, [part]: { ...pl, ...next } } } };
     });
   }
 
   /** The move a drag of the picked set (or half) starts from. */
   function pickedMove({ set, part }: Picked): SetOffset {
     const cur = layout[set];
-    return part ? (cur?.parts?.[part] ?? STILL) : setMove(cur);
+    return part ? (apart(set, cur).parts?.[part] ?? STILL) : setMove(cur);
   }
 
   function onSetDown(picked: Picked, e: PointerEvent<HTMLDivElement>) {
@@ -948,7 +963,7 @@ export function AppoBackgroundDialog({
   /** The size of the picked set or half (1 = as made). */
   function pickedScale({ set, part }: Picked): number {
     const cur = layout[set];
-    return (part ? cur?.parts?.[part]?.scale : cur?.scale) ?? 1;
+    return (part ? apart(set, cur).parts?.[part]?.scale : cur?.scale) ?? 1;
   }
 
   /** Makes the picked set (or half) bigger or smaller, around its middle. */
@@ -961,10 +976,11 @@ export function AppoBackgroundDialog({
         else cur.scale = s;
         return { ...l, [set]: cur };
       }
-      const pl = { ...STILL, ...cur.parts?.[part] };
+      const own = apart(set, cur);
+      const pl = { ...STILL, ...own.parts?.[part] };
       if (s === 1) delete pl.scale;
       else pl.scale = s;
-      return { ...l, [set]: { ...cur, parts: { ...cur.parts, [part]: pl } } };
+      return { ...l, [set]: { ...own, parts: { ...own.parts, [part]: pl } } };
     });
   }
 
@@ -972,10 +988,10 @@ export function AppoBackgroundDialog({
     if (setDrag.current?.id === e.pointerId) setDrag.current = null;
   }
 
-  /** Ungrouped, the set's words and value move each on its own; grouped again, they move together where they are. */
+  /** Ungrouped, the set's number, words and value move each on its own; grouped again, they move together where they are. */
   function setSplit(set: StickerSetId, split: boolean) {
     setLayout((l) => {
-      const cur = { ...setMove(l[set]), ...l[set] };
+      const cur = { ...(split ? apart(set, l[set]) : { ...setMove(l[set]), ...l[set] }) };
       if (split) cur.split = true;
       else delete cur.split;
       return { ...l, [set]: cur };
@@ -983,10 +999,10 @@ export function AppoBackgroundDialog({
     setSelected({ set, part: split ? "label" : null });
   }
 
-  /** A half's boldness and colour, or back as made (null). */
+  /** A text's boldness, colour and spacing, or back as made (null); the number is set apart first, so each is its own. */
   function setStyle(set: StickerSetId, key: StyleKey, style: TextStyle | null) {
     setLayout((l) => {
-      const cur = { ...setMove(l[set]), ...l[set] };
+      const cur = { ...apart(set, l[set]) };
       const styles = { ...cur.styles };
       if (style) styles[key] = style;
       else delete styles[key];
@@ -996,9 +1012,25 @@ export function AppoBackgroundDialog({
     });
   }
 
-  /** Turns a set on or off the sticker. */
+  /**
+   * Turns a set on or off the sticker. Turned back on, the 7-digit document number — and any set that is off the
+   * sticker — comes back at the top of the sticker, in the middle.
+   */
   function setOn(set: StickerSetId, on: boolean) {
-    setLayout((l) => ({ ...l, [set]: { ...setMove(l[set]), ...l[set], show: on } }));
+    setLayout((l) => {
+      const cur: SetLayout = { ...setMove(l[set]), ...l[set], show: on };
+      const b = setBoxes[set];
+      if (on && b) {
+        const r = shownGroupRect(b, cur);
+        const off = r.x < -0.5 || r.y < -0.5 || r.x + r.width > size.width + 0.5 || r.y + r.height > size.height + 0.5;
+        if (set === "docNumber" || off) {
+          const at = shownGroupRect(b, { ...cur, dx: 0, dy: 0 });
+          cur.dx = Math.round((size.width / 2 - (at.x + at.width / 2)) * 100) / 100;
+          cur.dy = Math.round((TOP_GAP - at.y) * 100) / 100;
+        }
+      }
+      return { ...l, [set]: cur };
+    });
     if (!on) setSelected((cur) => (cur?.set === set ? null : cur));
   }
 
@@ -1031,8 +1063,13 @@ export function AppoBackgroundDialog({
     setSelected((s) => (s ? { set: s.set, part: null } : s));
   }
 
-  /** The words a set writes and the value it shows; only sets that have both can be ungrouped. */
-  const canSplit = (set: StickerSetId) => Boolean(setBoxes[set]?.parts.label && setBoxes[set]?.parts.value);
+  /** A set with two or more parts drawn (its number, its words, its value) can be ungrouped. */
+  const canSplit = (set: StickerSetId) => Object.keys(setBoxes[set]?.parts ?? {}).length >= 2;
+  /** A set's looks as drawn: a number not yet set apart is written like its words. */
+  const shownStyles = (set: StickerSetId) => {
+    const l = layout[set];
+    return l?.styles?.label && !l.numberApart ? { ...l.styles, number: l.styles.label } : l?.styles;
+  };
   const isSplit = (set: StickerSetId) => Boolean(layout[set]?.split) && canSplit(set);
 
   const movedAny = Object.keys(layout).length > 0;
@@ -1049,7 +1086,7 @@ export function AppoBackgroundDialog({
     const l = layout[id];
     if (!setShown(layout, id)) return [];
     if (isSplit(id)) {
-      return SET_PARTS.map((part) => ({ picked: { set: id, part }, rect: shownPartRect(b, l, part) ?? b.whole }));
+      return SET_PARTS.filter((part) => b.parts[part]).map((part) => ({ picked: { set: id, part }, rect: shownPartRect(b, l, part) ?? b.whole }));
     }
     return [{ picked: { set: id, part: null }, rect: shownGroupRect(b, l) }];
   });
@@ -1503,16 +1540,16 @@ export function AppoBackgroundDialog({
                   <span className="font-normal text-text-muted">
                     {selected.set === "qr"
                       ? " · its size is set with Size above; here, the colour behind it and the line round it."
-                      : " · boldness and colour of its words and its value, each on its own; its size is set with Size above (ungroup it to size its words and value apart)."}
+                      : " · boldness, colour and letter and word spacing of its number, words and value, each on its own; its size is set with Size above (ungroup it to move and size them apart)."}
                   </span>
                 </div>
                 {styleKeys(selected.set).length ? (
                   <StickerTextLook
                     rows={styleKeys(selected.set)
                       .filter((k) => !selected.part || k === selected.part)
-                      .filter((k) => k !== "label" || !hasFrame)
-                      .map((k) => ({ key: k, name: k === "label" ? "Words" : k === "value" ? "Value" : SET_NAMES[selected.set] }))}
-                    styles={layout[selected.set]?.styles}
+                      .filter((k) => (k !== "label" && k !== "number") || !hasFrame)
+                      .map((k) => ({ key: k, name: k === "label" ? "Words" : k === "value" ? "Value" : k === "number" ? "Number" : SET_NAMES[selected.set] }))}
+                    styles={shownStyles(selected.set)}
                     madeBold={(k) => madeStyleBold(selected.set, k)}
                     disabled={busy}
                     onChange={(k, st) => setStyle(selected.set, k, st)}
@@ -1541,7 +1578,7 @@ export function AppoBackgroundDialog({
                     const value = pieceText(p, texts);
                     const changed = value !== p.text;
                     return (
-                      <Field key={p.id} label={p.part === "value" ? `Value (as made: “${p.text}”)` : `Words (as made: “${p.text}”)`}>
+                      <Field key={p.id} label={p.part === "value" ? `Value (as made: “${p.text}”)` : p.part === "number" ? `Number (as made: “${p.text}”)` : `Words (as made: “${p.text}”)`}>
                         <div className="flex gap-1.5">
                           <Input
                             value={value}
@@ -1584,7 +1621,7 @@ export function AppoBackgroundDialog({
               {arranging
                 ? selected && selectedOffset
                   ? `${pickedName(selected)}: moved ${Math.round(selectedOffset.dx)} across, ${Math.round(selectedOffset.dy)} down · drag it, or nudge it with the arrow keys by 1, with Shift by 10.${
-                      canSplit(selected.set) && !isSplit(selected.set) ? " Ungroup to move its words and its value apart." : ""
+                      canSplit(selected.set) && !isSplit(selected.set) ? " Ungroup to move its number, its words and its value apart." : ""
                     }`
                   : "Click a value with its words, the QR code, the signature, the officer's name or the 7-digit document number, and drag it where it belongs. The signature, the name under it and the document number move on their own. A picked value can be ungrouped from its words, and the words changed for the sticker."
                 : cropping

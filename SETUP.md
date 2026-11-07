@@ -762,10 +762,12 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
   "4 by" + issuing authority), QR code apni border ke saath, aur "1 Country Pakistan" alag set. **Signature** aur **designation**
   alag alag hilte hain. **Put this one back** sirf chuni hui cheez, **Put all text & QR back** sab ko wapas asal jagah le aata hai.
   **Done moving** se wapas image hilane par.
-- **Ungroup (fix text aur value alag alag):** Move text & QR mein kisi set (jaise "4 by" + authority) par click karen to **Ungroup**
-  ka button aata hai. Dabane par us set ke **fix text** (number + label) aur **value** ke alag alag dabbe ban jate hain (narangi
-  dashed) — har aik ko alag ghaseet ya arrow keys se hila sakte hain. **Group again** dabane se dono phir aik saath hilte hain (jahan
-  rakhe the wahin rehte hain). **Put this one back** set ko poori tarah asal jagah aur grouped haalat mein le aata hai.
+- **Ungroup (number, fix text aur value alag alag):** Move text & QR mein kisi set (jaise "4 by" + authority) par click karen to
+  **Ungroup** ka button aata hai. Dabane par us set ke **number** (jaise "4"), **fix text** (jaise "by") aur **value** ke teen alag
+  dabbe ban jate hain (narangi dashed) — har aik ko alag ghaseet ya arrow keys se hila sakte hain, aur **Size** se alag chhota bara
+  kar sakte hain. **Group again** dabane se sab phir aik saath hilte hain (jahan rakhe the wahin rehte hain). **Put this one back** set
+  ko poori tarah asal jagah aur grouped haalat mein le aata hai. Pehle se save shuda stickers bilkul waise hi rehte hain; number
+  pehli dafa hilane par bhi kuchh apni jagah se nahi hilta.
 - **Fix text badalna (sirf sticker par):** set chunne par neeche **"Words of … — on the sticker only"** khana aata hai — wahan set ke
   fix text (jaise "4", "by", "Country", "Pakistan") badal sakte hain. **Restore** se asal lafz wapas, **Restore all words** se sab.
   Khali chhor dein to wo lafz sticker par nahi aata. Ye tabdeeli **sirf sticker** par hoti hai — verification page ka apna text alag
@@ -773,9 +775,12 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
 - **Size, boldness, rang, on/off (New M aur Appo dono):** Move text & QR mein koi set chunen:
   - **Size** (− / +, slider, 30% se 300%) — poora set, ya **Ungroup** kar ke us ke lafz aur value alag alag. QR code aur signature
     bhi isi se chhote/bare hote hain.
-  - **How … is written** panel: har set ke **Words** aur **Value** (ya designation, officer ka naam, 7 digit number jaise aik-hissa
-    set) ki **Bold** — 9 darje (1 Light se 9 Black; "(as made)" asal wala), − / + ya list se — aur **Colour**: siyah se grey tak
-    shades aik click mein (gehra ya halka), ya koi bhi rang. **As made** se wapas.
+  - **How … is written** panel: har set ke **Number**, **Words** aur **Value** (ya designation, officer ka naam, 7 digit number
+    jaise aik-hissa set) ki **Bold** — 9 darje (1 Light se 9 Black; "(as made)" asal wala), − / + ya list se — aur **Colour**: siyah
+    se grey tak shades aik click mein (gehra ya halka), ya koi bhi rang. **Letter spacing** (haroof ke beech faasla, −5 se 20 px) aur
+    **Word spacing** (alfaaz ke beech faasla, −10 se 60 px): − / + se aadha px kam ya zyada, ya khane mein likh den; 0 asal wala,
+    minus mein qareeb. Value spacing ke saath apne khane se lambi ho jaye to thori chhoti likhi jati hai; Appo mein jo value lafzon ke
+    baad usi line mein aati hai woh spaced lafzon ke khatam hone par shuru hoti hai. **As made** se sab wapas.
   - **QR code** chunen to **Behind the QR**: code ke bilkul peechhe wale chokor ka rang (shuru mein safed), ya **No colour** taake
     background nazar aaye. Rang halka rakhen warna phone code nahi parhega.
   - Usi panel mein **Border**: **Line round the QR code** ka tick lagayen to QR ke gird siyah line aa jati hai, tick hata den to line
@@ -783,12 +788,16 @@ New M page par **Background image** button sirf super admin ko nazar aata hai. W
     hai (1.4 px; background par border pehle se chhapi ho to nahi), Appo mein shuru mein nahi hoti. Moti line bahar ki taraf barhti
     hai, is liye QR code ka zyada hissa kabhi nahi dhakti. **As made** se wapas shuru wali halat.
   - **On the sticker** list: har set ke saath checkbox — tick hata den to woh set har sticker se gayab, tick karen to wapas.
+    **7 digit document number** ka tick hata kar dobara lagayen to woh sticker ke **upar, beech mein** aa jata hai (sticker se bahar
+    chala gaya ho to bhi). Koi aur set sticker se bahar ho to woh bhi tick hata kar dobara lagane par wahin aa jata hai.
   - New M mein **Approving officer's name** naya set hai (shuru mein off): tick karen to officer ka naam designation ke neeche aata
     hai; phir hila kar, size aur bold/rang set karen.
   - Appo mein **Designation** naya set hai (shuru mein off): **On the sticker** list mein tick karen to officer ki designation
     us ke naam ke neeche aati hai; phir hila kar, size aur bold/rang set karen.
   - **7 digit document number** sticker par **Times New Roman Bold** mein likha jata hai (seedhe, aik oonchai wale number).
-- Ye sab (jagah, size, ungroup, badle hue lafz, bold, rang, on/off, QR ka rang aur border) **database** mein background ki position ke saath
+  - Har set ka **number** ("1", "2", "3" …) bhi ab **Times New Roman** mein likha jata hai (seedhe, aik oonchai wale number);
+    lafz pehle ki tarah Georgia mein rehte hain.
+- Ye sab (jagah, size, ungroup, badle hue lafz, bold, rang, spacing, on/off, QR ka rang aur border) **database** mein background ki position ke saath
   save hota hai — code mein kahin nahi. Pehle ki tarah **Save position** dabayen.
 - Sab theek ho to **Use this background** (nayi image) ya **Save position** (sirf jagah/crop/text ki jagah badli ho).
   Wohi jagah aur crop save hote hain aur har sticker — screen par bhi aur download mein bhi — bilkul waisa hi banta hai.

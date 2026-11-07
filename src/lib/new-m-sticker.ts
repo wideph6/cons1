@@ -12,6 +12,8 @@ import {
   qrLineReach,
   qrLineSvg,
   SERIF_STEPS,
+  spacingAttrs,
+  spacingExtra,
   STYLE_KEYS,
   type StyleKey,
   type TextStyle,
@@ -153,15 +155,19 @@ export function setShown(layout: StickerLayout | undefined, set: StickerSetId): 
   return layout?.[set]?.show ?? !OFF_UNTIL_ON.includes(set);
 }
 
-/** The text halves of a set a style can be set for: its words and its value, or the whole of a one-piece set. */
+/** The texts of a set a style can be set for: its number, its words and its value, or the whole of a one-piece set. */
 export function styleKeys(set: StickerSetId): StyleKey[] {
   if (PICTURE_SETS.includes(set)) return [];
-  return WHOLE_SETS.includes(set) ? ["whole"] : ["label", "value"];
+  if (WHOLE_SETS.includes(set)) return ["whole"];
+  return PIECES.some((p) => p.set === set && p.part === "number") ? ["number", "label", "value"] : ["label", "value"];
 }
 
-/** The two halves of an ungrouped set: its fixed words, and the value written after or under them. */
-export type SetPart = "label" | "value";
-export const SET_PARTS: SetPart[] = ["label", "value"];
+/**
+ * The parts of an ungrouped set: its fixed words, the value written after or under them, and the number
+ * before the words (the set's count), which moves on its own once set apart (SetLayout.numberApart).
+ */
+export type SetPart = "label" | "value" | "number";
+export const SET_PARTS: SetPart[] = ["label", "value", "number"];
 
 /** How far a set (or one half of it) was moved from its measured place, in sticker units. */
 export interface SetOffset {
@@ -184,6 +190,11 @@ export interface PartLayout extends SetOffset {
  */
 export interface SetLayout extends SetOffset {
   split?: boolean;
+  /**
+   * The set's number moves, sizes and is written on its own: its own part and its own style. Left out on sets
+   * saved before numbers could, whose number goes with its words, as it always did.
+   */
+  numberApart?: boolean;
   scale?: number;
   parts?: Partial<Record<SetPart, PartLayout>>;
   styles?: Partial<Record<StyleKey, TextStyle>>;
@@ -219,17 +230,17 @@ export interface StickerPiece {
  * "Pakistan" is fixed too, but it is Country's value, so it is the half that moves as the value.
  */
 export const PIECES: StickerPiece[] = [
-  { id: "country.number", text: "1", x: 88, y: 121, set: "country", part: "label" },
+  { id: "country.number", text: "1", x: 88, y: 121, set: "country", part: "number" },
   { id: "country.label", text: "Country", x: 105, y: 121, set: "country", part: "label" },
   { id: "country.value", text: "Pakistan", x: 179, y: 121, bold: true, set: "country", part: "value" },
   { id: "documentType.label", text: "This Public Document", x: 293, y: 121, set: "documentType", part: "label" },
-  { id: "issuingOffice.number", text: "2", x: 594, y: 121, set: "issuingOffice", part: "label" },
+  { id: "issuingOffice.number", text: "2", x: 594, y: 121, set: "issuingOffice", part: "number" },
   { id: "issuingOffice.label", text: "at", x: 609, y: 121, set: "issuingOffice", part: "label" },
-  { id: "dateLong.number", text: "3", x: 87, y: 202, set: "dateLong", part: "label" },
+  { id: "dateLong.number", text: "3", x: 87, y: 202, set: "dateLong", part: "number" },
   { id: "dateLong.label", text: "the", x: 109, y: 202, set: "dateLong", part: "label" },
-  { id: "issuingAuthority.number", text: "4", x: 86, y: 273, set: "issuingAuthority", part: "label" },
+  { id: "issuingAuthority.number", text: "4", x: 86, y: 273, set: "issuingAuthority", part: "number" },
   { id: "issuingAuthority.label", text: "by", x: 108, y: 273, set: "issuingAuthority", part: "label" },
-  { id: "number.number", text: "5", x: 86, y: 345, set: "number", part: "label" },
+  { id: "number.number", text: "5", x: 86, y: 345, set: "number", part: "number" },
   { id: "number.label", text: "No.", x: 107, y: 345, set: "number", part: "label" },
   { id: "dateShort.label", text: "Date:", x: 88, y: 392, set: "dateShort", part: "label" },
 ];
@@ -238,6 +249,16 @@ export const PIECES: StickerPiece[] = [
 export function pieceText(piece: StickerPiece, texts: StickerTexts | undefined): string {
   const t = texts?.[piece.id];
   return typeof t === "string" ? t : piece.text;
+}
+
+/**
+ * The look a piece of fixed words is written with: its part's. A number not set apart from its words is
+ * written like them, as it always was.
+ */
+export function pieceStyle(layout: StickerLayout | undefined, piece: StickerPiece): TextStyle | undefined {
+  const l = layout?.[piece.set];
+  if (piece.part === "number") return l?.numberApart ? l.styles?.number : l?.styles?.label;
+  return l?.styles?.[piece.part];
 }
 
 /**
@@ -305,12 +326,22 @@ function text(
   value: string,
   size: number,
   weight: string,
-  opts: { anchor?: string; fill?: string; outline?: number; family?: string } = {},
+  opts: { anchor?: string; fill?: string; outline?: number; family?: string; spacing?: TextStyle } = {},
 ): string {
   return (
     `<text x="${x}" y="${y}" font-family="${esc(opts.family ?? FONT_FAMILY)}" font-size="${size.toFixed(2)}" font-weight="${weight}"` +
-    `${inkAttrs(opts.fill ?? INK, opts.outline ?? 0)} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
+    `${inkAttrs(opts.fill ?? INK, opts.outline ?? 0)}${spacingAttrs(opts.spacing)} text-anchor="${opts.anchor ?? "start"}">${esc(value)}</text>`
   );
+}
+
+/**
+ * The size a value is written at: as made, or smaller when it would run past its cell, its letter and word
+ * spacing (which keep their size) included.
+ */
+function fittedSize(slot: TextSlot, width: number, extra: number): number {
+  if (width + extra <= slot.maxWidth) return slot.size;
+  const room = slot.maxWidth - extra;
+  return room > 0 ? Math.max(MIN_FONT, (slot.size * room) / width) : MIN_FONT;
 }
 
 function valueEl(slot: TextSlot, value: string, measure: Measure, style?: TextStyle): string {
@@ -318,8 +349,8 @@ function valueEl(slot: TextSlot, value: string, measure: Measure, style?: TextSt
   if (!t) return "";
   const ink = inkFor({ weight: slot.weight, outline: 0 }, style?.bold);
   const width = measure(t, fontFor(slot, slot.size, ink.weight));
-  const size = width > slot.maxWidth ? Math.max(MIN_FONT, (slot.size * slot.maxWidth) / width) : slot.size;
-  return text(slot.x, slot.y, t, size, ink.weight, { anchor: slot.anchor, family: slot.family, fill: style?.color, outline: ink.outline });
+  const size = fittedSize(slot, width, spacingExtra(t, style));
+  return text(slot.x, slot.y, t, size, ink.weight, { anchor: slot.anchor, family: slot.family, fill: style?.color, outline: ink.outline, spacing: style });
 }
 
 /** Wraps a set's drawing (or one half of it) in its move, when it was moved. */
@@ -334,9 +365,11 @@ function frameEl(moved: Mover, texts: StickerTexts | undefined, layout: StickerL
   for (const p of PIECES) {
     const words = pieceText(p, texts).trim();
     if (!words || !setShown(layout, p.set)) continue;
-    const style = layout?.[p.set]?.styles?.[p.part];
+    const style = pieceStyle(layout, p);
     const ink = inkFor(p.bold ? { weight: "bold", outline: 0 } : { weight: "normal", outline: LABEL_OUTLINE }, style?.bold);
-    parts.push(moved(p.set, p.part, text(p.x, p.y, words, 19, ink.weight, { fill: style?.color, outline: ink.outline })));
+    // Each set's count is written in Times New Roman: upright figures of even height.
+    const family = p.part === "number" ? NUMBER_FAMILY : undefined;
+    parts.push(moved(p.set, p.part, text(p.x, p.y, words, 19, ink.weight, { fill: style?.color, outline: ink.outline, family, spacing: style })));
   }
   return parts.join("");
 }
@@ -348,8 +381,8 @@ export function madeLabelBold(piece: StickerPiece): number {
 
 /** The boldness a set's half is written with as made, for the editor to start from. */
 export function madeStyleBold(set: StickerSetId, key: StyleKey): number {
-  if (key === "label") {
-    const piece = PIECES.find((p) => p.set === set && p.part === "label");
+  if (key === "label" || key === "number") {
+    const piece = PIECES.find((p) => p.set === set && p.part === key);
     return piece ? madeLabelBold(piece) : 2;
   }
   if (set === "country") return 5;
@@ -548,17 +581,20 @@ const changed = (o: PartLayout | undefined): boolean => moves(o) || sized(o);
 function tidySet(set: StickerSetId, o: SetLayout | undefined): SetLayout | null {
   if (!o) return null;
   const parts = Object.fromEntries(
-    SET_PARTS.filter((p) => changed(o.parts?.[p])).map((p) => {
+    SET_PARTS.filter((p) => changed(o.parts?.[p]) && (p !== "number" || o.numberApart)).map((p) => {
       const pl = o.parts![p]!;
       return [p, sized(pl) ? { dx: pl.dx, dy: pl.dy, scale: pl.scale } : { dx: pl.dx, dy: pl.dy }];
     }),
   );
   const out: SetLayout = { dx: o.dx, dy: o.dy };
   if (o.split) out.split = true;
+  if (o.numberApart) out.numberApart = true;
   if (sized(o)) out.scale = o.scale;
   if (Object.keys(parts).length) out.parts = parts;
   const styles: Partial<Record<StyleKey, TextStyle>> = {};
   for (const key of styleKeys(set)) {
+    // A number not set apart is written like its words.
+    if (key === "number" && !o.numberApart) continue;
     const st = cleanTextStyle(o.styles?.[key], madeStyleBold(set, key));
     if (st) styles[key] = st;
   }
@@ -571,7 +607,7 @@ function tidySet(set: StickerSetId, o: SetLayout | undefined): SetLayout | null 
     const line = o.border === undefined ? null : cleanQrLine(o.border);
     if (line !== null) out.border = line;
   }
-  return out.split || out.parts || moves(out) || sized(out) || out.styles || out.show !== undefined || out.fill || out.border !== undefined
+  return out.split || out.numberApart || out.parts || moves(out) || sized(out) || out.styles || out.show !== undefined || out.fill || out.border !== undefined
     ? out
     : null;
 }
@@ -629,6 +665,7 @@ function cleanLayout(v: unknown): StickerLayout | null {
     const raw = o as Record<string, unknown>;
     const entry: SetLayout = { ...move };
     if (raw.split === true) entry.split = true;
+    if (raw.numberApart === true) entry.numberApart = true;
     if (typeof raw.show === "boolean") entry.show = raw.show;
     if (raw.fill !== undefined && raw.fill !== null) {
       const fill = cleanFill(raw.fill);
@@ -903,8 +940,9 @@ function contentEl(input: StickerContent, measure: Measure): string {
     const l = input.layout?.[set];
     if (!svg || !l) return svg;
     const b = boxes[set];
-    // A half's own move and size first, then the whole set's.
-    const inner = part ? wrapIn(svg, transformOf(l.parts?.[part], b?.parts[part] ?? null)) : svg;
+    // A part's own move and size first (a number not set apart takes its words'), then the whole set's.
+    const own = part ? (b ? partMove(b, l, part) : { move: l.parts?.[part], around: null }) : null;
+    const inner = own ? wrapIn(svg, transformOf(own.move, own.around)) : svg;
     return wrapIn(inner, transformOf(l, b ? groupRect(b, l) : null));
   };
   const on = (set: StickerSetId) => setShown(input.layout, set);
@@ -1004,6 +1042,12 @@ export function shiftRect(r: Rect, o: SetOffset): Rect {
  * Each set's box where it is drawn before any move: the area the editor lets the super admin grab.
  * A set with nothing drawn (the labels of a background that has them printed) has no box.
  */
+/** How wide a piece of fixed words is drawn: in its font (Times New Roman for a count), its spacing included. */
+function pieceWidth(p: StickerPiece, words: string, layout: StickerLayout | undefined, measure: Measure): number {
+  const family = p.part === "number" ? NUMBER_FAMILY : FONT_FAMILY;
+  return measure(words, `${p.bold ? "bold" : "normal"} 19px ${family}`) + spacingExtra(words, pieceStyle(layout, p));
+}
+
 export function stickerSetBoxes(input: StickerContent, measure: Measure): Partial<Record<StickerSetId, SetBoxes>> {
   const drawn: Partial<Record<StickerSetId, Partial<Record<SetPart | "whole", Rect[]>>>> = {};
   /** Values with nothing in them: grabbable on their own, but not widening a set that has words. */
@@ -1020,15 +1064,15 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
   if (input.drawFrame) {
     for (const p of PIECES) {
       const words = pieceText(p, input.texts).trim();
-      if (words) add(p.set, p.part, textBox(p.x, p.y, 19, measure(words, `${p.bold ? "bold" : "normal"} 19px ${FONT_FAMILY}`), "start"));
+      if (words) add(p.set, p.part, textBox(p.x, p.y, 19, pieceWidth(p, words, input.layout, measure), "start"));
     }
   }
   for (const [set, value] of valueTexts(input)) {
     const slot: TextSlot = SLOTS[set];
     const t = value.trim();
-    // A value too wide for its cell is set smaller, so it never reaches past maxWidth.
-    const width = t ? Math.min(measure(t, fontFor(slot)), slot.maxWidth) : 0;
     const part = WHOLE_SETS.includes(set) ? "whole" : "value";
+    // A value too wide for its cell is set smaller, so it never reaches past maxWidth.
+    const width = t ? Math.min(measure(t, fontFor(slot)) + spacingExtra(t, input.layout?.[set]?.styles?.[part]), slot.maxWidth) : 0;
     if (width) add(set, part, textBox(slot.x, slot.y, slot.size, width, slot.anchor));
     else blank[set] = textBox(slot.x, slot.y, slot.size, Math.min(EMPTY_VALUE_WIDTH, slot.maxWidth), slot.anchor);
   }
@@ -1048,15 +1092,17 @@ export function stickerSetBoxes(input: StickerContent, measure: Measure): Partia
       continue;
     }
     const label = d.label ? union(d.label) : null;
+    const number = d.number ? union(d.number) : null;
     const value = d.value ? union(d.value) : (empty ?? null);
-    if (!label && !value) continue;
+    if (!label && !value && !number) continue;
     // Each half that is drawn, so a half moved on its own is grabbed where it is; only a set with both
     // halves can be ungrouped.
     const parts: Partial<Record<SetPart, Rect>> = {};
     if (label) parts.label = label;
     if (value) parts.value = value;
+    if (number) parts.number = number;
     // A set with words keeps the box it always had; an empty value only fills in when it has none.
-    const words = [label, d.value ? value : null].filter((r): r is Rect => Boolean(r));
+    const words = [number, label, d.value ? value : null].filter((r): r is Rect => Boolean(r));
     boxes[set] = { whole: union(words.length ? words : [value as Rect]), parts };
   }
   return boxes;
@@ -1071,12 +1117,28 @@ export function scaleRect(r: Rect, sc: number | undefined): Rect {
   return { x: cx - (r.width * k) / 2, y: cy - (r.height * k) / 2, width: r.width * k, height: r.height * k };
 }
 
-/** Where a half is drawn after its own move and size, before the whole set's. */
+/**
+ * A part's own move and size, and the box it is sized around. A number not set apart goes with its words as
+ * one, just as when it was part of them: their move, sized around the two together.
+ */
+export function partMove(b: SetBoxes, l: SetLayout | undefined, part: SetPart): { move: PartLayout | undefined; around: Rect | null } {
+  if (!l?.numberApart && (part === "number" || part === "label") && b.parts.number && b.parts.label) {
+    return { move: l?.parts?.label, around: union([b.parts.number, b.parts.label]) };
+  }
+  return { move: l?.parts?.[part], around: b.parts[part] ?? null };
+}
+
+/** Where a part is drawn after its own move and size, before the whole set's. */
 export function partLocalRect(b: SetBoxes, l: SetLayout | undefined, part: SetPart): Rect | null {
   const r = b.parts[part];
   if (!r) return null;
-  const pl = l?.parts?.[part];
-  return shiftRect(scaleRect(r, pl?.scale), pl ?? { dx: 0, dy: 0 });
+  const { move, around } = partMove(b, l, part);
+  const k = move?.scale ?? 1;
+  const c = around ?? r;
+  const cx = c.x + c.width / 2;
+  const cy = c.y + c.height / 2;
+  const scaled = k === 1 ? r : { x: cx + (r.x - cx) * k, y: cy + (r.y - cy) * k, width: r.width * k, height: r.height * k };
+  return shiftRect(scaled, move ?? { dx: 0, dy: 0 });
 }
 
 /** The whole set's own move and size, applied to a rectangle of it (r), around the middle of the set (g). */
@@ -1105,9 +1167,34 @@ export function shownPartRect(b: SetBoxes, l: SetLayout | undefined, part: SetPa
  * move. Without moved or sized halves this is the whole set.
  */
 export function groupRect(b: SetBoxes, l: SetLayout | undefined): Rect {
-  const moved = SET_PARTS.filter((p) => b.parts[p] && changed(l?.parts?.[p]));
+  const moved = SET_PARTS.filter((p) => b.parts[p] && changed(partMove(b, l, p).move));
   if (!moved.length) return b.whole;
   return union(SET_PARTS.map((p) => partLocalRect(b, l, p)).filter((r): r is Rect => Boolean(r)));
+}
+
+/**
+ * The set with its number set apart from its words: from now on it moves, sizes and is written on its own.
+ * It and its words stay drawn exactly where they were (each sized round its own middle now, so moved to make
+ * up for it), and it keeps its words' look. b is the set's boxes (stickerSetBoxes); a set with no number drawn
+ * is left as it is.
+ */
+export function withNumberApart(b: SetBoxes | undefined, l: SetLayout): SetLayout {
+  if (l.numberApart || !b?.parts.number) return l;
+  const out: SetLayout = { ...l, numberApart: true };
+  const words = l.styles?.label;
+  if (words && !l.styles?.number) out.styles = { ...l.styles, number: { ...words } };
+  const lp = l.parts?.label;
+  if (lp && b.parts.label) {
+    const k = lp.scale ?? 1;
+    const u = union([b.parts.number, b.parts.label]);
+    const own = (r: Rect): PartLayout => {
+      const dx = n(lp.dx + (1 - k) * (u.x + u.width / 2 - (r.x + r.width / 2)));
+      const dy = n(lp.dy + (1 - k) * (u.y + u.height / 2 - (r.y + r.height / 2)));
+      return k === 1 ? { dx, dy } : { dx, dy, scale: k };
+    };
+    out.parts = { ...l.parts, label: own(b.parts.label), number: own(b.parts.number) };
+  }
+  return out;
 }
 
 /** A move that keeps the set's box on the sticker. */

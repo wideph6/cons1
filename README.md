@@ -269,8 +269,9 @@ Where Appo differs from New M:
   PDF, and its background may be a PDF (first page drawn in the browser, `pdfPage` kept in the placement), exactly as
   New M's (`src/lib/sticker-pdf.ts`).
 
-Both stickers let the super admin **ungroup** a set in the background editor, moving its words and its value on their own, and
-**reword** the fixed words for the sticker only. Moves (`layout`, with `split` and per-half `parts`) and reworded words (`texts`,
+Both stickers let the super admin **ungroup** a set in the background editor, moving its number (the set's count, "1" to "8"),
+its words and its value each on its own, and **reword** the fixed words for the sticker only. Moves (`layout`, with `split` and
+per-part `parts`: `label`, `value`, `number`) and reworded words (`texts`,
 by piece id) are saved inside `*_settings.background_placement`, so New M needs no database change for it; the placement travels
 to the browser URI-encoded in the `x-background-placement` header.
 
@@ -295,9 +296,11 @@ serif keeps regular and bold, and the phone's Roboto and Noto Serif cover every 
 ## Sticker sets: size, boldness, colour, on/off
 
 Both stickers' background editors set, per set, in `*_settings.background_placement.layout` (no database change):
-**size** (`scale`, round the set's middle, 30–300 %; ungrouped, each half's own — New M now has this as Appo did, so the QR code
-and signature size too), **boldness and colour** of each text half (`styles.label` / `styles.value` / `styles.whole`: `bold` 1–9,
-`color` #rrggbb), **on/off** (`show`) and, for the QR code, the colour of the square behind it (`fill`: a colour, or `"none"`)
+**size** (`scale`, round the set's middle, 30–300 %; ungrouped, each part's own — New M now has this as Appo did, so the QR code
+and signature size too), **boldness, colour and spacing** of each text (`styles.number` / `styles.label` / `styles.value` /
+`styles.whole`: `bold` 1–9, `color` #rrggbb, `letterSpacing` −5 to 20 and `wordSpacing` −10 to 60 in sticker units, drawn as SVG
+`letter-spacing` / `word-spacing`; a value that would run past its cell with them is set smaller, Appo's values after their words
+start where the spaced words end, and grab boxes take them in), **on/off** (`show`) and, for the QR code, the colour of the square behind it (`fill`: a colour, or `"none"`)
 and the **line round it** (`border`: its thickness in sticker units, 0.5–10, or 0 for none; left out as made — New M's 1.4 line, or
 none on a background with its own; Appo none). Up to 1.4 thick the line lies just inside the square's edge; thicker, it grows
 outward, so it never covers more of the code (`qrLineSvg`).
@@ -308,6 +311,15 @@ out, so a sticker nobody restyled is drawn exactly as before. The editors share 
 the QR colour, and the "On the sticker" checkboxes). New M gains an **Approving officer's name** set, off until turned on; both
 stickers write the 7-digit document number in Times New Roman Bold. Appo gains a **Designation** set (the officer's designation
 under the name), off until turned on.
+
+**Numbers apart.** Each set's count is its own piece (`part: "number"`), written in Times New Roman (upright figures of even
+height, `NUMBER_FAMILY`) where the words stay Georgia. A set with `numberApart` has its number as a part of its own: its own
+move and size (`parts.number`) and look (`styles.number`). Without it (every set saved before), the number goes with its words
+as it always did — their move, sized round the two together, and their look (`partMove`, `pieceStyle`) — so a saved sticker is
+drawn exactly as before but for the counts' font. The editor sets a number apart the first time any part of its set is moved,
+sized, ungrouped or restyled (`withNumberApart`), keeping where everything is drawn (each part sized round its own middle from
+then on, its move made up for it) and giving the number its words' look. Turned off and back on in the "On the sticker" list, the
+7-digit document number — and any set that has ended up off the sticker — comes back at the top of the sticker, in the middle.
 
 **The sticker is its background.** A sticker is always the visible part of its background image (after its crop) at the size it
 was zoomed to: `refitToBackground` moves the placement and every set so that part starts at the sticker's corner and sets
