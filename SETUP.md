@@ -704,7 +704,8 @@ Har document ke **poore link** (domain/subdomain samet) ka QR code **khud ban ja
 Har document ka "General Attestation" sticker list se hi bante hain:
 
 - **View sticker** — sticker dikhata hai, wahin se **Download PDF** (aur SVG).
-- **Download PDF** — seedha PDF download (dekhe baghair). PDF ka page A4 jitna chaura aur sticker jitna lamba hota hai, aur sticker
+- **Download PDF** — seedha PDF download (dekhe baghair). File ka naam document ke 7 digit number se banta hai, jaise
+  `Certificates-4827153.pdf` (New M aur Appo dono). PDF ka page A4 jitna chaura aur sticker jitna lamba hota hai, aur sticker
   us par utna bara jitna super admin ne **Page width (A4)** se set kiya (Hissa 13A.6). Andar sticker 3 guna (ya background jitni) tezi se bana hota hai.
 
 Sticker **har dafa document ke mojooda data** se banta hai, is liye edit ke baad agla sticker khud naya data aur naya QR dikhata hai.

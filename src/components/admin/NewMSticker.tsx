@@ -242,9 +242,12 @@ export async function renderSticker(record: NewMRecord): Promise<MadeSticker> {
   return { svg, scale: scaleFor(bg.width, placement), pdf: pdfLayout(placement) };
 }
 
-/** Saves a made sticker as a one-page PDF of the sticker's real size. */
+/**
+ * Saves a made sticker as a one-page PDF, named Certificates-<7-digit document number>.pdf (by the attestation
+ * number for a document saved before document numbers).
+ */
 export async function saveStickerPdf(record: NewMRecord, sticker: MadeSticker): Promise<void> {
-  const name = `${record.attestation_number}-sticker`;
+  const name = `Certificates-${record.doc_number || record.attestation_number}`;
   downloadBlob(await stickerPdf(sticker.svg, sticker.scale, sticker.pdf, name), `${name}.pdf`);
 }
 
